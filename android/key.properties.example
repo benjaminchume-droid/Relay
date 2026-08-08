@@ -1,0 +1,8 @@
+# Android Release Key Properties Configuration
+# Copy this template to key.properties in the android/ directory or root directory.
+# NEVER commit key.properties or keystore files (*.jks, *.keystore) to version control!
+
+storeFile=upload-keystore.jks
+storePassword=your_keystore_password
+keyAlias=your_key_alias
+keyPassword=your_key_password

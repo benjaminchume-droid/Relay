@@ -1,0 +1,152 @@
+name: Relay Android CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main, develop, "release/*" ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main, develop ]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: Build & Package Android App (Debug, Release APK & AAB)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: android
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 21 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - name: Set up Gradle Cache
+        uses: gradle/actions/setup-gradle@v3
+        with:
+          build-root-directory: android
+          cache-overwrite-existing: true
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Setup Node.js for Asset Generation
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install Dependencies
+        run: npm ci
+        working-directory: .
+
+      - name: Generate Android App Icons
+        run: node scripts/generate_android_icons.js
+        working-directory: .
+
+      - name: Grant Execute Permission for Gradle Wrapper
+        run: chmod +x gradlew
+
+      - name: Ensure Gradle Wrapper JAR
+        run: |
+          if [ ! -f gradle/wrapper/gradle-wrapper.jar ]; then
+            mkdir -p gradle/wrapper
+            curl -sSL -o gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.6.0/gradle/wrapper/gradle-wrapper.jar || \
+            wget -q -O gradle/wrapper/gradle-wrapper.jar https://github.com/gradle/gradle/raw/v8.6.0/gradle/wrapper/gradle-wrapper.jar
+          fi
+
+      - name: Run Android Lint
+        run: ./gradlew lintDebug --stacktrace --continue
+
+      - name: Run Unit Tests
+        run: ./gradlew testDebugUnitTest --stacktrace
+
+      - name: Decode Signing Keystore
+        env:
+          KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore to upload-keystore.jks..."
+            echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 -d -i > upload-keystore.jks || echo "$KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
+            chmod 600 upload-keystore.jks
+          else
+            echo "ANDROID_RELEASE_KEYSTORE_BASE64 secret is not set. Building with debug signing fallback."
+          fi
+
+      - name: CI Debug - List Android Resources & Keystore
+        run: |
+          ls -la app/src/main/res/mipmap-* || true
+          ls -la upload-keystore.jks || true
+
+      - name: Assemble Debug APK
+        env:
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Assemble Release APK & Bundle (AAB)
+        env:
+          KEYSTORE_FILE: upload-keystore.jks
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          SUPABASE_URL: ${{ secrets.PROD_SUPABASE_URL }}
+          SUPABASE_ANON_KEY: ${{ secrets.PROD_SUPABASE_ANON_KEY }}
+        run: ./gradlew assembleRelease bundleRelease --stacktrace
+
+      - name: Upload Debug APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-debug-apk
+          path: android/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+
+      - name: Upload Release APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-release-apk
+          path: android/app/build/outputs/apk/release/*.apk
+          if-no-files-found: error
+
+      - name: Upload Release AAB Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: relay-release-aab
+          path: android/app/build/outputs/bundle/release/*.aab
+          if-no-files-found: error
+
+  publish-github-release:
+    name: Publish GitHub Release
+    needs: build-and-test
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Download Build Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: release-artifacts
+
+      - name: Create Release Notes & Tag Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            release-artifacts/relay-release-aab/*.aab
+            release-artifacts/relay-release-apk/*.apk
+            release-artifacts/relay-debug-apk/*.apk
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

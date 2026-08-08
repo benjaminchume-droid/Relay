@@ -1,0 +1,19 @@
+node_modules/
+build/
+dist/
+coverage/
+.DS_Store
+*.log
+.env*
+!.env.example
+
+# Android Release Signing & Build Artifacts
+*.jks
+*.keystore
+key.properties
+keystore_base64.txt
+local.properties
+.gradle/
+.idea/
+*.apk
+*.aab

@@ -1,0 +1,6 @@
+{
+  "name": "RELAY",
+  "description": "Premium real-time communication platform with cinematic liquid glass aesthetics, built for Glassline Studio.",
+  "requestFramePermissions": ["camera", "microphone"],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

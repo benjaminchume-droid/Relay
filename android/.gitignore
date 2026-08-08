@@ -1,0 +1,16 @@
+# Gradle build output
+.gradle/
+build/
+app/build/
+
+# Signing keys and properties
+*.jks
+*.keystore
+key.properties
+!key.properties.example
+local.properties
+
+# IDE files
+.idea/
+*.iml
+.DS_Store

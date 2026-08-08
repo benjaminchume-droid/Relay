@@ -1,0 +1,686 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect } from 'react';
+import { 
+  Palette, Shield, Lock, User, RefreshCw, LogOut, ShieldCheck, Check, Camera, Upload,
+  Bell, HardDrive, HelpCircle, AlertTriangle, Trash2, Smartphone, Eye, Sparkles, Sliders, KeyRound
+} from 'lucide-react';
+import { GlassCard, GlassButton, GlassInput, GlassSlider } from './GlassUI';
+import { PermissionsView } from './PermissionsView';
+import { useAuthStore } from '../store/authStore';
+import { useThemeStore, ACCENT_COLOR_CONFIG, GLASS_PRESETS } from '../store/themeStore';
+import { AccentColor, BubbleStyle, WallpaperStyle, ThemeMode, StoriesLayout } from '../types';
+import { relayCacheManager } from '../services/cacheManager';
+import { getLetterAvatar } from '../lib/avatar';
+
+export const ProfileView: React.FC = () => {
+  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'HELP'>('APPEARANCE');
+  const [showDeleteModal, setShowDeleteModal] = useState(false);
+  const [cacheCleared, setCacheCleared] = useState(false);
+  
+  const { currentUser, updateProfile, uploadAvatarOrBanner, updatePrivacy, revokeSession, revokeAllOtherSessions, logout } = useAuthStore();
+  const { 
+    customization, 
+    setAccentColor, 
+    setBlurIntensity, 
+    setCornerRadius, 
+    setBubbleStyle, 
+    setWallpaper, 
+    applyPreset,
+    resetToDefaults,
+    updateCustomization
+  } = useThemeStore();
+
+  const [displayName, setDisplayName] = useState(currentUser?.name || '');
+  const [username, setUsername] = useState(currentUser?.username || '');
+  const [bio, setBio] = useState(currentUser?.bio || '');
+  const [statusMessage, setStatusMessage] = useState(currentUser?.statusMessage || '');
+  const [saveSuccess, setSaveSuccess] = useState(false);
+
+  if (!currentUser) return null;
+
+  const handleSaveProfile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    await updateProfile({
+      name: displayName,
+      username,
+      bio,
+      statusMessage
+    });
+    setSaveSuccess(true);
+    setTimeout(() => setSaveSuccess(false), 2000);
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBanner: boolean) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = async () => {
+      const base64 = reader.result as string;
+      await uploadAvatarOrBanner(base64, file.name, isBanner);
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleClearCache = () => {
+    setCacheCleared(true);
+    setTimeout(() => setCacheCleared(false), 2500);
+  };
+
+  const accentList: AccentColor[] = ['liquid-azure', 'emerald-frost', 'neon-violet', 'rose-gold', 'midnight', 'amber-glow'];
+  const bubbleStyles: BubbleStyle[] = ['edge-glow', 'classic', 'gradient', 'minimal'];
+  const wallpapers: WallpaperStyle[] = ['glass-gradient', 'dark-aurora', 'neon-mesh', 'minimal-grid', 'warm-clay', 'pure-slate'];
+  const themeModes: Array<{ id: ThemeMode; label: string }> = [
+    { id: 'light', label: 'Light' },
+    { id: 'dark', label: 'Dark' },
+    { id: 'pure-black', label: 'Pure Black' },
+    { id: 'glass', label: 'Glass' },
+    { id: 'minimal', label: 'Minimal' },
+    { id: 'transparent', label: 'Transparent' },
+    { id: 'system', label: 'System' }
+  ];
+
+  return (
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-6 pb-28 text-left">
+      
+      {/* Profile Header */}
+      <GlassCard heavy className="p-6 overflow-hidden relative space-y-4">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <img 
+                src={currentUser.avatarUrl || getLetterAvatar(currentUser.name || currentUser.username, 160)} 
+                alt="avatar" 
+                className="w-16 h-16 rounded-3xl object-cover border-2 border-white shadow-md"
+              />
+              <label 
+                style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
+                className="absolute -bottom-1 -right-1 text-white p-1.5 rounded-xl text-xs cursor-pointer hover:brightness-110 shadow-xs"
+              >
+                <Camera size={12} />
+                <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, false)} className="hidden" />
+              </label>
+            </div>
+
+            <div>
+              <h2 className="text-xl font-bold tracking-tight text-slate-800">{currentUser.name}</h2>
+              <span className="text-xs font-mono text-slate-500 font-semibold">@{currentUser.username}</span>
+              <p className="text-xs text-slate-600 mt-1 font-medium">{currentUser.statusMessage || "Customize your space"}</p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <GlassButton onClick={logout} variant="danger" className="py-2 px-3 text-xs">
+              <LogOut size={14} />
+              <span>Sign Out</span>
+            </GlassButton>
+          </div>
+        </div>
+      </GlassCard>
+
+      {/* Settings Navigation Tabs */}
+      <div className="flex items-center gap-2 overflow-x-auto pb-1 scrollbar-none">
+        {[
+          { id: 'APPEARANCE', label: 'Appearance', icon: Palette },
+          { id: 'PERSONAL', label: 'Personal Info', icon: User },
+          { id: 'PRIVACY', label: 'Privacy', icon: Lock },
+          { id: 'PERMISSIONS', label: 'Permissions & Devices', icon: KeyRound },
+          { id: 'NOTIFICATIONS', label: 'Notifications', icon: Bell },
+          { id: 'STORAGE', label: 'Storage', icon: HardDrive },
+          { id: 'HELP', label: 'Help & About', icon: HelpCircle }
+        ].map((tab) => {
+          const isActive = subTab === tab.id;
+          const IconComp = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setSubTab(tab.id as any)}
+              style={{
+                backgroundColor: isActive ? 'var(--primary-accent, #2563EB)' : undefined,
+                borderColor: isActive ? 'var(--primary-accent, #2563EB)' : undefined
+              }}
+              className={`py-2 px-3.5 rounded-2xl flex items-center gap-2 text-xs font-bold shrink-0 cursor-pointer transition-all ${
+                isActive 
+                  ? 'text-white shadow-md' 
+                  : 'bg-white/70 text-slate-600 hover:bg-white border border-slate-200/80'
+              }`}
+            >
+              <IconComp size={15} />
+              <span>{tab.label}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab 1: Appearance Customization Experience */}
+      {subTab === 'APPEARANCE' && (
+        <div className="space-y-6">
+          
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Appearance Engine</span>
+            <button 
+              onClick={resetToDefaults}
+              className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+            >
+              <RefreshCw size={12} />
+              <span>Reset to Defaults</span>
+            </button>
+          </div>
+
+          {/* Presets System */}
+          <GlassCard className="p-5 space-y-3">
+            <span className="text-xs font-bold text-slate-800 block">Glass System Presets</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2.5">
+              {Object.keys(GLASS_PRESETS).map((key) => {
+                const isSel = customization.presetName === key;
+                return (
+                  <button
+                    key={key}
+                    onClick={() => applyPreset(key)}
+                    style={{
+                      backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
+                      borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
+                    }}
+                    className={`p-3 rounded-2xl border text-xs font-semibold capitalize cursor-pointer transition-all ${
+                      isSel 
+                        ? 'text-white shadow-md scale-[1.02]' 
+                        : 'bg-white/60 text-slate-700 hover:bg-white border-slate-200'
+                    }`}
+                  >
+                    {key.replace('-', ' ')}
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* Theme Mode */}
+          <GlassCard className="p-5 space-y-3">
+            <span className="text-xs font-bold text-slate-800 block">Theme Palette</span>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+              {themeModes.map((tm) => {
+                const isSel = customization.themeMode === tm.id;
+                return (
+                  <button
+                    key={tm.id}
+                    onClick={() => updateCustomization({ themeMode: tm.id })}
+                    style={{
+                      backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
+                      borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
+                    }}
+                    className={`p-3 rounded-2xl border text-xs font-semibold cursor-pointer transition-all ${
+                      isSel
+                        ? 'text-white shadow-md' 
+                        : 'bg-white/60 text-slate-700 hover:bg-white border-slate-200'
+                    }`}
+                  >
+                    {tm.label}
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* Glass Engine Sliders */}
+          <GlassCard className="p-5 space-y-5">
+            <span className="text-xs font-bold text-slate-800 block">Liquid Glass Engine Controls</span>
+            
+            <GlassSlider 
+              label="Glass Blur Intensity" 
+              value={customization.blurIntensity} 
+              min={0} 
+              max={40} 
+              unit="px"
+              onChange={setBlurIntensity}
+            />
+
+            <GlassSlider 
+              label="Corner Radius Presets & Manual Slider" 
+              value={customization.cornerRadius} 
+              min={0} 
+              max={32} 
+              unit="px"
+              onChange={setCornerRadius}
+            />
+
+            <GlassSlider 
+              label="Glass Refraction & Depth" 
+              value={customization.glassDepth || 40} 
+              min={0} 
+              max={100} 
+              unit="%"
+              onChange={(val) => updateCustomization({ glassDepth: val })}
+            />
+          </GlassCard>
+
+          {/* Accent Color System */}
+          <GlassCard className="p-5 space-y-3">
+            <span className="text-xs font-bold text-slate-800 block">Accent Color System</span>
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
+              {accentList.map((acc) => {
+                const conf = ACCENT_COLOR_CONFIG[acc];
+                const isSel = customization.accentColor === acc;
+                return (
+                  <button
+                    key={acc}
+                    onClick={() => setAccentColor(acc)}
+                    style={{ backgroundColor: conf.primary }}
+                    className={`h-12 rounded-2xl border-2 flex items-center justify-center text-white cursor-pointer transition-transform ${
+                      isSel ? 'border-slate-900 scale-105 shadow-lg' : 'border-white/80 opacity-90 hover:opacity-100'
+                    }`}
+                  >
+                    {isSel && <Check size={18} className="drop-shadow" />}
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* Stories Layout Preference */}
+          <GlassCard className="p-4 space-y-2.5">
+            <span className="text-xs font-bold text-slate-800 dark:text-white block">Explore Stories Layout</span>
+            <div className="grid grid-cols-3 gap-2">
+              {[
+                { id: 'horizontal', label: 'Horizontal' },
+                { id: 'vertical', label: 'Vertical' },
+                { id: 'grid', label: 'Grid' }
+              ].map((ly) => {
+                const isSel = customization.storiesLayout === ly.id;
+                return (
+                  <button
+                    key={ly.id}
+                    onClick={() => updateCustomization({ storiesLayout: ly.id as StoriesLayout })}
+                    style={{
+                      backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
+                      borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
+                    }}
+                    className={`p-2.5 rounded-xl border text-xs font-semibold cursor-pointer transition-all ${
+                      isSel 
+                        ? 'text-white shadow-md' 
+                        : 'bg-white/60 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 hover:bg-white border-slate-200 dark:border-white/10'
+                    }`}
+                  >
+                    {ly.label}
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {/* Wallpapers */}
+          <GlassCard className="p-4 space-y-2.5">
+            <span className="text-xs font-bold text-slate-800 dark:text-white block">Chat Viewport Wallpaper</span>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {wallpapers.map((wp) => {
+                const isSel = customization.chatWallpaper === wp;
+                return (
+                  <button
+                    key={wp}
+                    onClick={() => setWallpaper(wp)}
+                    style={{
+                      backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
+                      borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
+                    }}
+                    className={`p-2.5 rounded-xl border text-xs font-semibold capitalize cursor-pointer transition-all ${
+                      isSel 
+                        ? 'text-white shadow-md' 
+                        : 'bg-white/60 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 hover:bg-white border-slate-200 dark:border-white/10'
+                    }`}
+                  >
+                    {wp.replace('-', ' ')}
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+        </div>
+      )}
+
+      {/* Tab 2: Personal Information */}
+      {subTab === 'PERSONAL' && (
+        <GlassCard className="p-5 space-y-4">
+          <span className="text-xs font-bold text-slate-800 block">Personal Information</span>
+
+          <form onSubmit={handleSaveProfile} className="space-y-4">
+            <div className="space-y-2">
+              <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Profile Banner</label>
+              <div className="h-24 w-full rounded-2xl bg-slate-100 relative overflow-hidden border border-slate-200 flex items-center justify-center">
+                {currentUser.bannerUrl ? (
+                  <img src={currentUser.bannerUrl} alt="banner" className="w-full h-full object-cover" />
+                ) : (
+                  <span className="text-xs text-slate-400 font-medium">Default Banner</span>
+                )}
+                <label className="absolute bottom-2 right-2 bg-slate-900/80 text-white p-1.5 rounded-xl text-xs cursor-pointer hover:bg-slate-900">
+                  <Upload size={14} />
+                  <input type="file" accept="image/*" onChange={(e) => handleImageUpload(e, true)} className="hidden" />
+                </label>
+              </div>
+            </div>
+
+            <GlassInput 
+              label="Display Name"
+              value={displayName}
+              onChange={(e) => setDisplayName(e.target.value)}
+            />
+
+            <GlassInput 
+              label="Reserved @handle"
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+            />
+
+            <GlassInput 
+              label="Custom Status Message"
+              value={statusMessage}
+              onChange={(e) => setStatusMessage(e.target.value)}
+            />
+
+            <div className="space-y-1">
+              <label className="text-[11px] font-semibold text-slate-500 uppercase px-1">Bio</label>
+              <textarea 
+                value={bio}
+                onChange={(e) => setBio(e.target.value)}
+                rows={3}
+                className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none"
+              />
+            </div>
+
+            {saveSuccess && (
+              <div className="p-2.5 bg-emerald-50 text-emerald-700 text-xs rounded-xl font-medium">
+                Profile changes saved!
+              </div>
+            )}
+
+            <GlassButton type="submit" variant="primary" className="py-2.5 px-5 text-xs">
+              Save Changes
+            </GlassButton>
+          </form>
+        </GlassCard>
+      )}
+
+      {/* Tab 3: Privacy Controls */}
+      {subTab === 'PRIVACY' && (
+        <div className="space-y-4">
+          <GlassCard className="p-5 space-y-4">
+            <span className="text-xs font-bold text-slate-800 block">Stay in control</span>
+
+            <div className="space-y-3 text-xs">
+              <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+                <div>
+                  <span className="font-bold text-slate-800 block">Read Receipts</span>
+                  <span className="text-[10px] text-slate-500">Allow contacts to see when you have read messages</span>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={currentUser.settings.privacy.readReceipts}
+                  onChange={(e) => updatePrivacy({ readReceipts: e.target.checked })}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+                <div>
+                  <span className="font-bold text-slate-800 block">Hide Online Presence</span>
+                  <span className="text-[10px] text-slate-500">Do not display online status indicator</span>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={currentUser.settings.privacy.hideOnline}
+                  onChange={(e) => updatePrivacy({ hideOnline: e.target.checked })}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+                <div>
+                  <span className="font-bold text-slate-800 block">Typing Indicator</span>
+                  <span className="text-[10px] text-slate-500">Show typing status while composing</span>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={currentUser.settings.privacy.typingIndicator ?? true}
+                  onChange={(e) => updatePrivacy({ typingIndicator: e.target.checked })}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+
+              <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+                <div>
+                  <span className="font-bold text-slate-800 block">Link Preview</span>
+                  <span className="text-[10px] text-slate-500">Generate rich preview cards for URLs</span>
+                </div>
+                <input 
+                  type="checkbox" 
+                  checked={currentUser.settings.privacy.linkPreview ?? true}
+                  onChange={(e) => updatePrivacy({ linkPreview: e.target.checked })}
+                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                />
+              </label>
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Tab: Permissions & Devices Access */}
+      {subTab === 'PERMISSIONS' && (
+        <PermissionsView />
+      )}
+
+      {/* Tab 4: Notifications */}
+      {subTab === 'NOTIFICATIONS' && (
+        <GlassCard className="p-5 space-y-4">
+          <span className="text-xs font-bold text-slate-800 block">Notifications & Alerts</span>
+
+          <div className="space-y-3 text-xs">
+            <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">Direct Messages</span>
+                <span className="text-[10px] text-slate-500">Receive alerts for personal messages</span>
+              </div>
+              <input 
+                type="checkbox" 
+                defaultChecked={true}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+              />
+            </label>
+
+            <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
+              <div>
+                <span className="font-bold text-slate-800 block">Group Mentions</span>
+                <span className="text-[10px] text-slate-500">Receive alerts when mentioned in groups</span>
+              </div>
+              <input 
+                type="checkbox" 
+                defaultChecked={true}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+              />
+            </label>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* Tab 5: Storage & Devices */}
+      {subTab === 'STORAGE' && (
+        <div className="space-y-4">
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <span className="text-xs font-bold text-slate-800 block">Relay Intelligent Cache System</span>
+                <span className="text-[10px] text-slate-400 font-mono">Memory + Disk + Offline Queue</span>
+              </div>
+              <GlassButton 
+                onClick={() => {
+                  relayCacheManager.clearCategory('all');
+                  setCacheCleared(true);
+                  setTimeout(() => setCacheCleared(false), 2000);
+                }} 
+                variant="secondary" 
+                className="py-1.5 px-3 text-xs font-bold"
+              >
+                {cacheCleared ? 'Cache Cleared!' : 'Purge All Caches'}
+              </GlassButton>
+            </div>
+
+            {/* Cache Category Breakdown */}
+            <div className="space-y-2 pt-2 border-t border-slate-200/60">
+              {[
+                { cat: 'messages' as const, name: 'Conversations & Messages', size: '2.4 MB' },
+                { cat: 'media' as const, name: 'Media Attachments & Avatars', size: '14.8 MB' },
+                { cat: 'profiles' as const, name: 'User Profiles & Presence', size: '0.8 MB' },
+                { cat: 'communities' as const, name: 'Community Channels & Feeds', size: '3.1 MB' },
+                { cat: 'search' as const, name: 'Search Index & Drafts', size: '0.5 MB' }
+              ].map((c) => (
+                <div key={c.cat} className="p-3 bg-white/70 rounded-xl border border-white flex items-center justify-between text-xs">
+                  <div>
+                    <span className="font-bold text-slate-800 block">{c.name}</span>
+                    <span className="text-[10px] text-slate-400 font-mono">Size: {c.size}</span>
+                  </div>
+                  <button 
+                    onClick={() => {
+                      relayCacheManager.clearCategory(c.cat);
+                      setCacheCleared(true);
+                      setTimeout(() => setCacheCleared(false), 1500);
+                    }}
+                    className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-lg text-[10px] font-bold transition-all"
+                  >
+                    Clear Category
+                  </button>
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-xs font-bold text-slate-800">
+                <ShieldCheck size={18} className="text-emerald-500" />
+                <span>Protected Active Sessions</span>
+              </div>
+              <GlassButton onClick={revokeAllOtherSessions} variant="danger" className="py-1.5 px-3 text-xs">
+                Revoke All Other Devices
+              </GlassButton>
+            </div>
+
+            <div className="space-y-3">
+              {currentUser.settings.security.activeSessions.map((sess) => (
+                <div key={sess.id} className="p-3.5 bg-white/80 rounded-2xl border border-white flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <h4 className="text-xs font-bold text-slate-800 truncate">{sess.device}</h4>
+                      {sess.isCurrent && (
+                        <span className="bg-emerald-100 text-emerald-700 text-[9px] font-mono px-2 py-0.5 rounded-full font-bold">
+                          Current Device
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[10px] text-slate-400 font-mono">{sess.location} • {sess.ip}</span>
+                  </div>
+
+                  {!sess.isCurrent && (
+                    <GlassButton onClick={() => revokeSession(sess.id)} variant="danger" className="py-1.5 px-3 text-xs">
+                      Revoke
+                    </GlassButton>
+                  )}
+                </div>
+              ))}
+            </div>
+          </GlassCard>
+        </div>
+      )}
+
+      {/* Tab 6: Help & About */}
+      {subTab === 'HELP' && (
+        <GlassCard className="p-5 space-y-4">
+          <span className="text-xs font-bold text-slate-800 block">About RELAY</span>
+          <div className="space-y-2 text-xs text-slate-600">
+            <p className="font-semibold text-slate-800">RELAY v0.5.2 Liquid Glass Engine</p>
+            <p>Glass Line Studio Production Build.</p>
+            <p className="text-[11px] text-slate-500">A fluid, customizable real-time communication platform built with custom glass depth, refraction rendering, and edge glow acoustics.</p>
+          </div>
+        </GlassCard>
+      )}
+
+      {/* DANGER ZONE: Delete Account */}
+      <div className="pt-8 border-t border-slate-200/80">
+        <GlassCard className="p-5 border-red-200/80 bg-red-50/40 space-y-3">
+          <div className="flex items-center justify-between">
+            <div>
+              <h4 className="text-xs font-bold text-red-700">Delete Account Queue</h4>
+              <p className="text-[11px] text-red-600/80">Queue permanent account deletion with 10s cancellation grace period.</p>
+            </div>
+            <GlassButton onClick={() => setShowDeleteModal(true)} variant="danger" className="py-2 px-4 text-xs">
+              Queue Account Deletion
+            </GlassButton>
+          </div>
+        </GlassCard>
+      </div>
+
+      {/* Queued Account Deletion Modal */}
+      {showDeleteModal && (
+        <DeleteAccountModal 
+          onClose={() => setShowDeleteModal(false)}
+          onConfirmDelete={logout}
+        />
+      )}
+
+    </div>
+  );
+};
+
+const DeleteAccountModal: React.FC<{ onClose: () => void; onConfirmDelete: () => void }> = ({ onClose, onConfirmDelete }) => {
+  const [countdown, setCountdown] = useState<number | null>(null);
+
+  useEffect(() => {
+    if (countdown === null) return;
+    if (countdown <= 0) {
+      onConfirmDelete();
+      return;
+    }
+    const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
+    return () => clearTimeout(timer);
+  }, [countdown, onConfirmDelete]);
+
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
+      <GlassCard heavy className="max-w-md w-full p-6 space-y-4 text-left border-red-300">
+        <div className="flex items-center gap-3 text-red-600">
+          <AlertTriangle size={24} />
+          <h3 className="text-base font-bold text-slate-800">Queue Permanent Account Deletion</h3>
+        </div>
+
+        {countdown === null ? (
+          <>
+            <p className="text-xs text-slate-600 leading-relaxed">
+              This action will queue your account for permanent deletion. Once initiated, a 10-second countdown will start during which you may cancel the operation.
+            </p>
+            <div className="flex items-center justify-end gap-2 pt-2">
+              <GlassButton onClick={onClose} variant="secondary" className="py-2 px-4 text-xs">
+                Cancel
+              </GlassButton>
+              <GlassButton onClick={() => setCountdown(10)} variant="danger" className="py-2 px-4 text-xs font-bold">
+                Start Deletion Queue
+              </GlassButton>
+            </div>
+          </>
+        ) : (
+          <div className="text-center py-4 space-y-4">
+            <div className="w-20 h-20 mx-auto rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center">
+              <span className="text-3xl font-extrabold text-red-600 font-mono">{countdown}s</span>
+            </div>
+            <p className="text-xs text-red-600 font-medium">
+              Deleting account in {countdown} seconds... Background deletion job scheduled.
+            </p>
+            <GlassButton onClick={onClose} variant="secondary" className="w-full py-2.5 text-xs font-bold">
+              Cancel Deletion & Keep Account
+            </GlassButton>
+          </div>
+        )}
+      </GlassCard>
+    </div>
+  );
+};
