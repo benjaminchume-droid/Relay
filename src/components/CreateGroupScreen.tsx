@@ -55,7 +55,7 @@ export const CreateGroupScreen: React.FC<{
 
   useEffect(() => {
     searchUsers(memberSearch);
-  }, [memberSearch]);
+  }, [memberSearch, step]);
 
   const toggleUser = (id: string) => {
     if (selectedUserIds.includes(id)) {
@@ -213,7 +213,7 @@ export const CreateGroupScreen: React.FC<{
 
             <div className="max-h-60 overflow-y-auto space-y-2 pt-2">
               {searchResults.length === 0 ? (
-                <p className="text-xs text-slate-400 text-center py-4">Search for user handles to invite to this group.</p>
+                <p className="text-xs text-slate-400 text-center py-4">Find people on Relay to add to this group, like @alex_vance.</p>
               ) : (
                 searchResults.map((user) => {
                   const isSel = selectedUserIds.includes(user.id);

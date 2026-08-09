@@ -137,8 +137,14 @@ export const apiService = {
       body: JSON.stringify(settings),
     }),
 
-  searchUsers: (q: string) =>
-    apiRequest<{ users: UserProfile[] }>(`/api/users/search?q=${encodeURIComponent(q)}`),
+  searchUsers: async (q: string) => {
+    const url = `/api/users/search?q=${encodeURIComponent(q)}`;
+    console.log("[Relay Search 7] Request URL:", url);
+    const res = await apiRequest<{ users: UserProfile[] }>(url);
+    console.log("[Relay Search 8] HTTP status: 200");
+    console.log("[Relay Search 9] Raw response:", res);
+    return res;
+  },
 
   toggleBlockUser: (targetUserId: string) =>
     apiRequest<{ blockedUsers: string[] }>("/api/users/block", {

@@ -1,0 +1,8 @@
+{
+	"appId": "com.glassline.relay",
+	"appName": "Relay",
+	"webDir": "dist",
+	"server": {
+		"androidScheme": "https"
+	}
+}

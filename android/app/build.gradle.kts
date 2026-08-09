@@ -24,8 +24,8 @@ android {
         applicationId = "com.glassline.relay"
         minSdk = 26
         targetSdk = 34
-        versionCode = 52
-        versionName = "0.5.2"
+        versionCode = 522
+        versionName = "0.5.2.2"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
@@ -114,16 +114,10 @@ android {
 }
 
 dependencies {
+    implementation(project(":capacitor-android"))
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
-    implementation(libs.androidx.activity.compose)
-    implementation(platform(libs.androidx.compose.bom))
-    implementation(libs.androidx.ui)
-    implementation(libs.androidx.ui.graphics)
-    implementation(libs.androidx.ui.tooling.preview)
-    implementation(libs.androidx.material3)
-    implementation(libs.androidx.material.icons.extended)
-    implementation(libs.androidx.navigation.compose)
+    implementation("androidx.appcompat:appcompat:1.6.1")
+    implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation(libs.kotlinx.coroutines.android)
-    debugImplementation(libs.androidx.ui.tooling)
 }

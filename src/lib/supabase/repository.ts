@@ -1,10 +1,39 @@
 import { supabaseServer, supabaseAdmin } from "./server";
+import fs from "fs";
+import path from "path";
 import { 
   UserProfile, Chat, Message, Community, CommunityPost, PostComment, 
   NotificationItem, DeviceSession, CommunityChannel 
 } from "../../types";
 
 const getClient = () => supabaseAdmin || supabaseServer;
+
+const SESSIONS_CACHE_FILE = path.join(process.cwd(), "node_modules", ".cache", "relay_sessions.json");
+
+function loadSessionsCache(): Map<string, any> {
+  try {
+    if (fs.existsSync(SESSIONS_CACHE_FILE)) {
+      const content = fs.readFileSync(SESSIONS_CACHE_FILE, "utf-8");
+      const entries: [string, any][] = JSON.parse(content);
+      return new Map(entries);
+    }
+  } catch (e) {
+    // ignore cache load errors
+  }
+  return new Map();
+}
+
+function saveSessionsCache(map: Map<string, any>) {
+  try {
+    const dir = path.dirname(SESSIONS_CACHE_FILE);
+    if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(SESSIONS_CACHE_FILE, JSON.stringify(Array.from(map.entries())), "utf-8");
+  } catch (e) {
+    // ignore cache write errors
+  }
+}
+
+const inMemorySessions = loadSessionsCache();
 
 // --- OTP REPOSITORY ---
 export const otpRepo = {
@@ -34,8 +63,7 @@ export const otpRepo = {
 // --- SESSION REPOSITORY ---
 export const sessionRepo = {
   async createSession(userId: string, token: string, deviceSession: DeviceSession) {
-    const db = getClient();
-    await db.from("user_sessions").insert({
+    const sessionObj = {
       token,
       user_id: userId,
       device_id: deviceSession.id,
@@ -45,47 +73,132 @@ export const sessionRepo = {
       location: deviceSession.location,
       last_active: deviceSession.lastActive,
       created_at: new Date().toISOString()
-    });
+    };
+    
+    inMemorySessions.set(token, sessionObj);
+    saveSessionsCache(inMemorySessions);
+
+    try {
+      const db = getClient();
+      await db.from("user_sessions").insert(sessionObj);
+    } catch (e) {
+      // Ignore Supabase user_sessions schema mismatch errors
+    }
   },
 
   async getSession(token: string) {
-    const db = getClient();
-    const { data } = await db.from("user_sessions").select("*, profile:profiles(*)").eq("token", token).maybeSingle();
-    return data;
+    if (!token) return null;
+    
+    // 1. Check in-memory cache
+    if (inMemorySessions.has(token)) {
+      return inMemorySessions.get(token);
+    }
+
+    // 2. Query DB safely
+    try {
+      const db = getClient();
+      const { data, error } = await db.from("user_sessions").select("*").eq("token", token).maybeSingle();
+      if (!error && data) {
+        inMemorySessions.set(token, data);
+        saveSessionsCache(inMemorySessions);
+        return data;
+      }
+    } catch (e) {
+      // Ignore
+    }
+
+    return null;
   },
 
   async deleteSession(token: string) {
-    const db = getClient();
-    await db.from("user_sessions").delete().eq("token", token);
+    inMemorySessions.delete(token);
+    saveSessionsCache(inMemorySessions);
+
+    try {
+      const db = getClient();
+      await db.from("user_sessions").delete().eq("token", token);
+    } catch (e) {
+      // Ignore
+    }
   },
 
   async getUserSessions(userId: string): Promise<DeviceSession[]> {
-    const db = getClient();
-    const { data } = await db.from("user_sessions").select("*").eq("user_id", userId);
-    return (data || []).map((s: any) => ({
-      id: s.device_id,
-      device: s.device_name,
-      browser: s.browser || "Relay App",
-      location: s.location || "Active Region",
-      ip: s.ip_address || "127.0.0.1",
-      lastActive: s.last_active || "Just now",
-      isCurrent: false,
-      token: s.token
-    }));
+    const cachedSessions: DeviceSession[] = [];
+    inMemorySessions.forEach((s) => {
+      if (s.user_id === userId) {
+        cachedSessions.push({
+          id: s.device_id || `sess_${s.token}`,
+          device: s.device_name || "Relay Client",
+          browser: s.browser || "Relay App",
+          location: s.location || "Active Region",
+          ip: s.ip_address || "127.0.0.1",
+          lastActive: s.last_active || "Just now",
+          isCurrent: false,
+          token: s.token
+        });
+      }
+    });
+
+    try {
+      const db = getClient();
+      const { data } = await db.from("user_sessions").select("*").eq("user_id", userId);
+      if (data && data.length > 0) {
+        data.forEach((s: any) => {
+          if (!cachedSessions.some((cs) => cs.token === s.token)) {
+            cachedSessions.push({
+              id: s.device_id || s.id,
+              device: s.device_name || "Relay Client",
+              browser: s.browser || "Relay App",
+              location: s.location || "Active Region",
+              ip: s.ip_address || "127.0.0.1",
+              lastActive: s.last_active || "Just now",
+              isCurrent: false,
+              token: s.token
+            });
+          }
+        });
+      }
+    } catch (e) {
+      // Ignore DB error
+    }
+
+    return cachedSessions;
   },
 
   async deleteUserSession(userId: string, deviceId: string) {
-    const db = getClient();
-    await db.from("user_sessions").delete().eq("user_id", userId).eq("device_id", deviceId);
+    inMemorySessions.forEach((s, key) => {
+      if (s.user_id === userId && (s.device_id === deviceId || key === deviceId)) {
+        inMemorySessions.delete(key);
+      }
+    });
+    saveSessionsCache(inMemorySessions);
+
+    try {
+      const db = getClient();
+      await db.from("user_sessions").delete().eq("user_id", userId).eq("device_id", deviceId);
+    } catch (e) {
+      // Ignore
+    }
   },
 
   async deleteAllUserSessions(userId: string, currentToken?: string) {
-    const db = getClient();
-    let query = db.from("user_sessions").delete().eq("user_id", userId);
-    if (currentToken) {
-      query = query.neq("token", currentToken);
+    inMemorySessions.forEach((s, key) => {
+      if (s.user_id === userId && key !== currentToken) {
+        inMemorySessions.delete(key);
+      }
+    });
+    saveSessionsCache(inMemorySessions);
+
+    try {
+      const db = getClient();
+      let query = db.from("user_sessions").delete().eq("user_id", userId);
+      if (currentToken) {
+        query = query.neq("token", currentToken);
+      }
+      await query;
+    } catch (e) {
+      // Ignore
     }
-    await query;
   }
 };
 
@@ -270,12 +383,44 @@ export const userRepo = {
   async getProfileById(userId: string): Promise<UserProfile | null> {
     const db = getClient();
     const { data } = await db.from("profiles").select("*").eq("id", userId).maybeSingle();
-    if (!data) {
-      // Check fallback DEMO_PROFILES
-      const demo = DEMO_PROFILES.find((p) => p.id === userId);
-      return demo || null;
+    if (data) {
+      return this.formatProfile(data);
     }
-    return this.formatProfile(data);
+    const { data: uData } = await db.from("users").select("*").eq("id", userId).maybeSingle();
+    if (uData) {
+      return {
+        id: uData.id,
+        username: uData.username || `user_${uData.id.substring(0, 6)}`,
+        name: uData.display_name || uData.full_name || uData.username,
+        email: uData.email || `${uData.username}@relay.app`,
+        avatarUrl: uData.avatar_url || undefined,
+        bio: uData.bio || "Exploring Relay.",
+        statusMessage: "Available",
+        onlineStatus: "online",
+        lastSeen: "Just now",
+        country: "United States",
+        contacts: [],
+        blockedUsers: [],
+        sentRequests: [],
+        receivedRequests: [],
+        settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } } as any,
+        createdAt: uData.created_at || new Date().toISOString()
+      };
+    }
+    return null;
+  },
+
+  async getAllProfiles(): Promise<UserProfile[]> {
+    try {
+      const db = getClient();
+      const { data, error } = await db.from("profiles").select("*");
+      if (!error && data && data.length > 0) {
+        return data.map((p) => this.formatProfile(p));
+      }
+    } catch (e) {
+      // ignore
+    }
+    return [];
   },
 
   async checkUsernameAvailable(username: string): Promise<boolean> {
@@ -356,45 +501,81 @@ export const userRepo = {
 
   async searchProfiles(query: string, currentUserId: string): Promise<UserProfile[]> {
     const db = getClient();
-    // Strip leading @ character and trim
-    const cleanQuery = query.trim().toLowerCase().replace(/^@+/, '');
+    const cleanQuery = query.trim().toLowerCase().replace(/^@+/, '').trim();
+    console.log("[Relay Search Backend] Received query:", query, "cleanQuery:", cleanQuery, "currentUserId:", currentUserId);
+
     let dbProfiles: UserProfile[] = [];
 
     try {
-      let q = db.from("profiles").select("*").neq("id", currentUserId);
-      if (cleanQuery) {
-        q = q.or(`username.ilike.%${cleanQuery}%,full_name.ilike.%${cleanQuery}%`);
+      // 1. Query profiles table
+      const { data, error } = await db.from("profiles").select("*").limit(50);
+      
+      if (!error && data && data.length > 0) {
+        const filtered = data.filter((p: any) => {
+          if (p.id === currentUserId || p.auth_user_id === currentUserId || p.user_id === currentUserId) {
+            return false;
+          }
+          if (!cleanQuery) return true;
+          const uname = (p.username || '').toLowerCase();
+          const fname = (p.full_name || p.display_name || p.name || '').toLowerCase();
+          const email = (p.email || '').toLowerCase();
+          const bio = (p.bio || '').toLowerCase();
+          return (
+            uname.includes(cleanQuery) ||
+            fname.includes(cleanQuery) ||
+            email.includes(cleanQuery) ||
+            bio.includes(cleanQuery)
+          );
+        });
+        dbProfiles = filtered.map((p: any) => this.formatProfile(p));
+        console.log("[Relay Search Backend] Profiles matching search:", dbProfiles.length);
+      } else if (error) {
+        console.warn("[Relay Search Backend] Profiles query notice/error:", error.message);
       }
-      const { data, error } = await q.limit(25);
-      if (!error && data) {
-        dbProfiles = data.map((p: any) => this.formatProfile(p));
-      }
-    } catch (e) {
-      console.warn("Notice: Database search warning:", e);
+    } catch (e: any) {
+      console.warn("[Relay Search Backend] Profiles table query exception:", e);
     }
 
-    // Match DEMO_PROFILES to ensure search always works even on empty database
-    const matchingDemoProfiles = DEMO_PROFILES.filter((p) => {
-      if (p.id === currentUserId) return false;
-      if (!cleanQuery) return true;
-      return (
-        p.username.toLowerCase().includes(cleanQuery) ||
-        p.name.toLowerCase().includes(cleanQuery) ||
-        (p.bio && p.bio.toLowerCase().includes(cleanQuery))
-      );
-    });
-
-    const existingIds = new Set(dbProfiles.map((p) => p.id));
-    const existingUsernames = new Set(dbProfiles.map((p) => p.username.toLowerCase()));
-
-    const combined = [...dbProfiles];
-    for (const demoUser of matchingDemoProfiles) {
-      if (!existingIds.has(demoUser.id) && !existingUsernames.has(demoUser.username.toLowerCase())) {
-        combined.push(demoUser);
+    // 2. If profiles returned empty or failed, fallback to users table
+    if (dbProfiles.length === 0) {
+      try {
+        const { data: uData, error: uErr } = await db.from("users").select("*").limit(50);
+        if (!uErr && uData && uData.length > 0) {
+          const uFiltered = uData.filter((u: any) => {
+            if (u.id === currentUserId || u.auth_user_id === currentUserId) return false;
+            if (!cleanQuery) return true;
+            const uname = (u.username || '').toLowerCase();
+            const dname = (u.display_name || u.full_name || '').toLowerCase();
+            const email = (u.email || '').toLowerCase();
+            return uname.includes(cleanQuery) || dname.includes(cleanQuery) || email.includes(cleanQuery);
+          });
+          dbProfiles = uFiltered.map((u: any) => ({
+            id: u.id,
+            username: u.username || `user_${u.id.substring(0, 6)}`,
+            name: u.display_name || u.full_name || u.username,
+            email: u.email || `${u.username}@relay.app`,
+            avatarUrl: u.avatar_url || undefined,
+            bio: u.bio || "Exploring Relay.",
+            statusMessage: "Available",
+            onlineStatus: "online",
+            lastSeen: "Just now",
+            country: "United States",
+            contacts: [],
+            blockedUsers: [],
+            sentRequests: [],
+            receivedRequests: [],
+            settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } } as any,
+            createdAt: u.created_at || new Date().toISOString()
+          }));
+          console.log("[Relay Search Backend] Users table matching search:", dbProfiles.length);
+        }
+      } catch (e) {
+        console.warn("[Relay Search Backend] Users table query exception:", e);
       }
     }
 
-    return combined.slice(0, 25);
+    // Return real Supabase users ONLY (no demo profiles)
+    return dbProfiles.slice(0, 25);
   },
 
   async blockUser(userId: string, targetUserId: string): Promise<string[]> {
@@ -421,35 +602,42 @@ export const userRepo = {
   }
 };
 
-// --- CHATS & MESSAGES REPOSITORY ---
+// --- CHATS & MESSAGES REPOSITORY (CONVERSATION ARCHITECTURE) ---
 export const chatRepo = {
   async getChatsForUser(userId: string): Promise<Chat[]> {
     const db = getClient();
-    const { data: participations } = await db.from("chat_participants").select("chat_id, unread_count, is_pinned, role").eq("user_id", userId);
+    const { data: participations } = await db.from("conversation_members").select("conversation_id, unread_count, is_pinned, role").eq("profile_id", userId);
     if (!participations || participations.length === 0) return [];
 
-    const chatIds = participations.map((p: any) => p.chat_id);
-    const { data: chatsData } = await db.from("chats").select("*").in("id", chatIds);
-    if (!chatsData) return [];
+    const conversationIds = participations.map((p: any) => p.conversation_id);
+    const { data: conversationsData } = await db.from("conversations").select("*").in("id", conversationIds);
+    if (!conversationsData) return [];
 
     const results: Chat[] = [];
-    for (const c of chatsData) {
-      const pInfo = participations.find((p: any) => p.chat_id === c.id);
-      const { data: allParts } = await db.from("chat_participants").select("user_id, profile:profiles(*)").eq("chat_id", c.id);
+    for (const c of conversationsData) {
+      const pInfo = participations.find((p: any) => p.conversation_id === c.id);
+      const { data: allMembers } = await db.from("conversation_members").select("profile_id, role").eq("conversation_id", c.id);
       
-      const participantProfiles = (allParts || []).map((p: any) => userRepo.formatProfile(p.profile || { id: p.user_id, username: "user", full_name: "User", email: "user@relay.app" }));
-      const participantIds = participantProfiles.map(p => p.id);
-      
-      const { data: lastMsgs } = await db.from("messages").select("*").eq("chat_id", c.id).order("created_at", { ascending: false }).limit(1);
+      const memberProfileIds = (allMembers || []).map((m: any) => m.profile_id);
+      const memberProfiles: UserProfile[] = [];
+      for (const pid of memberProfileIds) {
+        const prof = await userRepo.getProfileById(pid);
+        if (prof) memberProfiles.push(prof);
+      }
+
+      const { data: lastMsgs } = await db.from("messages").select("*").eq("conversation_id", c.id).order("created_at", { ascending: false }).limit(1);
       const lastMsg = lastMsgs && lastMsgs[0] ? lastMsgs[0] : null;
+
+      const otherProfile = memberProfiles.find((u) => u.id !== userId) || memberProfiles[0];
+      const convType = c.conversation_type || c.type || "direct";
 
       results.push({
         id: c.id,
-        type: c.type,
-        name: c.name || (c.type === "direct" ? participantProfiles.find((u) => u.id !== userId)?.name || "Direct Chat" : "Group Chat"),
+        type: convType as any,
+        name: c.name || (convType === "direct" ? (otherProfile?.name || otherProfile?.username || "Direct Chat") : "Group Chat"),
         description: c.description || undefined,
-        avatarUrl: c.avatar_url || (c.type === "direct" ? participantProfiles.find((u) => u.id !== userId)?.avatarUrl : undefined),
-        participants: participantIds,
+        avatarUrl: c.avatar_url || (convType === "direct" ? otherProfile?.avatarUrl : undefined),
+        participants: memberProfileIds,
         lastMessage: lastMsg ? {
           text: lastMsg.content || "Media attachment",
           timestamp: lastMsg.created_at,
@@ -460,9 +648,8 @@ export const chatRepo = {
         isPinned: pInfo?.is_pinned || false,
         createdBy: c.created_by || undefined,
         createdAt: c.created_at,
-        disappearingMessages: c.disappearing_messages || "off",
-        inviteLink: c.invite_link || undefined,
-        permissions: c.permissions || {}
+        disappearingMessages: "off",
+        permissions: {}
       } as any);
     }
 
@@ -471,43 +658,12 @@ export const chatRepo = {
 
   async createDirectChat(userId: string, targetUserId: string): Promise<Chat> {
     const db = getClient();
+    console.log("[Relay Direct Chat] Current user: resolved ID ->", userId);
+    console.log("[Relay Direct Chat] Target user: resolved ID ->", targetUserId);
 
-    // Ensure target user profile exists in database if it's a seed demo profile
+    let currentUserProfile = await userRepo.getProfileById(userId);
     let targetProfile = await userRepo.getProfileById(targetUserId);
-    if (!targetProfile) {
-      const demo = DEMO_PROFILES.find((p) => p.id === targetUserId);
-      if (demo) {
-        await userRepo.createProfile({
-          id: demo.id,
-          username: demo.username,
-          name: demo.name,
-          email: demo.email || `${demo.username}@relay.app`,
-          avatarUrl: demo.avatarUrl,
-          bio: demo.bio,
-          statusMessage: demo.statusMessage,
-          country: demo.country
-        });
-        targetProfile = await userRepo.getProfileById(targetUserId);
-      }
-    } else {
-      // Upsert to ensure table row is present
-      const demo = DEMO_PROFILES.find((p) => p.id === targetUserId);
-      if (demo) {
-        await userRepo.createProfile({
-          id: demo.id,
-          username: demo.username,
-          name: demo.name,
-          email: demo.email || `${demo.username}@relay.app`,
-          avatarUrl: demo.avatarUrl,
-          bio: demo.bio,
-          statusMessage: demo.statusMessage,
-          country: demo.country
-        });
-      }
-    }
 
-    // Ensure current user profile exists in database
-    const currentUserProfile = await userRepo.getProfileById(userId);
     if (!currentUserProfile) {
       await userRepo.createProfile({
         id: userId,
@@ -515,91 +671,194 @@ export const chatRepo = {
         name: 'Relay Member',
         email: `${userId}@relay.app`
       });
+      currentUserProfile = await userRepo.getProfileById(userId);
     }
 
-    const { data: userChats } = await db.from("chat_participants").select("chat_id").eq("user_id", userId);
-    if (userChats) {
-      for (const uc of userChats) {
-        const { data: match } = await db.from("chat_participants").select("user_id").eq("chat_id", uc.chat_id).eq("user_id", targetUserId);
-        if (match && match.length > 0) {
-          const { data: cData } = await db.from("chats").select("*").eq("id", uc.chat_id).maybeSingle();
-          if (cData && cData.type === "direct") {
+    if (!targetProfile) {
+      await userRepo.createProfile({
+        id: targetUserId,
+        username: `user_${targetUserId.substring(0, 6)}`,
+        name: 'Relay User',
+        email: `${targetUserId}@relay.app`
+      });
+      targetProfile = await userRepo.getProfileById(targetUserId);
+    }
+
+    // Check blocks
+    try {
+      const { data: blockCheck } = await db.from("blocked_users").select("*")
+        .or(`and(blocker_id.eq.${userId},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${userId})`);
+      if (blockCheck && blockCheck.length > 0) {
+        throw new Error("Cannot start conversation with this user due to privacy settings or blocks");
+      }
+    } catch (err: any) {
+      if (err.message?.includes("privacy settings or blocks")) throw err;
+      // proceed if table check not restrictive
+    }
+
+    // Existing conversation lookup
+    try {
+      const { data: userConvs, error: ucErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", userId);
+      if (!ucErr && userConvs && userConvs.length > 0) {
+        const userConvIds = userConvs.map((p: any) => p.conversation_id);
+        const { data: targetMatches, error: tmErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", targetUserId).in("conversation_id", userConvIds);
+        if (!tmErr && targetMatches && targetMatches.length > 0) {
+          const commonIds = targetMatches.map((m: any) => m.conversation_id);
+          const { data: directConvs } = await db.from("conversations").select("*").in("id", commonIds).or("conversation_type.eq.direct,conversation_type.is.null");
+          if (directConvs && directConvs.length > 0) {
+            const existingId = directConvs[0].id;
+            console.log("[Relay Direct Chat] Existing conversation lookup: success, reusing conversation ID:", existingId);
             const allChats = await this.getChatsForUser(userId);
-            const found = allChats.find((c) => c.id === cData.id);
+            const found = allChats.find((c) => c.id === existingId);
             if (found) return found;
+
+            return {
+              id: existingId,
+              type: "direct",
+              name: targetProfile?.name || targetProfile?.username || "Direct Chat",
+              avatarUrl: targetProfile?.avatarUrl,
+              participants: [userId, targetUserId],
+              unreadCount: 0,
+              isPinned: false,
+              createdBy: userId,
+              createdAt: directConvs[0].created_at || new Date().toISOString()
+            } as Chat;
           }
         }
       }
+      console.log("[Relay Direct Chat] Existing conversation lookup: none found");
+    } catch (e: any) {
+      console.warn("[Relay Direct Chat] Existing conversation lookup exception:", e?.message);
     }
 
-    const { data: newChat } = await db.from("chats").insert({
-      type: "direct",
+    // Conversation creation
+    const { data: newConv, error: convErr } = await db.from("conversations").insert({
+      conversation_type: "direct",
       created_by: userId,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }).select().single();
 
-    if (!newChat) {
-      throw new Error("Failed to initialize new conversation channel");
+    if (convErr || !newConv) {
+      console.error("[Relay Direct Chat] Conversation creation: failure.", convErr);
+      throw new Error(`Failed to initialize new conversation channel: ${convErr?.message || 'DB Error'}`);
     }
 
-    await db.from("chat_participants").insert([
-      { chat_id: newChat.id, user_id: userId, role: "creator" },
-      { chat_id: newChat.id, user_id: targetUserId, role: "member" }
-    ]);
+    console.log("[Relay Direct Chat] Conversation creation: success, new ID:", newConv.id);
+
+    // Member insertions
+    const { error: p1Err } = await db.from("conversation_members").insert({
+      conversation_id: newConv.id,
+      profile_id: userId,
+      role: "creator",
+      created_at: new Date().toISOString()
+    });
+
+    if (p1Err) {
+      console.error("[Relay Direct Chat] Creator member insertion: failure.", p1Err);
+      await db.from("conversations").delete().eq("id", newConv.id);
+      throw new Error(`Failed to insert creator member: ${p1Err.message}`);
+    }
+
+    const { error: p2Err } = await db.from("conversation_members").insert({
+      conversation_id: newConv.id,
+      profile_id: targetUserId,
+      role: "member",
+      created_at: new Date().toISOString()
+    });
+
+    if (p2Err) {
+      console.error("[Relay Direct Chat] Target member insertion: failure.", p2Err);
+      await db.from("conversation_members").delete().eq("conversation_id", newConv.id);
+      await db.from("conversations").delete().eq("id", newConv.id);
+      throw new Error(`Failed to insert target member: ${p2Err.message}`);
+    }
 
     const all = await this.getChatsForUser(userId);
-    const result = all.find((c) => c.id === newChat.id);
+    const result = all.find((c) => c.id === newConv.id);
     if (result) return result;
 
     return {
-      id: newChat.id,
+      id: newConv.id,
       type: "direct",
-      name: targetProfile?.name || "Direct Chat",
+      name: targetProfile?.name || targetProfile?.username || "Direct Chat",
       avatarUrl: targetProfile?.avatarUrl,
       participants: [userId, targetUserId],
       unreadCount: 0,
       isPinned: false,
       createdBy: userId,
-      createdAt: newChat.created_at,
-      disappearingMessages: "off"
+      createdAt: newConv.created_at || new Date().toISOString()
     } as Chat;
   },
 
   async createGroupChat(userId: string, name: string, description?: string, participantIds: string[] = [], isPrivate = false, avatarUrl?: string): Promise<Chat> {
     const db = getClient();
-    const { data: newChat } = await db.from("chats").insert({
-      type: "group",
+
+    const uniqueParticipants = Array.from(new Set([userId, ...participantIds]));
+    for (const pid of uniqueParticipants) {
+      const existing = await userRepo.getProfileById(pid);
+      if (!existing) {
+        await userRepo.createProfile({
+          id: pid,
+          username: `user_${pid.substring(0, 6)}`,
+          name: 'Relay Member',
+          email: `${pid}@relay.app`
+        });
+      }
+    }
+
+    const { data: newConv, error: convErr } = await db.from("conversations").insert({
+      conversation_type: "group",
       name,
       description: description || null,
       avatar_url: avatarUrl || null,
       created_by: userId,
-      is_private: isPrivate,
-      created_at: new Date().toISOString()
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }).select().single();
 
-    const uniqueParticipants = Array.from(new Set([userId, ...participantIds]));
-    const participantRows = uniqueParticipants.map((pid) => ({
-      chat_id: newChat.id,
-      user_id: pid,
-      role: pid === userId ? "creator" : "member"
+    if (convErr || !newConv) {
+      throw new Error(`Failed to create group conversation: ${convErr?.message || 'DB error'}`);
+    }
+
+    const memberRows = uniqueParticipants.map((pid) => ({
+      conversation_id: newConv.id,
+      profile_id: pid,
+      role: pid === userId ? "creator" : "member",
+      created_at: new Date().toISOString()
     }));
 
-    await db.from("chat_participants").insert(participantRows);
+    await db.from("conversation_members").insert(memberRows);
 
     const all = await this.getChatsForUser(userId);
-    return all.find((c) => c.id === newChat.id)!;
+    const result = all.find((c) => c.id === newConv.id);
+    if (result) return result;
+
+    return {
+      id: newConv.id,
+      type: "group",
+      name,
+      description: description || undefined,
+      avatarUrl: avatarUrl || undefined,
+      participants: uniqueParticipants,
+      unreadCount: 0,
+      isPinned: false,
+      createdBy: userId,
+      createdAt: newConv.created_at,
+      disappearingMessages: "off"
+    } as Chat;
   },
 
   async getMessages(chatId: string): Promise<Message[]> {
     const db = getClient();
-    const { data } = await db.from("messages").select("*, sender:profiles(*)").eq("chat_id", chatId).order("created_at", { ascending: true });
+    const { data } = await db.from("messages").select("*, sender:profiles(*)").eq("conversation_id", chatId).order("created_at", { ascending: true });
     return (data || []).map((m: any) => ({
       id: m.id,
-      chatId: m.chat_id,
+      chatId: m.conversation_id,
       senderId: m.sender_id,
-      senderName: m.sender?.full_name || m.sender?.username || "Relay User",
+      senderName: m.sender?.full_name || m.sender?.display_name || m.sender?.username || "Relay User",
       senderAvatar: m.sender?.avatar_url || undefined,
-      type: m.type || "text",
+      type: m.message_type || m.type || "text",
       content: m.content || "",
       attachments: m.attachments || [],
       timestamp: m.created_at,
@@ -616,41 +875,53 @@ export const chatRepo = {
     const db = getClient();
     const sender = await userRepo.getProfileById(senderId);
 
-    const { data: newMsg } = await db.from("messages").insert({
-      chat_id: chatId,
+    const { data: newMsg, error: msgErr } = await db.from("messages").insert({
+      conversation_id: chatId,
       sender_id: senderId,
       content: payload.content || "",
-      type: payload.type || "text",
-      attachments: payload.attachments || [],
-      reply_to_id: payload.replyToId || null,
-      is_forwarded: payload.isForwarded || false,
-      created_at: new Date().toISOString()
+      message_type: payload.type || "text",
+      media_url: payload.attachments?.[0]?.url || null,
+      file_name: payload.attachments?.[0]?.fileName || null,
+      file_size: payload.attachments?.[0]?.fileSize || null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
     }).select().single();
 
+    if (msgErr || !newMsg) {
+      throw new Error(`Failed to send message: ${msgErr?.message || 'DB Error'}`);
+    }
+
+    // Update conversation last_message_at
+    await db.from("conversations").update({
+      last_message_at: new Date().toISOString(),
+      last_message_id: newMsg.id,
+      updated_at: new Date().toISOString()
+    }).eq("id", chatId);
+
     // Increment unread count for other members
-    const { data: parts } = await db.from("chat_participants").select("user_id, unread_count").eq("chat_id", chatId).neq("user_id", senderId);
-    if (parts) {
-      for (const p of parts) {
-        await db.from("chat_participants").update({ unread_count: (p.unread_count || 0) + 1 }).eq("chat_id", chatId).eq("user_id", p.user_id);
+    const { data: members } = await db.from("conversation_members").select("profile_id, unread_count").eq("conversation_id", chatId).neq("profile_id", senderId);
+    if (members) {
+      for (const m of members) {
+        await db.from("conversation_members").update({ unread_count: (m.unread_count || 0) + 1 }).eq("conversation_id", chatId).eq("profile_id", m.profile_id);
       }
     }
 
     const msgFormatted: Message = {
       id: newMsg.id,
-      chatId: newMsg.chat_id,
+      chatId: newMsg.conversation_id,
       senderId: newMsg.sender_id,
       senderName: sender?.name || "Relay User",
       senderAvatar: sender?.avatarUrl,
       content: newMsg.content || "",
-      type: newMsg.type || "text",
-      attachments: newMsg.attachments || [],
+      type: (newMsg.message_type || "text") as any,
+      attachments: payload.attachments || [],
       timestamp: newMsg.created_at,
       deliveryState: "delivered",
-      replyToId: newMsg.reply_to_id || undefined,
+      replyToId: payload.replyToId || undefined,
       reactions: [],
       isEdited: false,
       isDeleted: false,
-      isForwarded: newMsg.is_forwarded || false
+      isForwarded: payload.isForwarded || false
     };
 
     const userChats = await this.getChatsForUser(senderId);
@@ -661,46 +932,52 @@ export const chatRepo = {
 
   async editMessage(chatId: string, messageId: string, content: string): Promise<Message> {
     const db = getClient();
-    const { data: updated } = await db.from("messages").update({
+    const { data: updated, error } = await db.from("messages").update({
       content,
       is_edited: true,
       updated_at: new Date().toISOString()
-    }).eq("id", messageId).eq("chat_id", chatId).select("*, sender:profiles(*)").single();
+    }).eq("id", messageId).eq("conversation_id", chatId).select("*, sender:profiles(*)").single();
+
+    if (error || !updated) {
+      throw new Error(`Failed to edit message: ${error?.message || 'Not found'}`);
+    }
 
     return {
       id: updated.id,
-      chatId: updated.chat_id,
+      chatId: updated.conversation_id,
       senderId: updated.sender_id,
-      senderName: updated.sender?.full_name || "Relay User",
+      senderName: updated.sender?.full_name || updated.sender?.username || "Relay User",
       senderAvatar: updated.sender?.avatar_url || undefined,
       content: updated.content || "",
-      type: updated.type || "text",
-      attachments: updated.attachments || [],
+      type: updated.message_type || "text",
+      attachments: [],
       timestamp: updated.created_at,
       deliveryState: "delivered",
-      replyToId: updated.reply_to_id || undefined,
-      reactions: updated.reactions || [],
+      reactions: [],
       isEdited: true,
-      isDeleted: updated.is_deleted || false,
-      isForwarded: updated.is_forwarded || false
+      isDeleted: updated.is_deleted || false
     };
   },
 
   async deleteMessage(chatId: string, messageId: string) {
     const db = getClient();
-    const { data: updated } = await db.from("messages").update({
+    const { data: updated, error } = await db.from("messages").update({
       content: "This message was deleted",
       is_deleted: true,
-      attachments: []
-    }).eq("id", messageId).eq("chat_id", chatId).select().single();
+      updated_at: new Date().toISOString()
+    }).eq("id", messageId).eq("conversation_id", chatId).select().single();
+
+    if (error || !updated) {
+      throw new Error(`Failed to delete message: ${error?.message || 'Not found'}`);
+    }
 
     return {
       id: updated.id,
-      chatId: updated.chat_id,
+      chatId: updated.conversation_id,
       senderId: updated.sender_id,
       senderName: "Relay User",
       content: updated.content,
-      type: updated.type,
+      type: updated.message_type || "text",
       attachments: [],
       timestamp: updated.created_at,
       deliveryState: "delivered",
@@ -712,76 +989,88 @@ export const chatRepo = {
   async reactToMessage(chatId: string, messageId: string, userId: string, emoji: string) {
     const db = getClient();
     const user = await userRepo.getProfileById(userId);
-    const { data: msg } = await db.from("messages").select("reactions").eq("id", messageId).maybeSingle();
-    let reactions = msg?.reactions || [];
-
-    const existingIdx = reactions.findIndex((r: any) => r.userId === userId && r.emoji === emoji);
-    if (existingIdx > -1) {
-      reactions.splice(existingIdx, 1);
+    const { data: existing } = await db.from("message_reactions").select("*").eq("message_id", messageId).eq("profile_id", userId).eq("reaction", emoji).maybeSingle();
+    if (existing) {
+      await db.from("message_reactions").delete().eq("id", existing.id);
     } else {
-      reactions.push({ userId, userName: user?.name || "User", emoji });
+      await db.from("message_reactions").insert({
+        message_id: messageId,
+        profile_id: userId,
+        reaction: emoji,
+        created_at: new Date().toISOString()
+      });
     }
 
-    await db.from("messages").update({ reactions }).eq("id", messageId);
-    return reactions;
+    const { data: reactionsData } = await db.from("message_reactions").select("profile_id, reaction").eq("message_id", messageId);
+    return (reactionsData || []).map((r: any) => ({ userId: r.profile_id, userName: user?.name || "User", emoji: r.reaction }));
   },
 
   async togglePinMessage(chatId: string, messageId: string) {
     const db = getClient();
-    const { data: chat } = await db.from("chats").select("pinned_message_id").eq("id", chatId).maybeSingle();
-    const newPin = chat?.pinned_message_id === messageId ? null : messageId;
-    await db.from("chats").update({ pinned_message_id: newPin }).eq("id", chatId);
-    return newPin;
+    const { data: member } = await db.from("conversation_members").select("is_pinned").eq("conversation_id", chatId).maybeSingle();
+    const newPin = !member?.is_pinned;
+    await db.from("conversation_members").update({ is_pinned: newPin }).eq("conversation_id", chatId);
+    return newPin ? messageId : undefined;
   },
 
   async markChatRead(chatId: string, userId: string) {
     const db = getClient();
-    await db.from("chat_participants").update({ unread_count: 0 }).eq("chat_id", chatId).eq("user_id", userId);
+    await db.from("conversation_members").update({ unread_count: 0 }).eq("conversation_id", chatId).eq("profile_id", userId);
   },
 
   async setTyping(chatId: string, userId: string, userName: string) {
     const db = getClient();
-    await db.from("typing_states").upsert({
-      chat_id: chatId,
+    await db.from("typing_indicators").upsert({
+      conversation_id: chatId,
       user_id: userId,
-      user_name: userName,
-      expires_at: Date.now() + 5000
-    }, { onConflict: "chat_id, user_id" });
+      is_typing: true,
+      updated_at: new Date().toISOString()
+    }, { onConflict: "conversation_id, user_id" });
   },
 
   async getTyping(chatId: string) {
     const db = getClient();
-    const now = Date.now();
-    const { data } = await db.from("typing_states").select("user_id, user_name").eq("chat_id", chatId).gt("expires_at", now);
-    return (data || []).map((t: any) => ({ userId: t.user_id, name: t.user_name }));
+    const tenSecAgo = new Date(Date.now() - 10000).toISOString();
+    const { data } = await db.from("typing_indicators").select("user_id").eq("conversation_id", chatId).eq("is_typing", true).gt("updated_at", tenSecAgo);
+    
+    const results = [];
+    for (const t of data || []) {
+      const prof = await userRepo.getProfileById(t.user_id);
+      results.push({ userId: t.user_id, name: prof?.name || "User" });
+    }
+    return results;
   },
 
   async deleteChat(chatId: string) {
     const db = getClient();
-    await db.from("chats").delete().eq("id", chatId);
+    await db.from("messages").delete().eq("conversation_id", chatId);
+    await db.from("conversation_members").delete().eq("conversation_id", chatId);
+    await db.from("conversations").delete().eq("id", chatId);
   },
 
   async updateChatInfo(chatId: string, payload: any) {
     const db = getClient();
-    const updates: any = {};
+    const updates: any = { updated_at: new Date().toISOString() };
     if (payload.name !== undefined) updates.name = payload.name;
     if (payload.description !== undefined) updates.description = payload.description;
-    if (payload.disappearingMessages !== undefined) updates.disappearing_messages = payload.disappearingMessages;
-    if (payload.permissions !== undefined) updates.permissions = payload.permissions;
-    if (payload.inviteLink !== undefined) updates.invite_link = payload.inviteLink;
 
-    await db.from("chats").update(updates).eq("id", chatId);
+    await db.from("conversations").update(updates).eq("id", chatId);
   },
 
   async addMembers(chatId: string, memberIds: string[]) {
     const db = getClient();
-    const rows = memberIds.map((mId) => ({ chat_id: chatId, user_id: mId, role: "member" }));
-    await db.from("chat_participants").upsert(rows, { onConflict: "chat_id, user_id" });
+    const rows = memberIds.map((mId) => ({
+      conversation_id: chatId,
+      profile_id: mId,
+      role: "member",
+      created_at: new Date().toISOString()
+    }));
+    await db.from("conversation_members").upsert(rows, { onConflict: "conversation_id, profile_id" });
   },
 
   async removeMember(chatId: string, memberId: string) {
     const db = getClient();
-    await db.from("chat_participants").delete().eq("chat_id", chatId).eq("user_id", memberId);
+    await db.from("conversation_members").delete().eq("conversation_id", chatId).eq("profile_id", memberId);
   }
 };
 

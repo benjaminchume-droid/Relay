@@ -80,12 +80,11 @@ export const ChatList: React.FC<{
       {/* Search Bar & Sub-tabs */}
       <div className="space-y-3">
         <GlassInput 
-          placeholder="Search chats or users..."
+          placeholder="Search chats..."
           icon={<Search size={16} />}
           value={searchQuery}
           onChange={(e) => {
             setSearchQuery(e.target.value);
-            searchUsers(e.target.value);
           }}
         />
 

@@ -15,3 +15,6 @@ dependencyResolutionManagement {
 
 rootProject.name = "Relay"
 include(":app")
+
+include(":capacitor-android")
+project(":capacitor-android").projectDir = java.io.File("../node_modules/@capacitor/android/capacitor")

@@ -39,16 +39,27 @@ export const ModalsOverlay: React.FC<{
   const [forwardTargets, setForwardTargets] = useState<string[]>([]);
 
   // Contacts & Search
-  const { searchResults, searchUsers, reportModalUser, closeReportModal, submitReport, reportSuccessMessage } = useContactsStore();
+  const { searchResults, searchStatus, searchError, lastSearchQuery, searchUsers, resetSearch, reportModalUser, closeReportModal, submitReport, reportSuccessMessage } = useContactsStore();
   const [reportReason, setReportReason] = useState('spam');
   const [reportDetails, setReportDetails] = useState('');
   const [directSearchQuery, setDirectSearchQuery] = useState('');
+  const [isStartingChat, setIsStartingChat] = useState<string | null>(null);
+  const [chatStartError, setChatStartError] = useState<string | null>(null);
 
   React.useEffect(() => {
     if (showNewChatModal) {
-      searchUsers(directSearchQuery);
+      setDirectSearchQuery('');
+      setChatStartError(null);
+      setIsStartingChat(null);
+      resetSearch();
     }
   }, [showNewChatModal]);
+
+  const handleExecuteSearch = () => {
+    if (!directSearchQuery.trim()) return;
+    setChatStartError(null);
+    searchUsers(directSearchQuery);
+  };
 
   const handleCreateCommunitySubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -119,44 +130,109 @@ export const ModalsOverlay: React.FC<{
 
               {/* Direct Message Search & Contact List */}
               <div className="space-y-3 pt-1">
-                <GlassInput 
-                  placeholder="Search contacts by handle or name..."
-                  icon={<Search size={15} />}
-                  value={directSearchQuery}
-                  onChange={(e) => {
-                    setDirectSearchQuery(e.target.value);
-                    searchUsers(e.target.value);
-                  }}
-                  autoFocus
-                />
+                <div className="flex items-center gap-2">
+                  <div className="flex-1">
+                    <GlassInput 
+                      placeholder="@ username or name"
+                      icon={<Search size={15} />}
+                      value={directSearchQuery}
+                      onChange={(e) => setDirectSearchQuery(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          handleExecuteSearch();
+                        }
+                      }}
+                      autoFocus
+                    />
+                  </div>
+                  <GlassButton
+                    variant="primary"
+                    onClick={handleExecuteSearch}
+                    disabled={searchStatus === 'loading' || !directSearchQuery.trim()}
+                    className="px-4 py-2 text-xs shrink-0 cursor-pointer"
+                  >
+                    {searchStatus === 'loading' ? 'Searching...' : 'Search'}
+                  </GlassButton>
+                </div>
+
+                {chatStartError && (
+                  <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-700 text-[11px] font-medium text-left">
+                    {chatStartError}
+                  </div>
+                )}
 
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
-                  {searchResults.length === 0 ? (
-                    <p className="text-xs text-slate-400 text-center py-6">Type a handle or name to select a recipient.</p>
-                  ) : (
-                    searchResults.map((user) => (
-                      <div 
-                        key={user.id}
-                        onClick={async () => {
+                  {searchStatus === 'idle' && (
+                    <div className="text-center py-8 space-y-1">
+                      <p className="text-xs font-semibold text-slate-600">Find someone on Relay</p>
+                      <p className="text-[11px] text-slate-400">Search by name or username.</p>
+                    </div>
+                  )}
+
+                  {searchStatus === 'loading' && (
+                    <div className="text-center py-8 space-y-2">
+                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <p className="text-xs font-medium text-slate-500">Searching...</p>
+                    </div>
+                  )}
+
+                  {searchStatus === 'error' && (
+                    <div className="text-center py-8 space-y-1">
+                      <p className="text-xs font-semibold text-rose-600">
+                        {searchError || "We couldn't complete the search. Try again."}
+                      </p>
+                    </div>
+                  )}
+
+                  {searchStatus === 'empty' && (
+                    <div className="text-center py-8 space-y-1">
+                      <p className="text-xs font-semibold text-slate-500 px-2">
+                        No members found matching "{lastSearchQuery}"
+                      </p>
+                    </div>
+                  )}
+
+                  {searchStatus === 'success' && searchResults.map((user) => (
+                    <div 
+                      key={user.id}
+                      onClick={async () => {
+                        if (isStartingChat) return;
+                        setIsStartingChat(user.id);
+                        setChatStartError(null);
+                        try {
                           const chatId = await createDirectChat(user.id);
                           onCloseNewChatModal();
                           if (chatId) onSelectChat(chatId);
-                        }}
-                        className="p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer transition-colors"
-                      >
-                        <div className="flex items-center gap-3 min-w-0">
-                          <img src={user.avatarUrl || getLetterAvatar(user.name || user.username)} alt={user.name} className="w-9 h-9 rounded-full object-cover" />
-                          <div className="min-w-0 text-left">
-                            <h4 className="text-xs font-bold text-slate-800 truncate">{user.name}</h4>
-                            <span className="text-[10px] text-slate-500 font-mono">{formatHandle(user.username)}</span>
-                          </div>
+                        } catch (err: any) {
+                          console.error("[Relay Direct Chat UI] Error starting conversation:", err);
+                          setChatStartError(err.message || 'Failed to start conversation. Please try again.');
+                        } finally {
+                          setIsStartingChat(null);
+                        }
+                      }}
+                      className="p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer transition-colors text-left"
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <img 
+                          src={user.avatarUrl || getLetterAvatar(user.name || user.username)} 
+                          alt={user.name || user.username} 
+                          onError={(e) => {
+                            (e.target as HTMLImageElement).src = getLetterAvatar(user.name || user.username);
+                          }}
+                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200" 
+                        />
+                        <div className="min-w-0 text-left">
+                          <h4 className="text-xs font-bold text-slate-800 truncate">{user.name || user.username}</h4>
+                          <span className="text-[10px] text-blue-600 font-mono block truncate">{formatHandle(user.username)}</span>
+                          {user.bio && <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{user.bio}</p>}
                         </div>
-                        <GlassButton variant="secondary" className="py-1 px-3 text-[10px]">
-                          Message
-                        </GlassButton>
                       </div>
-                    ))
-                  )}
+                      <GlassButton variant="secondary" className="py-1 px-3 text-[10px] shrink-0">
+                        {isStartingChat === user.id ? 'Connecting...' : 'Message'}
+                      </GlassButton>
+                    </div>
+                  ))}
                 </div>
               </div>
             </motion.div>

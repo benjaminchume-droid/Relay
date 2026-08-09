@@ -100,7 +100,7 @@ export class FeatureSubscriptionManager {
     return this.subscribeFeature(
       'conversation',
       `chat:${conversationId}`,
-      ['chats', 'messages'],
+      ['conversations', 'conversation_members', 'messages'],
       { conversationId },
       true // essential
     );
