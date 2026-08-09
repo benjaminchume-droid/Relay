@@ -118,7 +118,7 @@ dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation("androidx.appcompat:appcompat:1.6.1")
-    implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
+    implementation("androidx.coordinatorlayout:coordinatorlayout:1.3.0")
     implementation(libs.kotlinx.coroutines.android)
 }
 
