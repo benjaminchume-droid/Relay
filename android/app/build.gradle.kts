@@ -18,7 +18,7 @@ if (keystorePropertiesFile != null) {
 
 android {
     namespace = "com.glassline.relay"
-    compileSdk = 34
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.glassline.relay"
