@@ -6,6 +6,10 @@
 import { create } from 'zustand';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
+import { useAuthStore } from './authStore';
+
+// In-memory idempotency tracking to prevent duplicate sends from rapid taps
+const activeSendPayloads = new Set<string>();
 
 interface ChatState {
   chats: Chat[];
@@ -28,6 +32,7 @@ interface ChatState {
     isForwarded?: boolean;
     replyToId?: string;
   }) => Promise<void>;
+  retryMessage: (messageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
   deleteMessage: (messageId: string) => Promise<void>;
   reactToMessage: (messageId: string, emoji: string) => Promise<void>;
@@ -95,8 +100,49 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const chatId = get().activeChatId;
     if (!chatId) return;
 
+    // Idempotency key based on chat, content and type to prevent rapid double-clicks
+    const payloadKey = `${chatId}:${type}:${content || ''}:${attachments?.[0]?.url || ''}`;
+    if (activeSendPayloads.has(payloadKey)) {
+      console.warn('[chatStore] Duplicate send prevented by idempotency lock:', payloadKey);
+      return;
+    }
+    activeSendPayloads.add(payloadKey);
+
     const replyingTo = get().replyingToMessage;
     set({ replyingToMessage: null });
+
+    const currentUser = useAuthStore.getState().currentUser;
+    const tempId = `temp_msg_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    const pendingMsg: Message = {
+      id: tempId,
+      chatId,
+      senderId: currentUser?.id || 'me',
+      senderName: currentUser?.name || 'Me',
+      senderAvatar: currentUser?.avatarUrl,
+      type: type || 'text',
+      content: content || '',
+      attachments,
+      timestamp: new Date().toISOString(),
+      deliveryState: 'sending',
+      replyToId: replyToId || replyingTo?.id,
+      replyToMessage: replyingTo ? {
+        id: replyingTo.id,
+        senderName: replyingTo.senderName,
+        content: replyingTo.content,
+        type: replyingTo.type,
+        attachments: replyingTo.attachments
+      } : undefined,
+      isForwarded
+    };
+
+    // 1. Immediately insert pending message into UI state
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [chatId]: [...(state.messages[chatId] || []), pendingMsg]
+      }
+    }));
 
     try {
       const { message, chat } = await apiService.sendMessage(chatId, {
@@ -107,19 +153,87 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isForwarded
       });
 
+      // 2. Replace pending message with server confirmed message
       set((state) => {
         const currentMsgs = state.messages[chatId] || [];
+        const updatedMsgs = currentMsgs.map((m) =>
+          m.id === tempId ? { ...message, deliveryState: 'sent' as const } : m
+        );
         const updatedChats = state.chats.map((c) => (c.id === chatId ? chat : c));
         return {
           messages: {
             ...state.messages,
-            [chatId]: [...currentMsgs, message]
+            [chatId]: updatedMsgs
           },
           chats: updatedChats
         };
       });
     } catch (err: any) {
-      set({ error: err.message });
+      console.error('[chatStore] Send message error:', err);
+      // 3. Mark message as failed so user can tap to retry
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === tempId ? { ...m, deliveryState: 'failed' as const } : m
+          )
+        },
+        error: err.message || 'Failed to send message'
+      }));
+    } finally {
+      activeSendPayloads.delete(payloadKey);
+    }
+  },
+
+  retryMessage: async (messageId: string) => {
+    const chatId = get().activeChatId;
+    if (!chatId) return;
+
+    const currentMsgs = get().messages[chatId] || [];
+    const targetMsg = currentMsgs.find((m) => m.id === messageId);
+    if (!targetMsg) return;
+
+    // Set state back to sending
+    set((state) => ({
+      messages: {
+        ...state.messages,
+        [chatId]: (state.messages[chatId] || []).map((m) =>
+          m.id === messageId ? { ...m, deliveryState: 'sending' as const } : m
+        )
+      }
+    }));
+
+    try {
+      const { message, chat } = await apiService.sendMessage(chatId, {
+        content: targetMsg.content,
+        type: targetMsg.type,
+        attachments: targetMsg.attachments,
+        replyToId: targetMsg.replyToId,
+        isForwarded: targetMsg.isForwarded
+      });
+
+      set((state) => {
+        const msgs = state.messages[chatId] || [];
+        const updatedMsgs = msgs.map((m) => (m.id === messageId ? { ...message, deliveryState: 'sent' as const } : m));
+        const updatedChats = state.chats.map((c) => (c.id === chatId ? chat : c));
+        return {
+          messages: {
+            ...state.messages,
+            [chatId]: updatedMsgs
+          },
+          chats: updatedChats
+        };
+      });
+    } catch (err: any) {
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === messageId ? { ...m, deliveryState: 'failed' as const } : m
+          )
+        },
+        error: err.message || 'Failed to resend message'
+      }));
     }
   },
 

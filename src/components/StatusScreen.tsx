@@ -308,7 +308,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
       <div className="space-y-2">
         <div className="flex items-center justify-between">
           <h2 className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-            {activeTab === 'contacts' ? 'Contact Updates' : 'Public Posts & Discovery'}
+            {activeTab === 'contacts' ? 'Contact Stories' : 'Public Stories & Discovery'}
           </h2>
           {/* Dual Tab Switcher */}
           <div className="flex bg-slate-200/80 dark:bg-slate-800 p-0.5 rounded-full border border-slate-200/80 dark:border-white/10">
@@ -397,7 +397,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
           {/* Top Header */}
           <div className="p-3.5 bg-white/80 dark:bg-slate-900/80 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 flex items-center justify-between shrink-0 z-10">
             <div>
-              <h1 className="text-base font-black text-slate-800 dark:text-white tracking-tight">Relay Posts</h1>
+              <h1 className="text-base font-black text-slate-800 dark:text-white tracking-tight">Relay Stories</h1>
               <p className="text-[10px] text-slate-500 font-medium font-sans">Stories & Public Discovery</p>
             </div>
           </div>

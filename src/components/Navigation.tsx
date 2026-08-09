@@ -135,7 +135,7 @@ export const MainNavigation: React.FC<{
 
         {/* Mobile Viewport Floating Glass Bubble Capsule Navigation Dock */}
         {currentUser && !shouldHideBottomNav && (
-          <nav className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-md h-14 bg-white/80 dark:bg-slate-900/80 backdrop-blur-2xl border border-white/80 dark:border-white/20 rounded-full flex items-center justify-around px-2 z-50 select-none shrink-0 shadow-[0_8px_30px_rgb(0,0,0,0.12)] text-slate-800 transition-all">
+          <nav className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 w-[92%] max-w-md h-14 bg-white/75 dark:bg-slate-900/80 backdrop-blur-2xl border border-white/80 dark:border-white/15 rounded-full flex items-center justify-around px-2 z-50 select-none shrink-0 shadow-[0_12px_40px_rgba(0,0,0,0.18)] transition-all">
             {tabs.map((tab) => {
               const isActive = activeTab === tab.id;
               const IconComponent = tab.icon;
@@ -143,15 +143,15 @@ export const MainNavigation: React.FC<{
                 <button
                   key={tab.id}
                   onClick={() => onSelectTab(tab.id)}
-                  className={`flex flex-col items-center justify-center py-1 px-3 rounded-full cursor-pointer relative transition-all duration-200 ${
+                  className={`flex flex-col items-center justify-center py-1 px-3.5 rounded-full cursor-pointer relative transition-all duration-200 ${
                     isActive 
-                      ? 'text-blue-600 bg-blue-500/10 dark:bg-blue-400/20 font-bold scale-105 shadow-xs' 
+                      ? 'font-bold scale-105 shadow-sm' 
                       : 'text-slate-500 hover:text-slate-900 dark:hover:text-white font-medium'
                   }`}
-                  style={isActive ? { color: 'var(--primary-accent, #2563EB)' } : {}}
+                  style={isActive ? { backgroundColor: 'var(--primary-accent, #2563EB)', color: '#FFFFFF' } : {}}
                 >
                   <div className="relative flex items-center justify-center">
-                    <IconComponent size={19} className={isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'} />
+                    <IconComponent size={18} className={isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'} />
                     {tab.badge && tab.badge > 0 ? (
                       <span 
                         style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}

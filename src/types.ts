@@ -137,6 +137,7 @@ export interface UserProfile {
   receivedRequests: string[]; // friend requests received
   settings: UserSettings;
   createdAt: string;
+  supabaseAccessToken?: string;
 }
 
 export type MessageType = 'text' | 'voice' | 'image' | 'video' | 'file' | 'location' | 'contact' | 'system';
@@ -176,7 +177,7 @@ export interface Message {
   content: string;
   attachments?: MessageAttachment[];
   timestamp: string;
-  deliveryState: 'sent' | 'delivered' | 'read';
+  deliveryState: 'sending' | 'sent' | 'delivered' | 'read' | 'failed';
   reactions?: MessageReaction[];
   replyToId?: string;
   replyToMessage?: QuotedMessageSummary;

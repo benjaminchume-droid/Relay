@@ -20,7 +20,8 @@
   color: #F1F5F9 !important;
 }
 
-[data-theme-mode="pure-black"] {
+[data-theme-mode="pure-black"],
+[data-theme-mode="black"] {
   background-color: #000000 !important;
   color: #FFFFFF !important;
 }
@@ -33,21 +34,35 @@
 }
 
 [data-theme-mode="pure-black"] .glass-panel,
-[data-theme-mode="pure-black"] .liquid-glass-card {
+[data-theme-mode="pure-black"] .liquid-glass-card,
+[data-theme-mode="black"] .glass-panel,
+[data-theme-mode="black"] .liquid-glass-card {
   background: rgba(0, 0, 0, 0.95) !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
   color: #FFFFFF !important;
 }
 
 [data-theme-mode="dark"] .glass-input,
-[data-theme-mode="pure-black"] .glass-input {
+[data-theme-mode="pure-black"] .glass-input,
+[data-theme-mode="black"] .glass-input {
   background: rgba(255, 255, 255, 0.08) !important;
   color: #FFFFFF !important;
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
+[data-theme-mode="dark"] .glass-bubble-other,
+[data-theme-mode="pure-black"] .glass-bubble-other,
+[data-theme-mode="black"] .glass-bubble-other,
+.dark .glass-bubble-other {
+  background: rgba(30, 41, 59, 0.92) !important;
+  color: #F8FAFC !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1) !important;
+}
+
 [data-theme-mode="dark"] text,
-[data-theme-mode="pure-black"] text {
+[data-theme-mode="pure-black"] text,
+[data-theme-mode="black"] text {
   fill: #FFFFFF !important;
 }
 

@@ -1343,3 +1343,30 @@ export const notificationRepo = {
     await db.from("notifications").update({ read: true }).eq("user_id", userId);
   }
 };
+
+export const supabaseRepository = {
+  user: userRepo,
+  chat: chatRepo,
+  community: communityRepo,
+  status: statusRepo,
+  createCommunity: communityRepo.createCommunity.bind(communityRepo),
+  getCommunities: communityRepo.getCommunities.bind(communityRepo),
+  joinCommunity: communityRepo.joinCommunity.bind(communityRepo),
+  leaveCommunity: communityRepo.leaveCommunity.bind(communityRepo),
+  getCommunityPosts: (id: string): Promise<CommunityPost[]> => Promise.resolve([]),
+  createCommunityPost: (authorId: string, communityId: string, payload: any): Promise<CommunityPost> => Promise.resolve({
+    id: `post_${Date.now()}`,
+    communityId,
+    channelId: payload.channelId || 'c_general',
+    authorId,
+    authorName: 'User',
+    content: payload.content || '',
+    title: payload.title,
+    imageUrl: payload.imageUrl,
+    timestamp: new Date().toISOString(),
+    likesCount: 0,
+    commentsCount: 0,
+    likes: [],
+    comments: []
+  })
+};

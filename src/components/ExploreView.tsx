@@ -50,7 +50,7 @@ export const ExploreView: React.FC<{
       {/* Header */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">Explore & Posts</h1>
+          <h1 className="text-xl font-bold tracking-tight text-slate-800 dark:text-white">Explore & Stories</h1>
           <p className="text-[11px] text-slate-500 font-medium">Stories, updates, people, and public communities</p>
         </div>
 

@@ -119,7 +119,7 @@ export const ChatScreen: React.FC<{
   const { currentUser } = useAuthStore();
   const { 
     chats, messages, activeTyping, replyingToMessage, 
-    sendMessage, editMessage, deleteMessage, reactToMessage, 
+    sendMessage, retryMessage, editMessage, deleteMessage, reactToMessage, 
     togglePinMessage, sendTypingSignal, pollUpdates, 
     setReplyingToMessage, setForwardingMessage 
   } = useChatStore();
@@ -329,13 +329,13 @@ export const ChatScreen: React.FC<{
   const currentWallpaper = customization.perChatThemes?.[chat.id]?.wallpaper || customization.chatWallpaper || 'glass-gradient';
 
   return (
-    <div className="w-full h-screen flex flex-col justify-between bg-white relative overflow-hidden select-none">
+    <div className="w-full h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
       
       {/* Real Dynamic Viewport Wallpaper with Ambient Balls of Accent Color */}
       <AmbientLiquidBackground />
 
       {/* Grounded Edge-to-Edge Pinned Header */}
-      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/80 backdrop-blur-xl border-b border-slate-200/80 px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800">
+      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800 dark:text-slate-100">
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <button 
             onClick={onBack}
@@ -440,8 +440,8 @@ export const ChatScreen: React.FC<{
                     selectedMsgIds.has(msg.id) ? 'ring-2 ring-blue-500 ring-offset-2' : ''
                   } ${
                     isMine 
-                      ? 'text-white rounded-br-xs' 
-                      : 'bg-white/95 border border-slate-200/90 text-slate-900 rounded-bl-xs'
+                      ? 'text-white rounded-br-xs shadow-xs' 
+                      : 'bg-white/95 dark:bg-slate-800/95 border border-slate-200/90 dark:border-slate-700/80 text-slate-900 dark:text-slate-100 rounded-bl-xs shadow-xs'
                   }`}
                 >
                   {/* Quoted Reply Banner */}
@@ -537,7 +537,20 @@ export const ChatScreen: React.FC<{
                         {msg.isEdited && <span>(edited)</span>}
                         <span>{formatChatTimestamp(msg.timestamp)}</span>
                         {isMine && (
-                          deliveryState === 'read' ? (
+                          deliveryState === 'sending' ? (
+                            <span className="w-2.5 h-2.5 rounded-full border-2 border-white/70 border-t-transparent animate-spin inline-block ml-0.5" title="Sending message..." />
+                          ) : deliveryState === 'failed' ? (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                retryMessage(msg.id);
+                              }}
+                              className="inline-flex items-center gap-0.5 bg-red-500/80 hover:bg-red-600 px-1.5 py-0.5 rounded-md text-white text-[9px] font-bold cursor-pointer transition-colors ml-1 shadow-xs"
+                              title="Tap to retry sending message"
+                            >
+                              <span>Retry</span>
+                            </button>
+                          ) : deliveryState === 'read' ? (
                             <CheckCheck size={13} className="text-cyan-200 fill-cyan-200" />
                           ) : deliveryState === 'delivered' ? (
                             <CheckCheck size={13} className="text-white/70" />

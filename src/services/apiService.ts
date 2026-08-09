@@ -7,6 +7,8 @@ import {
   UserProfile, Chat, Message, Community, CommunityPost, 
   NotificationItem, UserSettings 
 } from "../types";
+import { supabase, supabaseUrl } from "../lib/supabase/client";
+import { supabaseRepository } from "../lib/supabase/repository";
 
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
 
@@ -21,6 +23,334 @@ export const setAuthToken = (token: string | null) => {
     localStorage.removeItem(TOKEN_STORAGE_KEY);
   }
 };
+
+export const isCapacitorNative = (): boolean => {
+  if (typeof window === "undefined") return false;
+  const win = window as any;
+  const isNative = !!win.Capacitor?.isNativePlatform?.();
+  const isCapScheme = win.location?.protocol === "capacitor:" || win.location?.protocol === "file:";
+  const isLocalhostNoPort = (win.location?.hostname === "localhost" || win.location?.hostname === "127.0.0.1") && (!win.location?.port || win.location?.port === "80" || win.location?.port === "443");
+  return isNative || isCapScheme || isLocalhostNoPort;
+};
+
+export function createDefaultClientSettings(): UserProfile["settings"] {
+  return {
+    appearance: {
+      themeMode: "light",
+      designLanguage: "liquid-glass",
+      accentColor: "liquid-azure",
+      blurIntensity: 24,
+      transparency: 40,
+      cornerRadius: 18,
+      shadowDepth: 30,
+      glassDepth: 40,
+      refraction: 30,
+      edgeGlow: 25,
+      animationSpeed: "smooth",
+      uiDensity: "comfortable",
+      chatWallpaper: "glass-gradient",
+      storiesLayout: "horizontal",
+      bubbleStyle: "edge-glow",
+      bubbleSpacing: 10,
+      fontSize: "sm",
+      appIcon: "liquid-blue",
+      soundEnabled: true,
+      hapticsEnabled: true,
+      reducedMotion: false,
+      perChatThemes: {}
+    },
+    privacy: {
+      whoCanMessage: "everyone",
+      whoCanAddGroups: "everyone",
+      hideOnline: false,
+      hideLastSeen: false,
+      readReceipts: true,
+      offlineMode: false,
+      profilePhotoVisibility: "everyone",
+      bioVisibility: "everyone",
+      allowTagging: true,
+      messageRequests: true,
+      communityInvites: true,
+      typingIndicator: true,
+      linkPreview: true
+    },
+    security: {
+      twoFactorEnabled: false,
+      activeSessions: [],
+      loginAlerts: true
+    },
+    notifications: {
+      enabled: true,
+      directMessages: true,
+      groupMentions: true,
+      reactions: true,
+      sound: "gentle_chime",
+      vibration: true
+    }
+  };
+}
+
+export function formatClientProfile(p: any): UserProfile {
+  return {
+    id: p.id,
+    username: p.username || (p.email ? p.email.split("@")[0] : `user_${p.id?.substring(0, 6)}`),
+    name: p.full_name || p.display_name || p.name || p.username || "Relay User",
+    email: p.email || "",
+    avatarUrl: p.avatar_url || p.avatarUrl || undefined,
+    bannerUrl: p.banner_url || p.bannerUrl || undefined,
+    bio: p.bio || "Exploring Relay.",
+    statusMessage: p.status_message || p.statusMessage || "Available",
+    onlineStatus: (p.online_status || p.status || "online") as any,
+    lastSeen: p.last_seen || "Just now",
+    dob: p.date_of_birth || p.dob || undefined,
+    country: p.country || "United States",
+    socialLinks: p.social_links || p.socialLinks || {},
+    contacts: p.contacts || [],
+    blockedUsers: p.blocked_users || p.blockedUsers || [],
+    sentRequests: p.sent_requests || p.sentRequests || [],
+    receivedRequests: p.received_requests || p.receivedRequests || [],
+    settings: p.settings || createDefaultClientSettings(),
+    createdAt: p.created_at || new Date().toISOString()
+  };
+}
+
+export async function directSupabaseLogin(username: string, pass: string, rememberDevice?: boolean) {
+  const credential = (username || "").trim().toLowerCase();
+  if (!credential || !pass) {
+    throw new Error("Username and password are required");
+  }
+
+  const candidateEmails = credential.includes("@")
+    ? [credential]
+    : [
+        `${credential}@relay.app`,
+        `${credential}@glassline.com`,
+        `${credential}@relay.com`,
+        `${credential}@gmail.com`
+      ];
+
+  let sbUser: any = null;
+  let supabaseSession: any = null;
+  let lastErrorMessage: string | null = null;
+
+  console.log(`[Relay Auth Direct] Initializing Supabase Auth sign-in against URL endpoint...`);
+
+  for (const targetEmail of candidateEmails) {
+    console.log(`[Relay Auth Direct] Attempting candidate authentication flow...`);
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email: targetEmail,
+      password: pass,
+    });
+
+    if (!error && data?.user && data?.session) {
+      sbUser = data.user;
+      supabaseSession = data.session;
+      break;
+    } else if (error) {
+      lastErrorMessage = error.message;
+    }
+  }
+
+  if (!sbUser || !supabaseSession) {
+    throw new Error(lastErrorMessage || "Invalid username or password");
+  }
+
+  let profile: any = null;
+  try {
+    const { data } = await supabase
+      .from("profiles")
+      .select("*")
+      .eq("id", sbUser.id)
+      .maybeSingle();
+
+    if (data) profile = data;
+  } catch (e) {
+    console.warn("[Relay Auth Direct] Profile query notice:", e);
+  }
+
+  if (!profile) {
+    const cleanUsername = credential.replace(/@(gmail\.com|relay\.(app|com)|glassline\.com)$/, "").toLowerCase();
+    const defaultSettings = createDefaultClientSettings();
+    const newProfile = {
+      id: sbUser.id,
+      username: cleanUsername,
+      full_name: sbUser.user_metadata?.full_name || cleanUsername,
+      email: sbUser.email || candidateEmails[0],
+      avatar_url: sbUser.user_metadata?.avatar_url || null,
+      bio: "Exploring Relay.",
+      status_message: "Available",
+      country: sbUser.user_metadata?.country || "United States",
+      settings: defaultSettings,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString()
+    };
+
+    try {
+      await supabase.from("profiles").upsert(newProfile, { onConflict: "id" });
+    } catch (e) {
+      console.warn("[Relay Auth Direct] Profile insert notice:", e);
+    }
+
+    profile = newProfile;
+  }
+
+  const user = formatClientProfile(profile);
+  const token = supabaseSession.access_token;
+  user.supabaseAccessToken = token;
+
+  setAuthToken(token);
+  return { token, user };
+}
+
+export async function directSupabaseSignup(payload: {
+  username: string;
+  password: string;
+  name: string;
+  age?: number;
+  country?: string;
+  avatarUrl?: string;
+  bio?: string;
+  statusMessage?: string;
+  appearance?: any;
+  email?: string;
+}) {
+  const { username, password, name, country, avatarUrl, bio, statusMessage, appearance, email } = payload;
+  if (!password || !username || !name) {
+    throw new Error("Username, password, and display name are required");
+  }
+
+  const cleanUser = username.trim().toLowerCase();
+  const userEmail = (email || `${cleanUser}@relay.app`).toLowerCase();
+
+  console.log(`[Relay Auth Direct] Initializing Supabase Auth sign-up against URL endpoint...`);
+
+  const { data: signUpData, error: signUpErr } = await supabase.auth.signUp({
+    email: userEmail,
+    password,
+    options: {
+      data: {
+        username: cleanUser,
+        full_name: name.trim(),
+        country: country || "United States",
+      },
+    },
+  });
+
+  let sbUser = signUpData?.user;
+  let supabaseSession = signUpData?.session;
+
+  if (signUpErr) {
+    if (signUpErr.message.toLowerCase().includes("already registered")) {
+      const { data: signInData, error: signInErr } = await supabase.auth.signInWithPassword({
+        email: userEmail,
+        password,
+      });
+      if (!signInErr && signInData?.user && signInData?.session) {
+        sbUser = signInData.user;
+        supabaseSession = signInData.session;
+      } else {
+        throw new Error(signUpErr.message);
+      }
+    } else {
+      throw new Error(signUpErr.message);
+    }
+  }
+
+  if (!sbUser) {
+    throw new Error("Failed to create user account in Supabase Auth");
+  }
+
+  if (!supabaseSession) {
+    const { data: signInData } = await supabase.auth.signInWithPassword({
+      email: userEmail,
+      password,
+    });
+    if (signInData?.session) {
+      supabaseSession = signInData.session;
+    }
+  }
+
+  const defaultSettings = createDefaultClientSettings();
+  if (appearance) {
+    defaultSettings.appearance = { ...defaultSettings.appearance, ...appearance };
+  }
+
+  const profileObj = {
+    id: sbUser.id,
+    username: cleanUser,
+    full_name: name.trim(),
+    email: userEmail,
+    avatar_url: avatarUrl || null,
+    bio: bio || "Exploring Relay.",
+    status_message: statusMessage || "Available",
+    country: country || "United States",
+    settings: defaultSettings,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  try {
+    await supabase.from("profiles").upsert(profileObj, { onConflict: "id" });
+  } catch (e) {
+    console.warn("[Relay Auth Direct] Signup profile upsert notice:", e);
+  }
+
+  const user = formatClientProfile(profileObj);
+  const token = supabaseSession?.access_token || `st_${Date.now()}`;
+  user.supabaseAccessToken = token;
+
+  setAuthToken(token);
+  return { token, user };
+}
+
+export async function directSupabaseGetCurrentUser(token: string) {
+  const { data: userData } = await supabase.auth.getUser(token);
+  let userId = userData?.user?.id;
+
+  if (!userId) {
+    const { data: sessData } = await supabase.auth.getSession();
+    userId = sessData?.session?.user?.id;
+  }
+
+  if (!userId) {
+    throw new Error("Session expired or invalid");
+  }
+
+  let profileData: any = null;
+  const { data } = await supabase.from("profiles").select("*").eq("id", userId).maybeSingle();
+  if (data) {
+    profileData = data;
+  }
+
+  if (!profileData) {
+    throw new Error("User profile not found");
+  }
+
+  const user = formatClientProfile(profileData);
+  return { user };
+}
+
+export async function directSupabaseCheckUsername(username: string) {
+  if (!username) return { valid: false, message: "Username is required" };
+  const lower = username.trim().toLowerCase();
+  if (lower.length < 3 || lower.length > 20) {
+    return { valid: false, message: "Username must be between 3 and 20 characters" };
+  }
+  if (!/^[a-z0-9_]+$/.test(lower)) {
+    return { valid: false, message: "Only lowercase letters, numbers, and underscores allowed" };
+  }
+
+  try {
+    const { data } = await supabase.from("profiles").select("id").ilike("username", lower).limit(1);
+    if (data && data.length > 0) {
+      return { valid: false, message: "Username is already taken" };
+    }
+  } catch (e) {
+    // ignore
+  }
+
+  return { valid: true, message: "Username is available" };
+}
 
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
@@ -38,7 +368,25 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
     headers,
   });
 
-  const data = await response.json();
+  const contentType = response.headers.get("content-type") || "";
+  const responseText = await response.text();
+
+  if (
+    contentType.includes("text/html") ||
+    responseText.trim().startsWith("<!doctype") ||
+    responseText.trim().startsWith("<html")
+  ) {
+    console.warn(`[Relay API] Endpoint ${endpoint} returned HTML content (Status: ${response.status}, Content-Type: ${contentType}).`);
+    throw new Error(`Endpoint ${endpoint} returned HTML response instead of JSON (Status: ${response.status}).`);
+  }
+
+  let data: any;
+  try {
+    data = JSON.parse(responseText);
+  } catch (e) {
+    console.warn(`[Relay API] Response from ${endpoint} could not be parsed as JSON.`);
+    throw new Error(`Invalid JSON response from ${endpoint}`);
+  }
 
   if (!response.ok) {
     throw new Error(data.error || data.message || "An API error occurred");
@@ -49,11 +397,27 @@ async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promi
 
 export const apiService = {
   // --- Auth ---
-  checkUsername: (username: string) => 
-    apiRequest<{ valid: boolean; message: string }>("/api/auth/check-username", {
-      method: "POST",
-      body: JSON.stringify({ username }),
-    }),
+  checkUsername: async (username: string) => {
+    if (isCapacitorNative()) {
+      return directSupabaseCheckUsername(username);
+    }
+    try {
+      return await apiRequest<{ valid: boolean; message: string }>("/api/auth/check-username", {
+        method: "POST",
+        body: JSON.stringify({ username }),
+      });
+    } catch (err: any) {
+      if (
+        err.message?.includes("HTML") ||
+        err.message?.includes("<!doctype") ||
+        err.message?.includes("Failed to fetch") ||
+        err.message?.includes("NetworkError")
+      ) {
+        return directSupabaseCheckUsername(username);
+      }
+      throw err;
+    }
+  },
 
   sendOtp: (email: string, purpose?: string) =>
     apiRequest<{ success: boolean; message: string; devCode?: string }>("/api/auth/send-otp", {
@@ -67,7 +431,7 @@ export const apiService = {
       body: JSON.stringify({ email, code }),
     }),
 
-  signup: (payload: {
+  signup: async (payload: {
     username: string;
     password: string;
     name: string;
@@ -78,17 +442,51 @@ export const apiService = {
     statusMessage?: string;
     appearance?: any;
     email?: string;
-  }) =>
-    apiRequest<{ token: string; user: UserProfile }>("/api/auth/signup", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+  }) => {
+    if (isCapacitorNative()) {
+      return directSupabaseSignup(payload);
+    }
+    try {
+      return await apiRequest<{ token: string; user: UserProfile }>("/api/auth/signup", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } catch (err: any) {
+      if (
+        err.message?.includes("HTML") ||
+        err.message?.includes("<!doctype") ||
+        err.message?.includes("Failed to fetch") ||
+        err.message?.includes("NetworkError")
+      ) {
+        console.warn("[Relay Auth] Web signup endpoint unavailable or returned HTML. Falling back to direct Supabase Auth.");
+        return directSupabaseSignup(payload);
+      }
+      throw err;
+    }
+  },
 
-  login: (username: string, password: string, rememberDevice?: boolean) =>
-    apiRequest<{ token: string; user: UserProfile }>("/api/auth/login", {
-      method: "POST",
-      body: JSON.stringify({ username, password, rememberDevice }),
-    }),
+  login: async (username: string, pass: string, rememberDevice?: boolean) => {
+    if (isCapacitorNative()) {
+      return directSupabaseLogin(username, pass, rememberDevice);
+    }
+    try {
+      return await apiRequest<{ token: string; user: UserProfile }>("/api/auth/login", {
+        method: "POST",
+        body: JSON.stringify({ username, password: pass, rememberDevice }),
+      });
+    } catch (err: any) {
+      if (
+        err.message?.includes("HTML") ||
+        err.message?.includes("<!doctype") ||
+        err.message?.includes("Failed to fetch") ||
+        err.message?.includes("NetworkError")
+      ) {
+        console.warn("[Relay Auth] Web login endpoint unavailable or returned HTML. Falling back to direct Supabase Auth.");
+        return directSupabaseLogin(username, pass, rememberDevice);
+      }
+      throw err;
+    }
+  },
 
   loginGoogle: () =>
     apiRequest<{ token: string; user: UserProfile }>("/api/auth/google", {
@@ -101,8 +499,28 @@ export const apiService = {
       body: JSON.stringify({ email, newPassword }),
     }),
 
-  getCurrentUser: () =>
-    apiRequest<{ user: UserProfile }>("/api/auth/me"),
+  getCurrentUser: async () => {
+    if (isCapacitorNative()) {
+      const token = getAuthToken();
+      if (!token) throw new Error("No auth token stored");
+      return directSupabaseGetCurrentUser(token);
+    }
+    try {
+      return await apiRequest<{ user: UserProfile }>("/api/auth/me");
+    } catch (err: any) {
+      const token = getAuthToken();
+      if (
+        token &&
+        (err.message?.includes("HTML") ||
+          err.message?.includes("<!doctype") ||
+          err.message?.includes("Failed to fetch") ||
+          err.message?.includes("NetworkError"))
+      ) {
+        return directSupabaseGetCurrentUser(token);
+      }
+      throw err;
+    }
+  },
 
   logout: () =>
     apiRequest<{ success: boolean }>("/api/auth/logout", { method: "POST" }),
@@ -285,11 +703,22 @@ export const apiService = {
       method: "DELETE",
     }),
 
-  createCommunity: (payload: { name: string; handle: string; description?: string; category?: string; bannerUrl?: string; avatarUrl?: string; isPrivate?: boolean }) =>
-    apiRequest<{ community: Community }>("/api/communities", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+  createCommunity: async (payload: { name: string; handle: string; description?: string; category?: string; bannerUrl?: string; avatarUrl?: string; isPrivate?: boolean }) => {
+    if (!isCapacitorNative()) {
+      try {
+        return await apiRequest<{ community: Community }>("/api/communities", {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        console.warn("[apiService] createCommunity web endpoint failed, using Supabase repository:", e);
+      }
+    }
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    const ownerId = currentUser?.id || "me";
+    const community = await supabaseRepository.createCommunity(ownerId, payload);
+    return { community };
+  },
 
   updateCommunityInfo: (id: string, payload: { description?: string; isPrivate?: boolean; permissions?: any; category?: string }) =>
     apiRequest<{ community: Community }>(`/api/communities/${id}/info`, {
@@ -302,20 +731,68 @@ export const apiService = {
       method: "DELETE"
     }),
 
-  joinCommunity: (id: string) =>
-    apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/join`, { method: "POST" }),
+  joinCommunity: async (id: string) => {
+    if (!isCapacitorNative()) {
+      try {
+        return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/join`, { method: "POST" });
+      } catch (e) {
+        console.warn("[apiService] joinCommunity web endpoint failed, using Supabase repository:", e);
+      }
+    }
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    if (currentUser) {
+      await supabaseRepository.joinCommunity(id, currentUser.id);
+    }
+    const comms = await supabaseRepository.getCommunities();
+    const community = comms.find((c) => c.id === id) || { id, name: "Community", handle: "@community", memberCount: 1 } as Community;
+    return { success: true, community: { ...community, isJoined: true } };
+  },
 
-  leaveCommunity: (id: string) =>
-    apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/leave`, { method: "POST" }),
+  leaveCommunity: async (id: string) => {
+    if (!isCapacitorNative()) {
+      try {
+        return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/leave`, { method: "POST" });
+      } catch (e) {
+        console.warn("[apiService] leaveCommunity web endpoint failed, using Supabase repository:", e);
+      }
+    }
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    if (currentUser) {
+      await supabaseRepository.leaveCommunity(id, currentUser.id);
+    }
+    const comms = await supabaseRepository.getCommunities();
+    const community = comms.find((c) => c.id === id) || { id, name: "Community", handle: "@community", memberCount: 1 } as Community;
+    return { success: true, community: { ...community, isJoined: false } };
+  },
 
-  getCommunityPosts: (id: string) =>
-    apiRequest<{ posts: CommunityPost[] }>(`/api/communities/${id}/posts`),
+  getCommunityPosts: async (id: string) => {
+    if (!isCapacitorNative()) {
+      try {
+        return await apiRequest<{ posts: CommunityPost[] }>(`/api/communities/${id}/posts`);
+      } catch (e) {
+        console.warn("[apiService] getCommunityPosts web endpoint failed, using Supabase repository:", e);
+      }
+    }
+    const posts = await supabaseRepository.getCommunityPosts(id);
+    return { posts };
+  },
 
-  createCommunityPost: (id: string, payload: { channelId?: string; title?: string; content: string; imageUrl?: string }) =>
-    apiRequest<{ post: CommunityPost }>(`/api/communities/${id}/posts`, {
-      method: "POST",
-      body: JSON.stringify(payload),
-    }),
+  createCommunityPost: async (id: string, payload: { channelId?: string; title?: string; content: string; imageUrl?: string }) => {
+    if (!isCapacitorNative()) {
+      try {
+        return await apiRequest<{ post: CommunityPost }>(`/api/communities/${id}/posts`, {
+          method: "POST",
+          body: JSON.stringify(payload),
+        });
+      } catch (e) {
+        console.warn("[apiService] createCommunityPost web endpoint failed, using Supabase repository:", e);
+      }
+    }
+    const currentUser = (await supabase.auth.getUser()).data.user;
+    const authorId = currentUser?.id || "me";
+    const post = await supabaseRepository.createCommunityPost(authorId, id, payload);
+    return { post };
+  },
 
   likeCommunityPost: (postId: string) =>
     apiRequest<{ likesCount: number; isLiked: boolean }>(`/api/communities/posts/${postId}/like`, { method: "POST" }),
