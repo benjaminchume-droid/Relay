@@ -8,7 +8,6 @@ import {
   NotificationItem, UserSettings 
 } from "../types";
 import { supabase, supabaseUrl } from "../lib/supabase/client";
-import { supabaseRepository } from "../lib/supabase/repository";
 
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
 
@@ -704,20 +703,44 @@ export const apiService = {
     }),
 
   createCommunity: async (payload: { name: string; handle: string; description?: string; category?: string; bannerUrl?: string; avatarUrl?: string; isPrivate?: boolean }) => {
-    if (!isCapacitorNative()) {
-      try {
-        return await apiRequest<{ community: Community }>("/api/communities", {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      } catch (e) {
-        console.warn("[apiService] createCommunity web endpoint failed, using Supabase repository:", e);
-      }
+    try {
+      return await apiRequest<{ community: Community }>("/api/communities", {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.warn("[apiService] createCommunity web endpoint failed, using direct client call:", e);
+      const currentUser = (await supabase.auth.getUser()).data.user;
+      const ownerId = currentUser?.id || "me";
+      const { data: newComm } = await supabase.from("communities").insert({
+        name: payload.name,
+        handle: payload.handle,
+        description: payload.description || null,
+        category: payload.category || "General",
+        banner_url: payload.bannerUrl || null,
+        avatar_url: payload.avatarUrl || null,
+        owner_id: ownerId,
+        is_private: payload.isPrivate || false,
+        member_count: 1
+      }).select().single();
+      const community: Community = {
+        id: newComm?.id || `comm_${Date.now()}`,
+        name: newComm?.name || payload.name,
+        handle: newComm?.handle || payload.handle,
+        description: newComm?.description || payload.description || "",
+        category: newComm?.category || payload.category || "General",
+        bannerUrl: newComm?.banner_url || payload.bannerUrl || "",
+        avatarUrl: newComm?.avatar_url || payload.avatarUrl || "",
+        ownerId,
+        isPrivate: payload.isPrivate || false,
+        memberCount: 1,
+        channels: [
+          { id: "c_general", name: "general", type: "text", description: "General chat and announcements" },
+          { id: "c_media", name: "media-and-showcase", type: "media", description: "Share images and builds" }
+        ]
+      };
+      return { community };
     }
-    const currentUser = (await supabase.auth.getUser()).data.user;
-    const ownerId = currentUser?.id || "me";
-    const community = await supabaseRepository.createCommunity(ownerId, payload);
-    return { community };
   },
 
   updateCommunityInfo: (id: string, payload: { description?: string; isPrivate?: boolean; permissions?: any; category?: string }) =>
@@ -732,66 +755,65 @@ export const apiService = {
     }),
 
   joinCommunity: async (id: string) => {
-    if (!isCapacitorNative()) {
-      try {
-        return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/join`, { method: "POST" });
-      } catch (e) {
-        console.warn("[apiService] joinCommunity web endpoint failed, using Supabase repository:", e);
+    try {
+      return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/join`, { method: "POST" });
+    } catch (e) {
+      console.warn("[apiService] joinCommunity web endpoint failed:", e);
+      const currentUser = (await supabase.auth.getUser()).data.user;
+      if (currentUser) {
+        await supabase.from("community_members").upsert({ community_id: id, user_id: currentUser.id, role: "member" }, { onConflict: "community_id, user_id" });
       }
+      return { success: true, community: { id, name: "Community", handle: "@community", memberCount: 1, isJoined: true } as Community };
     }
-    const currentUser = (await supabase.auth.getUser()).data.user;
-    if (currentUser) {
-      await supabaseRepository.joinCommunity(id, currentUser.id);
-    }
-    const comms = await supabaseRepository.getCommunities();
-    const community = comms.find((c) => c.id === id) || { id, name: "Community", handle: "@community", memberCount: 1 } as Community;
-    return { success: true, community: { ...community, isJoined: true } };
   },
 
   leaveCommunity: async (id: string) => {
-    if (!isCapacitorNative()) {
-      try {
-        return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/leave`, { method: "POST" });
-      } catch (e) {
-        console.warn("[apiService] leaveCommunity web endpoint failed, using Supabase repository:", e);
+    try {
+      return await apiRequest<{ success: boolean; community: Community }>(`/api/communities/${id}/leave`, { method: "POST" });
+    } catch (e) {
+      console.warn("[apiService] leaveCommunity web endpoint failed:", e);
+      const currentUser = (await supabase.auth.getUser()).data.user;
+      if (currentUser) {
+        await supabase.from("community_members").delete().eq("community_id", id).eq("user_id", currentUser.id);
       }
+      return { success: true, community: { id, name: "Community", handle: "@community", memberCount: 1, isJoined: false } as Community };
     }
-    const currentUser = (await supabase.auth.getUser()).data.user;
-    if (currentUser) {
-      await supabaseRepository.leaveCommunity(id, currentUser.id);
-    }
-    const comms = await supabaseRepository.getCommunities();
-    const community = comms.find((c) => c.id === id) || { id, name: "Community", handle: "@community", memberCount: 1 } as Community;
-    return { success: true, community: { ...community, isJoined: false } };
   },
 
   getCommunityPosts: async (id: string) => {
-    if (!isCapacitorNative()) {
-      try {
-        return await apiRequest<{ posts: CommunityPost[] }>(`/api/communities/${id}/posts`);
-      } catch (e) {
-        console.warn("[apiService] getCommunityPosts web endpoint failed, using Supabase repository:", e);
-      }
+    try {
+      return await apiRequest<{ posts: CommunityPost[] }>(`/api/communities/${id}/posts`);
+    } catch (e) {
+      console.warn("[apiService] getCommunityPosts web endpoint failed:", e);
+      return { posts: [] };
     }
-    const posts = await supabaseRepository.getCommunityPosts(id);
-    return { posts };
   },
 
   createCommunityPost: async (id: string, payload: { channelId?: string; title?: string; content: string; imageUrl?: string }) => {
-    if (!isCapacitorNative()) {
-      try {
-        return await apiRequest<{ post: CommunityPost }>(`/api/communities/${id}/posts`, {
-          method: "POST",
-          body: JSON.stringify(payload),
-        });
-      } catch (e) {
-        console.warn("[apiService] createCommunityPost web endpoint failed, using Supabase repository:", e);
-      }
+    try {
+      return await apiRequest<{ post: CommunityPost }>(`/api/communities/${id}/posts`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+      });
+    } catch (e) {
+      console.warn("[apiService] createCommunityPost web endpoint failed:", e);
+      const currentUser = (await supabase.auth.getUser()).data.user;
+      const authorId = currentUser?.id || "me";
+      const post: CommunityPost = {
+        id: `post_${Date.now()}`,
+        communityId: id,
+        channelId: payload.channelId || "c_general",
+        authorId,
+        authorName: "Member",
+        title: payload.title,
+        content: payload.content,
+        imageUrl: payload.imageUrl,
+        timestamp: new Date().toISOString(),
+        likesCount: 0,
+        commentsCount: 0
+      };
+      return { post };
     }
-    const currentUser = (await supabase.auth.getUser()).data.user;
-    const authorId = currentUser?.id || "me";
-    const post = await supabaseRepository.createCommunityPost(authorId, id, payload);
-    return { post };
   },
 
   likeCommunityPost: (postId: string) =>

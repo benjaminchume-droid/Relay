@@ -8,14 +8,14 @@ import {
   ArrowLeft, Send, Paperclip, Smile, MoreVertical, MoreHorizontal,
   Reply, CornerUpRight, Trash2, Edit3, Pin, Copy, Info, Star, Plus,
   Play, Pause, ShieldAlert, ShieldOff, CheckCheck, X, FileText, Download,
-  Check, Mic, Camera
+  Check, Mic, Camera, MessageSquare, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { useChatStore } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore, ACCENT_COLOR_CONFIG } from '../store/themeStore';
 import { useContactsStore } from '../store/contactsStore';
-import { Message, MessageAttachment } from '../types';
+import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
 import { formatChatTimestamp, formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
@@ -130,7 +130,12 @@ export const ChatScreen: React.FC<{
   const { subscriptions } = useRelayRealtime();
 
   const accent = ACCENT_COLOR_CONFIG[customization.accentColor] || ACCENT_COLOR_CONFIG['liquid-azure'];
-  const chat = chats.find((c) => c.id === chatId);
+  const chat = chats.find((c) => c.id === chatId) || {
+    id: chatId,
+    name: 'Conversation',
+    type: 'direct',
+    participants: [currentUser?.id || 'me']
+  } as Chat;
   const chatMsgs = messages[chatId] || [];
   const activeTypingUsers = activeTyping[chatId] || [];
 
@@ -194,8 +199,6 @@ export const ChatScreen: React.FC<{
       return next;
     });
   };
-
-  if (!chat) return null;
 
   // Render Full Contact / Group Profile Screen when user taps header/name
   if (showProfileScreen) {
@@ -395,12 +398,41 @@ export const ChatScreen: React.FC<{
       )}
 
       {/* Messages Scroll Area */}
-      <div className="flex-1 overflow-y-auto px-3 py-3 md:px-6 space-y-2 max-w-4xl w-full mx-auto">
+      <div className="flex-1 overflow-y-auto px-3 py-3 md:px-6 space-y-2 max-w-4xl w-full mx-auto flex flex-col">
 
-        {chatMsgs.map((msg) => {
-          const isMine = currentUser && msg.senderId === currentUser.id;
-          const isStarred = starredMsgIds.has(msg.id);
-          const deliveryState = msg.deliveryState || 'read';
+        {chatMsgs.length === 0 ? (
+          <div className="flex flex-col items-center justify-center min-h-[280px] my-auto py-10 px-4 text-center">
+            <div className="w-14 h-14 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 shadow-xs">
+              <MessageSquare size={26} />
+            </div>
+            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
+              No messages here yet
+            </h3>
+            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mb-5">
+              Send a message below to start this conversation. End-to-end encrypted & secure.
+            </p>
+            <div className="flex flex-wrap items-center justify-center gap-2 max-w-xs">
+              <button
+                type="button"
+                onClick={() => setText('Hello! 👋')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
+              >
+                Say Hello 👋
+              </button>
+              <button
+                type="button"
+                onClick={() => setText('How are you today? 😊')}
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
+              >
+                Ask how they are 😊
+              </button>
+            </div>
+          </div>
+        ) : (
+          chatMsgs.map((msg) => {
+            const isMine = (currentUser && msg.senderId === currentUser.id) || msg.senderId === 'me' || msg.senderId === 'currentUser';
+            const isStarred = starredMsgIds.has(msg.id);
+            const deliveryState = msg.deliveryState || 'read';
 
           return (
             <SwipeableMessageItem
@@ -575,7 +607,7 @@ export const ChatScreen: React.FC<{
 
             </SwipeableMessageItem>
           );
-        })}
+        }))}
 
         <div ref={messagesEndRef} />
       </div>

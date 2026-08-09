@@ -1,4 +1,4 @@
-import { createClient } from "@supabase/supabase-js";
+import { createClient, SupabaseClient } from "@supabase/supabase-js";
 
 const DEFAULT_SUPABASE_URL = "https://gobwknacvpgysmgpvzqt.supabase.co";
 const DEFAULT_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImdvYndrbmFjdnBneXNtZ3B2enF0Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODEwMTk5MzUsImV4cCI6MjA5NjU5NTkzNX0.1PsVy5VJiTr2vp7Qfj4zBEfBWHYrR6mvfqTkcZl48N4";
@@ -9,5 +9,12 @@ export const supabaseAnonKey = metaEnv.VITE_SUPABASE_ANON_KEY || metaEnv.NEXT_PU
 
 export const isSupabaseConfigured = !!(supabaseUrl && supabaseAnonKey);
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey);
+const globalForSupabase = globalThis as unknown as {
+  supabaseBrowserInstance?: SupabaseClient;
+};
+
+export const supabase: SupabaseClient =
+  globalForSupabase.supabaseBrowserInstance ||
+  (globalForSupabase.supabaseBrowserInstance = createClient(supabaseUrl, supabaseAnonKey));
+
 

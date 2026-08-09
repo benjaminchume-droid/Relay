@@ -68,7 +68,7 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
   };
 
   return (
-    <div id={`msg-${messageId}`} className={`relative group ${className}`}>
+    <div id={`msg-${messageId}`} className={`relative group w-full ${className}`}>
       {/* Curved Reply Arrow Indicator revealed on swipe */}
       <div 
         style={{ 
@@ -89,7 +89,7 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
           transform: `translateX(${dragX}px)`,
           transition: isSwiping ? 'none' : 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
-        className="relative z-0"
+        className="relative z-0 w-full flex flex-col items-inherit"
       >
         {children}
       </div>

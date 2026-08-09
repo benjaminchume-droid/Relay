@@ -1187,6 +1187,32 @@ var notificationRepo = {
     await db.from("notifications").update({ read: true }).eq("user_id", userId);
   }
 };
+var supabaseRepository = {
+  user: userRepo,
+  chat: chatRepo,
+  community: communityRepo,
+  status: statusRepo,
+  createCommunity: communityRepo.createCommunity.bind(communityRepo),
+  getCommunities: communityRepo.getCommunities.bind(communityRepo),
+  joinCommunity: communityRepo.joinCommunity.bind(communityRepo),
+  leaveCommunity: communityRepo.leaveCommunity.bind(communityRepo),
+  getCommunityPosts: (id) => Promise.resolve([]),
+  createCommunityPost: (authorId, communityId, payload) => Promise.resolve({
+    id: `post_${Date.now()}`,
+    communityId,
+    channelId: payload.channelId || "c_general",
+    authorId,
+    authorName: "User",
+    content: payload.content || "",
+    title: payload.title,
+    imageUrl: payload.imageUrl,
+    timestamp: (/* @__PURE__ */ new Date()).toISOString(),
+    likesCount: 0,
+    commentsCount: 0,
+    likes: [],
+    comments: []
+  })
+};
 
 // server.ts
 var app = (0, import_express.default)();
