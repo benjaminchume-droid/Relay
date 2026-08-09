@@ -43,10 +43,23 @@ jobs:
       - name: Setup Node.js for Asset Generation
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
+          cache: 'npm'
 
       - name: Install Dependencies
         run: npm ci
+        working-directory: .
+
+      - name: Run Type Check / Lint
+        run: npm run lint
+        working-directory: .
+
+      - name: Build Web Application
+        run: npm run build
+        working-directory: .
+
+      - name: Sync Capacitor Android
+        run: npx cap sync android
         working-directory: .
 
       - name: Generate Android App Icons

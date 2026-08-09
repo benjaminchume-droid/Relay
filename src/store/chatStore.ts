@@ -254,17 +254,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createDirectChat: async (targetUserId) => {
     set({ isLoading: true });
     try {
-      const { chat } = await apiService.createDirectChat(targetUserId);
+      const res = await apiService.createDirectChat(targetUserId);
+      const chat = res.chat || (res as any).conversation;
+      if (!chat || !chat.id) {
+        throw new Error("Invalid conversation object returned from server");
+      }
       set((state) => ({
         chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)],
         activeChatId: chat.id,
-        isLoading: false
+        isLoading: false,
+        error: null,
       }));
       await get().fetchMessages(chat.id);
       return chat.id;
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
-      return '';
+      console.error("[chatStore] createDirectChat error:", err);
+      set({ error: err.message || "Failed to create direct conversation", isLoading: false });
+      throw err;
     }
   },
 

@@ -142,6 +142,7 @@ export const App: React.FC = () => {
         onCloseCreateCommunityModal={() => setShowCreateCommunityModal(false)}
         onOpenCreateGroup={() => setActiveSubRoute('create-group')}
         onSelectChat={(id) => {
+          setActiveSubRoute(null);
           setActiveTab('chats');
           setActiveChat(id);
         }}

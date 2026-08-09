@@ -202,8 +202,12 @@ export const ModalsOverlay: React.FC<{
                         setChatStartError(null);
                         try {
                           const chatId = await createDirectChat(user.id);
-                          onCloseNewChatModal();
-                          if (chatId) onSelectChat(chatId);
+                          if (chatId) {
+                            onCloseNewChatModal();
+                            onSelectChat(chatId);
+                          } else {
+                            setChatStartError('Failed to start conversation. Please try again.');
+                          }
                         } catch (err: any) {
                           console.error("[Relay Direct Chat UI] Error starting conversation:", err);
                           setChatStartError(err.message || 'Failed to start conversation. Please try again.');

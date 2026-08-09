@@ -208,152 +208,6 @@ var sessionRepo = {
     }
   }
 };
-var DEMO_PROFILES = [
-  {
-    id: "user_alex_vance",
-    username: "alex_vance",
-    name: "Alex Vance",
-    email: "alex@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=200&auto=format&fit=crop&q=80",
-    bio: "Product Designer & Glassmorphic UI enthusiast. Building the future of messaging.",
-    statusMessage: "Designing Relay v2.0 \u{1F3A8}",
-    onlineStatus: "online",
-    lastSeen: "Just now",
-    country: "United States",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_sarah_chen",
-    username: "sarah_chen",
-    name: "Sarah Chen",
-    email: "sarah@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1517841905240-472988babdf9?w=200&auto=format&fit=crop&q=80",
-    bio: "Fullstack Systems Architect | Rust & TypeScript developer",
-    statusMessage: "In a meeting \u{1F4BB}",
-    onlineStatus: "online",
-    lastSeen: "5m ago",
-    country: "Canada",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_marcus_thorne",
-    username: "marcus_t",
-    name: "Marcus Thorne",
-    email: "marcus@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=200&auto=format&fit=crop&q=80",
-    bio: "Mobile Engineer & Android Jetpack Compose fan",
-    statusMessage: "Building Relay Android \u{1F4F1}",
-    onlineStatus: "away",
-    lastSeen: "15m ago",
-    country: "United Kingdom",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_elena_rostova",
-    username: "elena_r",
-    name: "Elena Rostova",
-    email: "elena@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1494790108377-be9c29b29330?w=200&auto=format&fit=crop&q=80",
-    bio: "UX Research & Community Lead @ Relay",
-    statusMessage: "Listening to feedback \u{1F3A7}",
-    onlineStatus: "online",
-    lastSeen: "Just now",
-    country: "Germany",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_liam_oconnor",
-    username: "liam_oc",
-    name: "Liam O'Connor",
-    email: "liam@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1500648767791-00dcc994a43e?w=200&auto=format&fit=crop&q=80",
-    bio: "Security Researcher & Encryption Engineer",
-    statusMessage: "Auditing protocols \u{1F6E1}\uFE0F",
-    onlineStatus: "offline",
-    lastSeen: "1h ago",
-    country: "Ireland",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_sophia_martinez",
-    username: "sophia_m",
-    name: "Sophia Martinez",
-    email: "sophia@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1524504388940-b1c1722653e1?w=200&auto=format&fit=crop&q=80",
-    bio: "Digital artist & Motion graphics designer",
-    statusMessage: "Rendering animations \u2728",
-    onlineStatus: "online",
-    lastSeen: "Just now",
-    country: "Spain",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_david_kim",
-    username: "david_k",
-    name: "David Kim",
-    email: "david@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1522075469751-3a6694fb2f61?w=200&auto=format&fit=crop&q=80",
-    bio: "Backend & Cloud Infrastructure Lead",
-    statusMessage: "Scaling servers \u26A1",
-    onlineStatus: "online",
-    lastSeen: "2m ago",
-    country: "South Korea",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  },
-  {
-    id: "user_relay_official",
-    username: "relay_official",
-    name: "Relay Official Support",
-    email: "support@relay.app",
-    avatarUrl: "https://images.unsplash.com/photo-1618005182384-a83a8bd57fbe?w=200&auto=format&fit=crop&q=80",
-    bio: "Official Relay Support & Updates Channel",
-    statusMessage: "Here to help 24/7 \u{1F680}",
-    onlineStatus: "online",
-    lastSeen: "Always active",
-    country: "Global",
-    contacts: [],
-    blockedUsers: [],
-    sentRequests: [],
-    receivedRequests: [],
-    settings: { appearance: { themeMode: "light" }, privacy: { whoCanMessage: "everyone" } },
-    createdAt: (/* @__PURE__ */ new Date()).toISOString()
-  }
-];
 var userRepo = {
   formatProfile(p) {
     return {
@@ -615,59 +469,84 @@ var chatRepo = {
   },
   async createDirectChat(userId, targetUserId) {
     const db = getClient();
-    console.log("[Relay Direct Chat] Current user: resolved ID ->", userId);
-    console.log("[Relay Direct Chat] Target user: resolved ID ->", targetUserId);
-    let currentUserProfile = await userRepo.getProfileById(userId);
+    console.log("[Relay Direct Chat] Current auth user:", userId);
+    let currentProfile = await userRepo.getProfileById(userId);
+    if (!currentProfile) {
+      try {
+        const { data: pData } = await db.from("profiles").select("*").or(`auth_user_id.eq.${userId},user_id.eq.${userId}`).maybeSingle();
+        if (pData) {
+          currentProfile = userRepo.formatProfile(pData);
+        }
+      } catch (e) {
+      }
+    }
+    if (!currentProfile) {
+      console.error("[Relay Direct Chat] Current profile not found for user ID:", userId);
+      throw new Error("CURRENT_PROFILE_NOT_FOUND");
+    }
+    const currentProfileId = currentProfile.id;
+    console.log("[Relay Direct Chat] Current profile resolved:", currentProfileId);
     let targetProfile = await userRepo.getProfileById(targetUserId);
-    if (!currentUserProfile) {
-      await userRepo.createProfile({
-        id: userId,
-        username: `user_${userId.substring(0, 6)}`,
-        name: "Relay Member",
-        email: `${userId}@relay.app`
-      });
-      currentUserProfile = await userRepo.getProfileById(userId);
+    if (!targetProfile) {
+      try {
+        const cleanTarget = targetUserId.trim().toLowerCase().replace(/^@+/, "");
+        const { data: tpData } = await db.from("profiles").select("*").or(`auth_user_id.eq.${targetUserId},user_id.eq.${targetUserId},username.ilike.${cleanTarget}`).maybeSingle();
+        if (tpData) {
+          targetProfile = userRepo.formatProfile(tpData);
+        }
+      } catch (e) {
+      }
     }
     if (!targetProfile) {
-      await userRepo.createProfile({
-        id: targetUserId,
-        username: `user_${targetUserId.substring(0, 6)}`,
-        name: "Relay User",
-        email: `${targetUserId}@relay.app`
-      });
-      targetProfile = await userRepo.getProfileById(targetUserId);
+      console.error("[Relay Direct Chat] Target profile not found for target ID:", targetUserId);
+      throw new Error("TARGET_PROFILE_NOT_FOUND");
+    }
+    const targetProfileId = targetProfile.id;
+    console.log("[Relay Direct Chat] Target profile resolved:", targetProfileId);
+    if (currentProfileId === targetProfileId) {
+      console.error("[Relay Direct Chat] Attempted self-message:", currentProfileId);
+      throw new Error("CANNOT_MESSAGE_SELF");
     }
     try {
-      const { data: blockCheck } = await db.from("blocked_users").select("*").or(`and(blocker_id.eq.${userId},blocked_id.eq.${targetUserId}),and(blocker_id.eq.${targetUserId},blocked_id.eq.${userId})`);
+      const { data: blockCheck } = await db.from("blocked_users").select("*").or(`and(blocker_id.eq.${currentProfileId},blocked_id.eq.${targetProfileId}),and(blocker_id.eq.${targetProfileId},blocked_id.eq.${currentProfileId})`);
       if (blockCheck && blockCheck.length > 0) {
         throw new Error("Cannot start conversation with this user due to privacy settings or blocks");
       }
     } catch (err) {
       if (err.message?.includes("privacy settings or blocks")) throw err;
+      try {
+        const { data: uBlocks } = await db.from("user_blocks").select("*").or(`and(blocker_id.eq.${currentProfileId},blocked_id.eq.${targetProfileId}),and(blocker_id.eq.${targetProfileId},blocked_id.eq.${currentProfileId})`);
+        if (uBlocks && uBlocks.length > 0) {
+          throw new Error("Cannot start conversation with this user due to privacy settings or blocks");
+        }
+      } catch (e) {
+      }
     }
     try {
-      const { data: userConvs, error: ucErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", userId);
+      console.log("[Relay Direct Chat] Existing conversation lookup");
+      const { data: userConvs, error: ucErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", currentProfileId);
       if (!ucErr && userConvs && userConvs.length > 0) {
         const userConvIds = userConvs.map((p) => p.conversation_id);
-        const { data: targetMatches, error: tmErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", targetUserId).in("conversation_id", userConvIds);
+        const { data: targetMatches, error: tmErr } = await db.from("conversation_members").select("conversation_id").eq("profile_id", targetProfileId).in("conversation_id", userConvIds);
         if (!tmErr && targetMatches && targetMatches.length > 0) {
           const commonIds = targetMatches.map((m) => m.conversation_id);
           const { data: directConvs } = await db.from("conversations").select("*").in("id", commonIds).or("conversation_type.eq.direct,conversation_type.is.null");
           if (directConvs && directConvs.length > 0) {
             const existingId = directConvs[0].id;
             console.log("[Relay Direct Chat] Existing conversation lookup: success, reusing conversation ID:", existingId);
-            const allChats = await this.getChatsForUser(userId);
+            console.log("[Relay Direct Chat] Opening conversation");
+            const allChats = await this.getChatsForUser(currentProfileId);
             const found = allChats.find((c) => c.id === existingId);
             if (found) return found;
             return {
               id: existingId,
               type: "direct",
-              name: targetProfile?.name || targetProfile?.username || "Direct Chat",
-              avatarUrl: targetProfile?.avatarUrl,
-              participants: [userId, targetUserId],
+              name: targetProfile.name || targetProfile.username || "Direct Chat",
+              avatarUrl: targetProfile.avatarUrl,
+              participants: [currentProfileId, targetProfileId],
               unreadCount: 0,
               isPinned: false,
-              createdBy: userId,
+              createdBy: currentProfileId,
               createdAt: directConvs[0].created_at || (/* @__PURE__ */ new Date()).toISOString()
             };
           }
@@ -677,52 +556,62 @@ var chatRepo = {
     } catch (e) {
       console.warn("[Relay Direct Chat] Existing conversation lookup exception:", e?.message);
     }
+    console.log("[Relay Direct Chat] Creating conversation");
     const { data: newConv, error: convErr } = await db.from("conversations").insert({
       conversation_type: "direct",
-      created_by: userId,
+      created_by: currentProfileId,
       created_at: (/* @__PURE__ */ new Date()).toISOString(),
       updated_at: (/* @__PURE__ */ new Date()).toISOString()
     }).select().single();
     if (convErr || !newConv) {
-      console.error("[Relay Direct Chat] Conversation creation: failure.", convErr);
+      console.error("[Relay Direct Chat] Conversation creation failure:", convErr);
       throw new Error(`Failed to initialize new conversation channel: ${convErr?.message || "DB Error"}`);
     }
-    console.log("[Relay Direct Chat] Conversation creation: success, new ID:", newConv.id);
+    console.log("[Relay Direct Chat] Conversation created:", newConv.id);
+    console.log("[Relay Direct Chat] Creating owner member");
     const { error: p1Err } = await db.from("conversation_members").insert({
       conversation_id: newConv.id,
-      profile_id: userId,
-      role: "creator",
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
+      profile_id: currentProfileId,
+      role: "owner",
+      status: "active",
+      joined_at: (/* @__PURE__ */ new Date()).toISOString(),
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     if (p1Err) {
-      console.error("[Relay Direct Chat] Creator member insertion: failure.", p1Err);
+      console.error("[Relay Direct Chat] Creating owner member failure:", p1Err);
       await db.from("conversations").delete().eq("id", newConv.id);
-      throw new Error(`Failed to insert creator member: ${p1Err.message}`);
+      throw new Error(`Failed to insert owner member: ${p1Err.message}`);
     }
+    console.log("[Relay Direct Chat] Creating target member");
     const { error: p2Err } = await db.from("conversation_members").insert({
       conversation_id: newConv.id,
-      profile_id: targetUserId,
+      profile_id: targetProfileId,
       role: "member",
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
+      status: "active",
+      joined_at: (/* @__PURE__ */ new Date()).toISOString(),
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
     });
     if (p2Err) {
-      console.error("[Relay Direct Chat] Target member insertion: failure.", p2Err);
+      console.error("[Relay Direct Chat] Creating target member failure:", p2Err);
       await db.from("conversation_members").delete().eq("conversation_id", newConv.id);
       await db.from("conversations").delete().eq("id", newConv.id);
       throw new Error(`Failed to insert target member: ${p2Err.message}`);
     }
-    const all = await this.getChatsForUser(userId);
+    console.log("[Relay Direct Chat] Opening conversation");
+    const all = await this.getChatsForUser(currentProfileId);
     const result = all.find((c) => c.id === newConv.id);
     if (result) return result;
     return {
       id: newConv.id,
       type: "direct",
-      name: targetProfile?.name || targetProfile?.username || "Direct Chat",
-      avatarUrl: targetProfile?.avatarUrl,
-      participants: [userId, targetUserId],
+      name: targetProfile.name || targetProfile.username || "Direct Chat",
+      avatarUrl: targetProfile.avatarUrl,
+      participants: [currentProfileId, targetProfileId],
       unreadCount: 0,
       isPinned: false,
-      createdBy: userId,
+      createdBy: currentProfileId,
       createdAt: newConv.created_at || (/* @__PURE__ */ new Date()).toISOString()
     };
   },
@@ -755,8 +644,11 @@ var chatRepo = {
     const memberRows = uniqueParticipants.map((pid) => ({
       conversation_id: newConv.id,
       profile_id: pid,
-      role: pid === userId ? "creator" : "member",
-      created_at: (/* @__PURE__ */ new Date()).toISOString()
+      role: pid === userId ? "owner" : "member",
+      status: "active",
+      joined_at: (/* @__PURE__ */ new Date()).toISOString(),
+      created_at: (/* @__PURE__ */ new Date()).toISOString(),
+      updated_at: (/* @__PURE__ */ new Date()).toISOString()
     }));
     await db.from("conversation_members").insert(memberRows);
     const all = await this.getChatsForUser(userId);
