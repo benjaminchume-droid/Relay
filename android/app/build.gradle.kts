@@ -121,3 +121,9 @@ dependencies {
     implementation("androidx.coordinatorlayout:coordinatorlayout:1.2.0")
     implementation(libs.kotlinx.coroutines.android)
 }
+
+val capacitorBuildGradle = file("capacitor.build.gradle")
+if (capacitorBuildGradle.exists()) {
+    apply(from = capacitorBuildGradle)
+}
+

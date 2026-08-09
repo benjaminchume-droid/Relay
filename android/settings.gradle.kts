@@ -18,3 +18,8 @@ include(":app")
 
 include(":capacitor-android")
 project(":capacitor-android").projectDir = java.io.File("../node_modules/@capacitor/android/capacitor")
+
+val capacitorSettings = file("capacitor.settings.gradle")
+if (capacitorSettings.exists()) {
+    apply(from = capacitorSettings)
+}
