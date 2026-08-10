@@ -88,24 +88,14 @@ jobs:
           KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
-            echo "Decoding release keystore to upload-keystore.jks..."
-            python3 -c "
-import base64, os, re
-raw = os.environ.get('KEYSTORE_BASE64', '')
-clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
-if clean:
-    pad = len(clean) % 4
-    if pad:
-        clean += '=' * (4 - pad)
-    with open('upload-keystore.jks', 'wb') as f:
-        f.write(base64.b64decode(clean))
-"
+            echo "Decoding release keystore..."
+            python3 ../scripts/decode_keystore.py
             if [ -s upload-keystore.jks ]; then
-              chmod 600 upload-keystore.jks
-              echo "Keystore successfully decoded to upload-keystore.jks."
+              chmod 600 upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
+              echo "Keystore successfully decoded."
             else
               echo "Failed to decode keystore: upload-keystore.jks is empty."
-              rm -f upload-keystore.jks
+              rm -f upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
             fi
           else
             echo "ANDROID_RELEASE_KEYSTORE_BASE64 secret is not set. Building with debug signing fallback."
@@ -120,7 +110,12 @@ if clean:
             echo "=========================================="
             echo "RELEASE SIGNING CERTIFICATE SHA-1 FINGERPRINT FOR GOOGLE OAUTH:"
             
-            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks ${KEY_ALIAS:+-alias "$KEY_ALIAS"} -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
+            ALIAS_ARG=""
+            if [ -n "$KEY_ALIAS" ]; then
+              ALIAS_ARG="-alias $KEY_ALIAS"
+            fi
+
+            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks $ALIAS_ARG -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
             
             if [ -n "$SHA1_OUTPUT" ]; then
               echo "SHA1: $SHA1_OUTPUT"
@@ -176,7 +171,7 @@ if clean:
 
       - name: Clean up Decoded Keystore
         if: always()
-        run: rm -f upload-keystore.jks
+        run: rm -f upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
 
   publish-github-release:
     name: Publish GitHub Release
