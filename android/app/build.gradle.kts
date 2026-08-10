@@ -47,9 +47,9 @@ android {
                 ?: file("app/$storeFilePath").takeIf { it.exists() }
                 ?: file("../$storeFilePath").takeIf { it.exists() }
 
-            val envStorePass = System.getenv("KEYSTORE_PASSWORD") ?: ""
-            val envKeyAlias = System.getenv("KEY_ALIAS") ?: ""
-            val envKeyPass = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
+            val envStorePass = System.getenv("KEYSTORE_PASSWORD") ?: System.getenv("ANDROID_RELEASE_KEYSTORE_PASSWORD") ?: ""
+            val envKeyAlias = System.getenv("KEY_ALIAS") ?: System.getenv("ANDROID_RELEASE_KEY_ALIAS") ?: ""
+            val envKeyPass = System.getenv("KEY_PASSWORD") ?: System.getenv("ANDROID_RELEASE_KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD") ?: System.getenv("ANDROID_RELEASE_KEYSTORE_PASSWORD") ?: ""
             val envStoreType = System.getenv("KEYSTORE_TYPE") ?: ""
 
             val propStorePass = keystoreProperties.getProperty("storePassword")
@@ -62,14 +62,12 @@ android {
             val finalKeyPass = if (!propKeyPass.isNullOrEmpty()) propKeyPass else if (!propStorePass.isNullOrEmpty()) propStorePass else envKeyPass
             val finalStoreType = if (!propStoreType.isNullOrEmpty()) propStoreType else envStoreType
 
-            if (keystoreFile != null && keystoreFile.exists()) {
-                storeFile = keystoreFile
-                storePassword = finalStorePass
-                keyAlias = finalKeyAlias
-                keyPassword = finalKeyPass
-                if (!finalStoreType.isNullOrEmpty()) {
-                    storeType = finalStoreType
-                }
+            storeFile = keystoreFile ?: file(storeFilePath)
+            storePassword = finalStorePass
+            keyAlias = finalKeyAlias
+            keyPassword = finalKeyPass
+            if (!finalStoreType.isNullOrEmpty()) {
+                storeType = finalStoreType
             }
         }
     }
@@ -84,13 +82,7 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
-
-            val releaseSigning = signingConfigs.getByName("release")
-            if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
-                signingConfig = releaseSigning
-            } else {
-                throw GradleException("Release build configuration failure: Release signing keystore was not found or not configured! Aborting build to prevent debug-signed release binaries.")
-            }
+            signingConfig = signingConfigs.getByName("release")
         }
     }
 
@@ -135,5 +127,38 @@ dependencies {
 val capacitorBuildGradle = file("capacitor.build.gradle")
 if (capacitorBuildGradle.exists()) {
     apply(from = capacitorBuildGradle)
+}
+
+gradle.taskGraph.whenReady {
+    val isReleaseTaskRequested = allTasks.any { task ->
+        val name = task.name
+        (name.contains("Release", ignoreCase = false) &&
+            (name.startsWith("assemble") || name.startsWith("bundle") || name.startsWith("package")))
+    }
+    if (isReleaseTaskRequested) {
+        val releaseSigning = android.signingConfigs.getByName("release")
+        val storeFile = releaseSigning.storeFile
+        if (storeFile == null || !storeFile.exists()) {
+            throw GradleException(
+                "Release build failure: Release signing keystore was not found at '${storeFile?.absolutePath ?: "unconfigured"}'. " +
+                "Ensure ANDROID_RELEASE_KEYSTORE_BASE64 or KEYSTORE_FILE is configured for release builds."
+            )
+        }
+        if (releaseSigning.storePassword.isNullOrEmpty()) {
+            throw GradleException(
+                "Release build failure: Release keystore password (KEYSTORE_PASSWORD / ANDROID_RELEASE_KEYSTORE_PASSWORD) is missing or empty."
+            )
+        }
+        if (releaseSigning.keyAlias.isNullOrEmpty()) {
+            throw GradleException(
+                "Release build failure: Release key alias (KEY_ALIAS / ANDROID_RELEASE_KEY_ALIAS) is missing or empty."
+            )
+        }
+        if (releaseSigning.keyPassword.isNullOrEmpty()) {
+            throw GradleException(
+                "Release build failure: Release key password (KEY_PASSWORD / ANDROID_RELEASE_KEY_PASSWORD) is missing or empty."
+            )
+        }
+    }
 }
 
