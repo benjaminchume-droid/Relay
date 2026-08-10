@@ -351,6 +351,44 @@ export async function directSupabaseCheckUsername(username: string) {
   return { valid: true, message: "Username is available" };
 }
 
+export async function directSupabaseSearchUsers(q: string): Promise<{ users: UserProfile[] }> {
+  const cleanQuery = (q || "").trim().toLowerCase().replace(/^@+/, '').trim();
+  let currentUserId: string | null = null;
+  try {
+    const { data: sess } = await supabase.auth.getSession();
+    currentUserId = sess?.session?.user?.id || null;
+  } catch {
+    // ignore
+  }
+
+  try {
+    const { data, error } = await supabase.from("profiles").select("*").limit(50);
+    if (!error && data) {
+      const filtered = data.filter((p: any) => {
+        if (currentUserId && (p.id === currentUserId || p.auth_user_id === currentUserId || p.user_id === currentUserId)) {
+          return false;
+        }
+        if (!cleanQuery) return true;
+        const uname = (p.username || '').toLowerCase();
+        const fname = (p.full_name || p.display_name || p.name || '').toLowerCase();
+        const email = (p.email || '').toLowerCase();
+        const bio = (p.bio || '').toLowerCase();
+        return (
+          uname.includes(cleanQuery) ||
+          fname.includes(cleanQuery) ||
+          email.includes(cleanQuery) ||
+          bio.includes(cleanQuery)
+        );
+      });
+      return { users: filtered.map((p: any) => formatClientProfile(p)).slice(0, 25) };
+    }
+  } catch (e) {
+    console.warn("[Relay Search Direct Supabase] Query notice:", e);
+  }
+
+  return { users: [] };
+}
+
 async function apiRequest<T>(endpoint: string, options: RequestInit = {}): Promise<T> {
   const token = getAuthToken();
   const headers: Record<string, string> = {
@@ -555,12 +593,11 @@ export const apiService = {
     }),
 
   searchUsers: async (q: string) => {
+    if (isCapacitorNative()) {
+      return directSupabaseSearchUsers(q);
+    }
     const url = `/api/users/search?q=${encodeURIComponent(q)}`;
-    console.log("[Relay Search 7] Request URL:", url);
-    const res = await apiRequest<{ users: UserProfile[] }>(url);
-    console.log("[Relay Search 8] HTTP status: 200");
-    console.log("[Relay Search 9] Raw response:", res);
-    return res;
+    return await apiRequest<{ users: UserProfile[] }>(url);
   },
 
   toggleBlockUser: (targetUserId: string) =>

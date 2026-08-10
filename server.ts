@@ -112,6 +112,12 @@ async function authenticate(req: express.Request, res: express.Response, next: e
   }
 }
 
+function asyncHandler(fn: (req: express.Request, res: express.Response, next: express.NextFunction) => Promise<any>) {
+  return (req: express.Request, res: express.Response, next: express.NextFunction) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
+
 function createDefaultSettings(): UserProfile["settings"] {
   return {
     appearance: {
@@ -593,13 +599,29 @@ app.put("/api/users/settings", authenticate, async (req, res) => {
   res.json({ settings: currentSettings });
 });
 
-app.get("/api/users/search", authenticate, async (req, res) => {
+app.get("/api/users/search", authenticate, asyncHandler(async (req, res) => {
   const query = (req.query.q as string || "").toLowerCase().trim();
-  const currentUserId = (req as any).user.id;
+  const currentUserId = (req as any).user?.id || "anonymous";
 
+  console.log(`[Relay API] GET /api/users/search - query: "${query}", user: ${currentUserId}`);
   const users = await userRepo.searchProfiles(query, currentUserId);
+  res.setHeader("Content-Type", "application/json");
   res.json({ users });
-});
+}));
+
+app.get("/api/search", authenticate, asyncHandler(async (req, res) => {
+  const query = (req.query.q as string || "").toLowerCase().trim();
+  const currentUserId = (req as any).user?.id || "anonymous";
+
+  console.log(`[Relay API] GET /api/search - query: "${query}", user: ${currentUserId}`);
+  const users = await userRepo.searchProfiles(query, currentUserId);
+  const communities = await communityRepo.getCommunities();
+  const filteredCommunities = communities.filter((c: any) =>
+    (c.name || "").toLowerCase().includes(query) || (c.description || "").toLowerCase().includes(query)
+  );
+  res.setHeader("Content-Type", "application/json");
+  res.json({ users, communities: filteredCommunities });
+}));
 
 app.post("/api/users/block", authenticate, async (req, res) => {
   const user = (req as any).user;
@@ -1028,6 +1050,27 @@ app.delete("/api/statuses/:id", authenticate, async (req, res) => {
 
   await statusRepo.deleteStatus(id, currentUser.id);
   res.json({ success: true });
+});
+
+// Catch-all for any unmatched /api/* endpoints to ensure they ALWAYS return JSON 404 instead of falling through to Vite/SPA index.html
+app.all("/api/*", (req, res) => {
+  console.warn(`[Relay API] Unmatched API route requested: ${req.method} ${req.originalUrl || req.path}`);
+  res.setHeader("Content-Type", "application/json");
+  res.status(404).json({
+    error: `API endpoint ${req.method} ${req.path} not found`
+  });
+});
+
+// Express Error Handling Middleware for API routes
+app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
+  if (req.path.startsWith("/api/") || req.originalUrl?.startsWith("/api/")) {
+    console.error(`[Relay API Exception] ${req.method} ${req.path}:`, err);
+    res.setHeader("Content-Type", "application/json");
+    return res.status(err.status || err.statusCode || 500).json({
+      error: err.message || "Internal server error"
+    });
+  }
+  next(err);
 });
 
 // Configure Vite middleware for dev vs dist static files for production

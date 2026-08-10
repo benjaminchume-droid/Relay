@@ -1299,6 +1299,11 @@ async function authenticate(req, res, next) {
     return res.status(401).json({ error: err.message || "Authentication failed" });
   }
 }
+function asyncHandler(fn) {
+  return (req, res, next) => {
+    Promise.resolve(fn(req, res, next)).catch(next);
+  };
+}
 function createDefaultSettings() {
   return {
     appearance: {
@@ -1709,12 +1714,26 @@ app.put("/api/users/settings", authenticate, async (req, res) => {
   await userRepo.updateSettings(user.id, currentSettings);
   res.json({ settings: currentSettings });
 });
-app.get("/api/users/search", authenticate, async (req, res) => {
+app.get("/api/users/search", authenticate, asyncHandler(async (req, res) => {
   const query = (req.query.q || "").toLowerCase().trim();
-  const currentUserId = req.user.id;
+  const currentUserId = req.user?.id || "anonymous";
+  console.log(`[Relay API] GET /api/users/search - query: "${query}", user: ${currentUserId}`);
   const users = await userRepo.searchProfiles(query, currentUserId);
+  res.setHeader("Content-Type", "application/json");
   res.json({ users });
-});
+}));
+app.get("/api/search", authenticate, asyncHandler(async (req, res) => {
+  const query = (req.query.q || "").toLowerCase().trim();
+  const currentUserId = req.user?.id || "anonymous";
+  console.log(`[Relay API] GET /api/search - query: "${query}", user: ${currentUserId}`);
+  const users = await userRepo.searchProfiles(query, currentUserId);
+  const communities = await communityRepo.getCommunities();
+  const filteredCommunities = communities.filter(
+    (c) => (c.name || "").toLowerCase().includes(query) || (c.description || "").toLowerCase().includes(query)
+  );
+  res.setHeader("Content-Type", "application/json");
+  res.json({ users, communities: filteredCommunities });
+}));
 app.post("/api/users/block", authenticate, async (req, res) => {
   const user = req.user;
   const { targetUserId } = req.body;
@@ -2063,6 +2082,23 @@ app.delete("/api/statuses/:id", authenticate, async (req, res) => {
   const { id } = req.params;
   await statusRepo.deleteStatus(id, currentUser.id);
   res.json({ success: true });
+});
+app.all("/api/*", (req, res) => {
+  console.warn(`[Relay API] Unmatched API route requested: ${req.method} ${req.originalUrl || req.path}`);
+  res.setHeader("Content-Type", "application/json");
+  res.status(404).json({
+    error: `API endpoint ${req.method} ${req.path} not found`
+  });
+});
+app.use((err, req, res, next) => {
+  if (req.path.startsWith("/api/") || req.originalUrl?.startsWith("/api/")) {
+    console.error(`[Relay API Exception] ${req.method} ${req.path}:`, err);
+    res.setHeader("Content-Type", "application/json");
+    return res.status(err.status || err.statusCode || 500).json({
+      error: err.message || "Internal server error"
+    });
+  }
+  next(err);
 });
 async function startServer() {
   if (process.env.NODE_ENV !== "production") {

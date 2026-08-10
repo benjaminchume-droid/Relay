@@ -95,6 +95,27 @@ jobs:
             echo "ANDROID_RELEASE_KEYSTORE_BASE64 secret is not set. Building with debug signing fallback."
           fi
 
+      - name: Output Release Keystore SHA-1 Fingerprint
+        env:
+          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: |
+          if [ -f upload-keystore.jks ]; then
+            echo "=========================================="
+            echo "RELEASE SIGNING CERTIFICATE SHA-1 FINGERPRINT FOR GOOGLE OAUTH:"
+            
+            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks ${KEY_ALIAS:+-alias "$KEY_ALIAS"} -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
+            
+            if [ -n "$SHA1_OUTPUT" ]; then
+              echo "SHA1: $SHA1_OUTPUT"
+            else
+              echo "Could not extract SHA-1 fingerprint. Please verify KEYSTORE_PASSWORD and KEY_ALIAS."
+            fi
+            echo "=========================================="
+          else
+            echo "upload-keystore.jks not found. Skipping SHA-1 fingerprint extraction."
+          fi
+
       - name: CI Debug - List Android Resources & Keystore
         run: |
           ls -la app/src/main/res/mipmap-* || true
@@ -136,6 +157,10 @@ jobs:
           name: relay-release-aab
           path: android/app/build/outputs/bundle/release/*.aab
           if-no-files-found: error
+
+      - name: Clean up Decoded Keystore
+        if: always()
+        run: rm -f upload-keystore.jks
 
   publish-github-release:
     name: Publish GitHub Release
