@@ -89,8 +89,24 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Decoding release keystore to upload-keystore.jks..."
-            echo "$KEYSTORE_BASE64" | tr -d '\r\n\t ' | base64 -d -i > upload-keystore.jks || echo "$KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks
-            chmod 600 upload-keystore.jks
+            python3 -c "
+import base64, os, re
+raw = os.environ.get('KEYSTORE_BASE64', '')
+clean = re.sub(r'[^A-Za-z0-9+/=]', '', raw)
+if clean:
+    pad = len(clean) % 4
+    if pad:
+        clean += '=' * (4 - pad)
+    with open('upload-keystore.jks', 'wb') as f:
+        f.write(base64.b64decode(clean))
+"
+            if [ -s upload-keystore.jks ]; then
+              chmod 600 upload-keystore.jks
+              echo "Keystore successfully decoded to upload-keystore.jks."
+            else
+              echo "Failed to decode keystore: upload-keystore.jks is empty."
+              rm -f upload-keystore.jks
+            fi
           else
             echo "ANDROID_RELEASE_KEYSTORE_BASE64 secret is not set. Building with debug signing fallback."
           fi
