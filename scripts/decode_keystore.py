@@ -17,9 +17,16 @@ def decode_keystore():
         print("No valid Base64 characters found in KEYSTORE_BASE64.")
         return
 
+    # Handle invalid base64 length where remainder % 4 == 1 (incomplete base64 byte)
+    if len(clean) % 4 == 1:
+        print("WARNING: KEYSTORE_BASE64 appears truncated or has an orphan character (length % 4 == 1). Trimming single trailing character to restore base64 alignment.")
+        clean = clean[:-1]
+
     pad = len(clean) % 4
-    if pad:
-        clean += '=' * (4 - pad)
+    if pad == 2:
+        clean += '=='
+    elif pad == 3:
+        clean += '='
 
     try:
         data = base64.b64decode(clean)
