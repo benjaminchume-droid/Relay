@@ -49,9 +49,13 @@ def validate_keystore():
     detected_type = None
     valid_storepass = None
 
-    candidate_passwords = [storepass]
-    if raw_storepass != storepass and raw_storepass:
-        candidate_passwords.append(raw_storepass)
+    candidate_passwords = []
+    for p in [storepass, keypass, raw_storepass, raw_keypass]:
+        p_clean = p.strip() if p else ''
+        if p_clean and p_clean not in candidate_passwords:
+            candidate_passwords.append(p_clean)
+        if p and p not in candidate_passwords:
+            candidate_passwords.append(p)
 
     for pass_cand in candidate_passwords:
         # Try PKCS12 first

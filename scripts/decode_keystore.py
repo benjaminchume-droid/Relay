@@ -3,9 +3,9 @@ import os
 import re
 
 def decode_keystore():
-    raw = os.environ.get('KEYSTORE_BASE64', '').strip()
+    raw = (os.environ.get('KEYSTORE_BASE64') or os.environ.get('ANDROID_RELEASE_KEYSTORE_BASE64') or '').strip().strip("'\"")
     if not raw:
-        print("KEYSTORE_BASE64 environment variable is empty.")
+        print("KEYSTORE_BASE64 or ANDROID_RELEASE_KEYSTORE_BASE64 environment variable is empty.")
         return
 
     # Clean non-base64 characters

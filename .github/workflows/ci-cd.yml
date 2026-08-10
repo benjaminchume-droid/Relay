@@ -168,7 +168,7 @@ jobs:
 
       - name: Clean up Decoded Keystore
         if: always()
-        run: rm -f upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
+        run: rm -f upload-keystore.jks app/upload-keystore.jks key.properties app/key.properties sha1_fingerprint.txt app/sha1_fingerprint.txt 2>/dev/null || true
 
   publish-github-release:
     name: Publish GitHub Release
