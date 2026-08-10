@@ -73,7 +73,7 @@ def validate_keystore():
 
     if not storepass:
         print("DIAGNOSTIC_ERROR: Keystore password is invalid.")
-        print("The supplied production keystore/password combination is invalid. A new release keystore must NOT be generated until ownership of the existing signing identity is confirmed.")
+        print("The existing production keystore was successfully decoded and verified, but the supplied store password does not unlock it. Update GitHub secret ANDROID_RELEASE_KEYSTORE_PASSWORD with the original keystore container password.")
         sys.exit(1)
 
     # 1. Detect storeType and validate storepass
@@ -114,7 +114,7 @@ def validate_keystore():
 
     if not detected_type or not valid_storepass:
         print("DIAGNOSTIC_ERROR: Keystore password is invalid.")
-        print("The supplied production keystore/password combination is invalid. A new release keystore must NOT be generated until ownership of the existing signing identity is confirmed.")
+        print("The existing production keystore was successfully decoded and verified, but the supplied store password does not unlock it. Update GitHub secret ANDROID_RELEASE_KEYSTORE_PASSWORD with the original keystore container password.")
         sys.exit(1)
 
     print(f"Detected keystore type: {detected_type}")
