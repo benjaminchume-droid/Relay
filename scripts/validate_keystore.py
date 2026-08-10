@@ -11,7 +11,15 @@ def run_keytool(args):
 
 def validate_keystore():
     raw_b64 = os.environ.get('ANDROID_RELEASE_KEYSTORE_BASE64') or os.environ.get('KEYSTORE_BASE64') or ''
-    
+    raw_storepass = os.environ.get('ANDROID_RELEASE_KEYSTORE_PASSWORD') or os.environ.get('KEYSTORE_PASSWORD') or os.environ.get('STORE_PASSWORD') or ''
+    raw_keypass = os.environ.get('ANDROID_RELEASE_KEY_PASSWORD') or os.environ.get('KEY_PASSWORD') or ''
+    raw_alias = os.environ.get('ANDROID_RELEASE_KEY_ALIAS') or os.environ.get('KEY_ALIAS') or ''
+
+    print(f"ANDROID_RELEASE_KEYSTORE_BASE64: {'PRESENT' if raw_b64.strip() else 'MISSING'}")
+    print(f"ANDROID_RELEASE_KEYSTORE_PASSWORD: {'PRESENT' if raw_storepass.strip() else 'MISSING'}")
+    print(f"ANDROID_RELEASE_KEY_ALIAS: {'PRESENT' if raw_alias.strip() else 'MISSING'}")
+    print(f"ANDROID_RELEASE_KEY_PASSWORD: {'PRESENT' if raw_keypass.strip() else 'MISSING'}")
+
     keystore_path = None
     possible_paths = [
         'upload-keystore.jks',
@@ -48,18 +56,13 @@ def validate_keystore():
     is_jks = data.startswith(b'\xfe\xed\xfe\xed')
     is_pkcs12 = len(data) > 2 and data[0] == 0x30 and data[1] in (0x80, 0x81, 0x82, 0x83)
 
+    sha256 = hashlib.sha256(data).hexdigest()
+    print(f"Decoded keystore size: {len(data)} bytes")
+    print(f"SHA-256: {sha256}")
+
     if not is_jks and not is_pkcs12:
-        sha256 = hashlib.sha256(data).hexdigest()
-        print(f"Keystore file size: {len(data)} bytes, SHA-256: {sha256}")
         print("DIAGNOSTIC_ERROR: Decoded keystore is not a valid JKS/PKCS12 keystore.")
         sys.exit(1)
-
-    sha256 = hashlib.sha256(data).hexdigest()
-    print(f"Verified keystore binary structure. Size: {len(data)} bytes, SHA-256: {sha256}")
-
-    raw_storepass = os.environ.get('ANDROID_RELEASE_KEYSTORE_PASSWORD') or os.environ.get('KEYSTORE_PASSWORD') or ''
-    raw_keypass = os.environ.get('ANDROID_RELEASE_KEY_PASSWORD') or os.environ.get('KEY_PASSWORD') or ''
-    raw_alias = os.environ.get('ANDROID_RELEASE_KEY_ALIAS') or os.environ.get('KEY_ALIAS') or ''
 
     storepass = raw_storepass.strip().strip("'\"")
     keypass = raw_keypass.strip().strip("'\"")
@@ -70,6 +73,7 @@ def validate_keystore():
 
     if not storepass:
         print("DIAGNOSTIC_ERROR: Keystore password is invalid.")
+        print("The supplied production keystore/password combination is invalid. A new release keystore must NOT be generated until ownership of the existing signing identity is confirmed.")
         sys.exit(1)
 
     # 1. Detect storeType and validate storepass
@@ -77,8 +81,19 @@ def validate_keystore():
     valid_storepass = None
 
     candidate_passwords = []
-    for p in [storepass, keypass, raw_storepass, raw_keypass]:
-        p_clean = p.strip().strip("'\"") if p else ''
+    env_pass_sources = [
+        raw_storepass,
+        raw_keypass,
+        os.environ.get('ANDROID_RELEASE_KEYSTORE_PASSWORD', ''),
+        os.environ.get('ANDROID_RELEASE_KEY_PASSWORD', ''),
+        os.environ.get('KEYSTORE_PASSWORD', ''),
+        os.environ.get('KEY_PASSWORD', ''),
+        os.environ.get('STORE_PASSWORD', ''),
+    ]
+    for p in env_pass_sources:
+        if not p:
+            continue
+        p_clean = p.strip().strip("'\"")
         if p_clean and p_clean not in candidate_passwords:
             candidate_passwords.append(p_clean)
         if p and p not in candidate_passwords:
@@ -102,7 +117,7 @@ def validate_keystore():
         print("The supplied production keystore/password combination is invalid. A new release keystore must NOT be generated until ownership of the existing signing identity is confirmed.")
         sys.exit(1)
 
-    print(f"Keystore format detected and verified: {detected_type}")
+    print(f"Detected keystore type: {detected_type}")
 
     # 2. Extract available aliases and validate KEY_ALIAS
     code, stdout, stderr = run_keytool(['-list', '-keystore', keystore_path, '-storepass', valid_storepass, '-storetype', detected_type])
