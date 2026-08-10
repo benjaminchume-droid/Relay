@@ -44,16 +44,26 @@ android {
 
             val keystoreFile = file(storeFilePath).takeIf { it.exists() }
                 ?: rootProject.file(storeFilePath).takeIf { it.exists() }
+                ?: file("app/$storeFilePath").takeIf { it.exists() }
                 ?: file("../$storeFilePath").takeIf { it.exists() }
+
+            val envStorePass = System.getenv("KEYSTORE_PASSWORD") ?: ""
+            val envKeyAlias = System.getenv("KEY_ALIAS") ?: ""
+            val envKeyPass = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
+
+            val propStorePass = keystoreProperties.getProperty("storePassword")
+            val propKeyAlias = keystoreProperties.getProperty("keyAlias")
+            val propKeyPass = keystoreProperties.getProperty("keyPassword")
+
+            val finalStorePass = if (!propStorePass.isNullOrEmpty()) propStorePass else envStorePass
+            val finalKeyAlias = if (!propKeyAlias.isNullOrEmpty()) propKeyAlias else envKeyAlias
+            val finalKeyPass = if (!propKeyPass.isNullOrEmpty()) propKeyPass else if (!propStorePass.isNullOrEmpty()) propStorePass else envKeyPass
 
             if (keystoreFile != null && keystoreFile.exists()) {
                 storeFile = keystoreFile
-                storePassword = keystoreProperties.getProperty("storePassword")
-                    ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
-                keyAlias = keystoreProperties.getProperty("keyAlias")
-                    ?: System.getenv("KEY_ALIAS") ?: ""
-                keyPassword = keystoreProperties.getProperty("keyPassword")
-                    ?: System.getenv("KEY_PASSWORD") ?: ""
+                storePassword = finalStorePass
+                keyAlias = finalKeyAlias
+                keyPassword = finalKeyPass
             }
         }
     }

@@ -19,7 +19,7 @@ def decode_keystore():
 
     # Handle invalid base64 length where remainder % 4 == 1 (incomplete base64 byte)
     if len(clean) % 4 == 1:
-        print("WARNING: KEYSTORE_BASE64 appears truncated or has an orphan character (length % 4 == 1). Trimming single trailing character to restore base64 alignment.")
+        print("WARNING: KEYSTORE_BASE64 length % 4 == 1. Removing trailing orphan character.")
         clean = clean[:-1]
 
     pad = len(clean) % 4
@@ -30,13 +30,11 @@ def decode_keystore():
 
     try:
         data = base64.b64decode(clean)
-        # Write to multiple candidate paths so both root, android/, and android/app/ find it easily
         target_paths = [
             'upload-keystore.jks',
             'app/upload-keystore.jks',
-            '../upload-keystore.jks',
-            '../android/upload-keystore.jks',
-            '../android/app/upload-keystore.jks'
+            'android/upload-keystore.jks',
+            'android/app/upload-keystore.jks'
         ]
         
         saved_count = 0
@@ -44,7 +42,7 @@ def decode_keystore():
             try:
                 parent = os.path.dirname(path)
                 if parent and not os.path.exists(parent):
-                    continue
+                    os.makedirs(parent, exist_ok=True)
                 with open(path, 'wb') as f:
                     f.write(data)
                 saved_count += 1
@@ -57,3 +55,4 @@ def decode_keystore():
 
 if __name__ == '__main__':
     decode_keystore()
+

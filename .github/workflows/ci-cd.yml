@@ -110,6 +110,7 @@ jobs:
       - name: Output Release Keystore SHA-1 Fingerprint
         env:
           KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
           KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
         run: |
           if [ -f upload-keystore.jks ]; then
@@ -121,7 +122,12 @@ jobs:
               ALIAS_ARG="-alias $KEY_ALIAS"
             fi
 
-            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks $ALIAS_ARG -storepass "$KEYSTORE_PASSWORD" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
+            PASS_TO_USE="$KEYSTORE_PASSWORD"
+            if [ -z "$PASS_TO_USE" ]; then
+              PASS_TO_USE="$KEY_PASSWORD"
+            fi
+
+            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks $ALIAS_ARG -storepass "$PASS_TO_USE" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
             
             if [ -n "$SHA1_OUTPUT" ]; then
               echo "SHA1: $SHA1_OUTPUT"
