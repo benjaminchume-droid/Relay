@@ -1,3 +1,4 @@
+import hashlib
 import os
 import re
 import subprocess
@@ -9,6 +10,8 @@ def run_keytool(args):
     return res.returncode, res.stdout, res.stderr
 
 def validate_keystore():
+    raw_b64 = os.environ.get('ANDROID_RELEASE_KEYSTORE_BASE64') or os.environ.get('KEYSTORE_BASE64') or ''
+    
     keystore_path = None
     possible_paths = [
         'upload-keystore.jks',
@@ -24,25 +27,49 @@ def validate_keystore():
             break
 
     if not keystore_path:
-        print("DIAGNOSTIC_ERROR: Decoded keystore file not found or is empty.")
+        if not raw_b64.strip():
+            print("DIAGNOSTIC_ERROR: RELEASE_KEYSTORE_BASE64 is missing.")
+        else:
+            print("DIAGNOSTIC_ERROR: Decoded keystore file is missing.")
         sys.exit(1)
 
-    raw_storepass = os.environ.get('KEYSTORE_PASSWORD') or os.environ.get('ANDROID_RELEASE_KEYSTORE_PASSWORD') or ''
-    raw_keypass = os.environ.get('KEY_PASSWORD') or os.environ.get('ANDROID_RELEASE_KEY_PASSWORD') or ''
-    raw_alias = os.environ.get('KEY_ALIAS') or os.environ.get('ANDROID_RELEASE_KEY_ALIAS') or ''
+    # Verify file content and magic bytes
+    try:
+        with open(keystore_path, 'rb') as f:
+            data = f.read()
+    except Exception as e:
+        print(f"DIAGNOSTIC_ERROR: Failed to read decoded keystore file: {e}")
+        sys.exit(1)
 
-    # Clean whitespace and trailing newlines without exposing secret values
-    storepass = raw_storepass.strip()
-    keypass = raw_keypass.strip()
-    alias = raw_alias.strip()
+    if len(data) == 0:
+        print("DIAGNOSTIC_ERROR: Decoded keystore file is missing.")
+        sys.exit(1)
+
+    is_jks = data.startswith(b'\xfe\xed\xfe\xed')
+    is_pkcs12 = len(data) > 2 and data[0] == 0x30 and data[1] in (0x80, 0x81, 0x82, 0x83)
+
+    if not is_jks and not is_pkcs12:
+        sha256 = hashlib.sha256(data).hexdigest()
+        print(f"Keystore file size: {len(data)} bytes, SHA-256: {sha256}")
+        print("DIAGNOSTIC_ERROR: Decoded keystore is not a valid JKS/PKCS12 keystore.")
+        sys.exit(1)
+
+    sha256 = hashlib.sha256(data).hexdigest()
+    print(f"Verified keystore binary structure. Size: {len(data)} bytes, SHA-256: {sha256}")
+
+    raw_storepass = os.environ.get('ANDROID_RELEASE_KEYSTORE_PASSWORD') or os.environ.get('KEYSTORE_PASSWORD') or ''
+    raw_keypass = os.environ.get('ANDROID_RELEASE_KEY_PASSWORD') or os.environ.get('KEY_PASSWORD') or ''
+    raw_alias = os.environ.get('ANDROID_RELEASE_KEY_ALIAS') or os.environ.get('KEY_ALIAS') or ''
+
+    storepass = raw_storepass.strip().strip("'\"")
+    keypass = raw_keypass.strip().strip("'\"")
+    alias = raw_alias.strip().strip("'\"")
 
     if not storepass and keypass:
         storepass = keypass
-    if not keypass and storepass:
-        keypass = storepass
 
     if not storepass:
-        print("DIAGNOSTIC_ERROR: KEYSTORE_PASSWORD secret is missing or empty.")
+        print("DIAGNOSTIC_ERROR: Keystore password is invalid.")
         sys.exit(1)
 
     # 1. Detect storeType and validate storepass
@@ -51,28 +78,28 @@ def validate_keystore():
 
     candidate_passwords = []
     for p in [storepass, keypass, raw_storepass, raw_keypass]:
-        p_clean = p.strip() if p else ''
+        p_clean = p.strip().strip("'\"") if p else ''
         if p_clean and p_clean not in candidate_passwords:
             candidate_passwords.append(p_clean)
         if p and p not in candidate_passwords:
             candidate_passwords.append(p)
 
+    # Determine priority based on magic bytes
+    formats_to_try = ['PKCS12', 'JKS'] if is_pkcs12 else (['JKS', 'PKCS12'] if is_jks else ['PKCS12', 'JKS'])
+
     for pass_cand in candidate_passwords:
-        # Try PKCS12 first
-        code, stdout, stderr = run_keytool(['-list', '-keystore', keystore_path, '-storepass', pass_cand, '-storetype', 'PKCS12'])
-        if code == 0:
-            detected_type = 'PKCS12'
-            valid_storepass = pass_cand
-            break
-        # Try JKS
-        code, stdout, stderr = run_keytool(['-list', '-keystore', keystore_path, '-storepass', pass_cand, '-storetype', 'JKS'])
-        if code == 0:
-            detected_type = 'JKS'
-            valid_storepass = pass_cand
+        for fmt in formats_to_try:
+            code, stdout, stderr = run_keytool(['-list', '-keystore', keystore_path, '-storepass', pass_cand, '-storetype', fmt])
+            if code == 0:
+                detected_type = fmt
+                valid_storepass = pass_cand
+                break
+        if detected_type:
             break
 
     if not detected_type or not valid_storepass:
-        print("DIAGNOSTIC_ERROR: Keystore password verification failed (invalid ANDROID_RELEASE_KEYSTORE_PASSWORD or corrupted keystore).")
+        print("DIAGNOSTIC_ERROR: Keystore password is invalid.")
+        print("The supplied production keystore/password combination is invalid. A new release keystore must NOT be generated until ownership of the existing signing identity is confirmed.")
         sys.exit(1)
 
     print(f"Keystore format detected and verified: {detected_type}")
@@ -92,9 +119,9 @@ def validate_keystore():
     if not alias:
         if available_aliases:
             alias = available_aliases[0]
-            print(f"No KEY_ALIAS specified, auto-detected alias: {alias}")
+            print(f"No release key alias specified, auto-detected alias: {alias}")
         else:
-            print("DIAGNOSTIC_ERROR: No key alias found in keystore.")
+            print("DIAGNOSTIC_ERROR: Release key alias does not exist.")
             sys.exit(1)
     else:
         match_found = False
@@ -108,13 +135,18 @@ def validate_keystore():
             if code_alias == 0:
                 match_found = True
             else:
-                print(f"DIAGNOSTIC_ERROR: Key alias '{alias}' not found in keystore. Available aliases: {available_aliases}")
+                print(f"DIAGNOSTIC_ERROR: Release key alias does not exist.")
+                print(f"Available aliases in keystore: {available_aliases}")
                 sys.exit(1)
 
     # 3. Validate KEY_PASSWORD for alias
-    candidate_keypasses = [keypass, valid_storepass]
-    if raw_keypass and raw_keypass not in candidate_keypasses:
-        candidate_keypasses.append(raw_keypass)
+    candidate_keypasses = []
+    for kp in [keypass, valid_storepass, raw_keypass]:
+        kp_clean = kp.strip().strip("'\"") if kp else ''
+        if kp_clean and kp_clean not in candidate_keypasses:
+            candidate_keypasses.append(kp_clean)
+        if kp and kp not in candidate_keypasses:
+            candidate_keypasses.append(kp)
 
     valid_keypass = None
     for kpass_cand in candidate_keypasses:
@@ -124,7 +156,7 @@ def validate_keystore():
             break
 
     if not valid_keypass:
-        print(f"DIAGNOSTIC_ERROR: Key password verification failed for alias '{alias}'.")
+        print("DIAGNOSTIC_ERROR: Release key password is invalid.")
         sys.exit(1)
 
     print("Keystore credentials, key alias, and key password successfully validated.")
@@ -179,3 +211,4 @@ storeType={detected_type}
 
 if __name__ == '__main__':
     validate_keystore()
+
