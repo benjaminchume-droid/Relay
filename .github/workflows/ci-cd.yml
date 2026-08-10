@@ -90,54 +90,39 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "KEYSTORE_BASE64 secret is present (Length: ${#KEYSTORE_BASE64} chars)."
             echo "Decoding release keystore..."
-            python3 ../scripts/decode_keystore.py || true
-            if [ ! -s upload-keystore.jks ]; then
-              echo "Python decode did not produce upload-keystore.jks, trying base64 CLI..."
-              echo "$KEYSTORE_BASE64" | base64 --decode > upload-keystore.jks 2>/dev/null || echo "$KEYSTORE_BASE64" | base64 -d > upload-keystore.jks 2>/dev/null || true
-              cp upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
-            fi
-            if [ -s upload-keystore.jks ]; then
+            python3 ../scripts/decode_keystore.py
+            if [ -s upload-keystore.jks ] || [ -s app/upload-keystore.jks ]; then
               chmod 600 upload-keystore.jks app/upload-keystore.jks 2>/dev/null || true
               echo "Keystore successfully decoded to upload-keystore.jks."
             else
-              echo "ERROR: Failed to decode keystore into a valid non-empty file."
+              echo "DIAGNOSTIC_ERROR: Failed to decode keystore into a valid non-empty file."
+              exit 1
             fi
           else
-            echo "WARNING: ANDROID_RELEASE_KEYSTORE_BASE64 secret is not set in GitHub Repository Secrets!"
-            echo "Please ensure the secret is added under Settings > Secrets and variables > Actions > Repository secrets."
+            echo "DIAGNOSTIC_ERROR: ANDROID_RELEASE_KEYSTORE_BASE64 secret is missing in GitHub Repository Secrets!"
+            exit 1
           fi
+
+      - name: Validate Release Keystore & Credentials
+        env:
+          ANDROID_RELEASE_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+        run: python3 ../scripts/validate_keystore.py
 
       - name: Output Release Keystore SHA-1 Fingerprint
-        env:
-          KEYSTORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEYSTORE_PASSWORD }}
-          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
-          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
         run: |
-          if [ -f upload-keystore.jks ]; then
-            echo "=========================================="
-            echo "RELEASE SIGNING CERTIFICATE SHA-1 FINGERPRINT FOR GOOGLE OAUTH:"
-            
-            ALIAS_ARG=""
-            if [ -n "$KEY_ALIAS" ]; then
-              ALIAS_ARG="-alias $KEY_ALIAS"
-            fi
-
-            PASS_TO_USE="$KEYSTORE_PASSWORD"
-            if [ -z "$PASS_TO_USE" ]; then
-              PASS_TO_USE="$KEY_PASSWORD"
-            fi
-
-            SHA1_OUTPUT=$(keytool -list -v -keystore upload-keystore.jks $ALIAS_ARG -storepass "$PASS_TO_USE" 2>/dev/null | grep -i "SHA1:" | head -n 1 | sed 's/.*SHA1: //' | tr -d ' ')
-            
-            if [ -n "$SHA1_OUTPUT" ]; then
-              echo "SHA1: $SHA1_OUTPUT"
-            else
-              echo "Could not extract SHA-1 fingerprint. Please verify KEYSTORE_PASSWORD and KEY_ALIAS."
-            fi
-            echo "=========================================="
+          echo "=========================================="
+          echo "RELEASE SIGNING CERTIFICATE SHA-1 FINGERPRINT FOR GOOGLE OAUTH:"
+          if [ -f sha1_fingerprint.txt ]; then
+            cat sha1_fingerprint.txt
+          elif [ -f app/sha1_fingerprint.txt ]; then
+            cat app/sha1_fingerprint.txt
           else
-            echo "upload-keystore.jks not found. Skipping SHA-1 fingerprint extraction."
+            echo "Could not find generated SHA-1 fingerprint file."
           fi
+          echo ""
+          echo "=========================================="
 
       - name: CI Debug - List Android Resources & Keystore
         run: |

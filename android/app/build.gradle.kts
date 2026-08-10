@@ -50,20 +50,26 @@ android {
             val envStorePass = System.getenv("KEYSTORE_PASSWORD") ?: ""
             val envKeyAlias = System.getenv("KEY_ALIAS") ?: ""
             val envKeyPass = System.getenv("KEY_PASSWORD") ?: System.getenv("KEYSTORE_PASSWORD") ?: ""
+            val envStoreType = System.getenv("KEYSTORE_TYPE") ?: ""
 
             val propStorePass = keystoreProperties.getProperty("storePassword")
             val propKeyAlias = keystoreProperties.getProperty("keyAlias")
             val propKeyPass = keystoreProperties.getProperty("keyPassword")
+            val propStoreType = keystoreProperties.getProperty("storeType")
 
             val finalStorePass = if (!propStorePass.isNullOrEmpty()) propStorePass else envStorePass
             val finalKeyAlias = if (!propKeyAlias.isNullOrEmpty()) propKeyAlias else envKeyAlias
             val finalKeyPass = if (!propKeyPass.isNullOrEmpty()) propKeyPass else if (!propStorePass.isNullOrEmpty()) propStorePass else envKeyPass
+            val finalStoreType = if (!propStoreType.isNullOrEmpty()) propStoreType else envStoreType
 
             if (keystoreFile != null && keystoreFile.exists()) {
                 storeFile = keystoreFile
                 storePassword = finalStorePass
                 keyAlias = finalKeyAlias
                 keyPassword = finalKeyPass
+                if (!finalStoreType.isNullOrEmpty()) {
+                    storeType = finalStoreType
+                }
             }
         }
     }
@@ -83,7 +89,7 @@ android {
             if (releaseSigning.storeFile != null && releaseSigning.storeFile!!.exists()) {
                 signingConfig = releaseSigning
             } else {
-                signingConfig = signingConfigs.getByName("debug")
+                throw GradleException("Release build configuration failure: Release signing keystore was not found or not configured! Aborting build to prevent debug-signed release binaries.")
             }
         }
     }
