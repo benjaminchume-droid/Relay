@@ -157,21 +157,21 @@ jobs:
         run: ./gradlew assembleRelease bundleRelease --stacktrace
 
       - name: Upload Debug APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: relay-debug-apk
           path: android/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
 
       - name: Upload Release APK Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: relay-release-apk
           path: android/app/build/outputs/apk/release/*.apk
           if-no-files-found: error
 
       - name: Upload Release AAB Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: relay-release-aab
           path: android/app/build/outputs/bundle/release/*.aab
