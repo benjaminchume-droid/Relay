@@ -67,7 +67,17 @@ export const App: React.FC = () => {
     activeProfile?.onboarding_completed === true || 
     activeProfile?.onboardingCompleted === true;
 
-  // 2. EMAIL_UNVERIFIED Guard
+  // 2. UNAUTHENTICATED Guard -> Route strictly to Create Relay Account / Sign In
+  if (status === 'UNAUTHENTICATED' || !activeProfile) {
+    return (
+      <div className="min-h-screen w-full relative flex items-center justify-center">
+        <AmbientLiquidBackground />
+        <AuthFlow onSuccess={() => setActiveTab('chats')} />
+      </div>
+    );
+  }
+
+  // 3. EMAIL_UNVERIFIED Guard -> Route strictly to OTP Verification Screen
   if (status === 'EMAIL_UNVERIFIED') {
     return (
       <div className="min-h-screen w-full relative flex items-center justify-center">
@@ -77,18 +87,8 @@ export const App: React.FC = () => {
     );
   }
 
-  // 3. UNAUTHENTICATED Guard -> Route to Create Relay Account / Sign In
-  if (status === 'UNAUTHENTICATED') {
-    return (
-      <div className="min-h-screen w-full relative flex items-center justify-center">
-        <AmbientLiquidBackground />
-        <AuthFlow onSuccess={() => setActiveTab('chats')} />
-      </div>
-    );
-  }
-
-  // 4. NEEDS_SETUP Guard -> Route to Relay Setup Wizard
-  if (status === 'NEEDS_SETUP' || status === 'ONBOARDING_REQUIRED' || (!isSetupDone && status !== 'READY' && status !== 'AUTHENTICATED')) {
+  // 4. NEEDS_SETUP Guard -> Route to Relay Setup Wizard (ONLY for verified authenticated users needing setup)
+  if (status === 'NEEDS_SETUP' || status === 'ONBOARDING_REQUIRED' || (!isSetupDone && status !== 'READY')) {
     return (
       <div className="min-h-screen w-full relative flex items-center justify-center">
         <AmbientLiquidBackground />

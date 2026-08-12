@@ -21,7 +21,7 @@ export const ProfileView: React.FC = () => {
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cacheCleared, setCacheCleared] = useState(false);
   
-  const { currentUser, updateProfile, uploadAvatarOrBanner, updatePrivacy, revokeSession, revokeAllOtherSessions, logout } = useAuthStore();
+  const { currentUser, updateProfile, uploadAvatarOrBanner, updatePrivacy, revokeSession, revokeAllOtherSessions, logout, deleteAccount } = useAuthStore();
   const { 
     customization, 
     setAccentColor, 
@@ -200,25 +200,27 @@ export const ProfileView: React.FC = () => {
 
           {/* Theme Mode */}
           <GlassCard className="p-5 space-y-3">
-            <span className="text-xs font-bold text-slate-800 block">Theme Palette</span>
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-800 block">Theme Mode</span>
+              <span className="text-[10px] font-semibold text-slate-500 bg-slate-200/80 px-2 py-0.5 rounded-md">Light Glass Default</span>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
               {themeModes.map((tm) => {
-                const isSel = customization.themeMode === tm.id;
+                const isSel = tm.id === 'light' || customization.themeMode === tm.id;
+                const isComingSoon = tm.id !== 'light';
                 return (
                   <button
                     key={tm.id}
-                    onClick={() => updateCustomization({ themeMode: tm.id })}
-                    style={{
-                      backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
-                      borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
-                    }}
-                    className={`p-3 rounded-2xl border text-xs font-semibold cursor-pointer transition-all ${
+                    disabled={isComingSoon}
+                    onClick={() => !isComingSoon && updateCustomization({ themeMode: tm.id })}
+                    className={`p-3 rounded-2xl border text-xs font-semibold transition-all relative flex flex-col items-center justify-center gap-0.5 ${
                       isSel
-                        ? 'text-white shadow-md' 
-                        : 'bg-white/60 text-slate-700 hover:bg-white border-slate-200'
+                        ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                        : 'bg-white/40 text-slate-400 border-slate-200 cursor-not-allowed opacity-70'
                     }`}
                   >
-                    {tm.label}
+                    <span>{tm.label}</span>
+                    {isComingSoon && <span className="text-[9px] font-normal text-slate-400 font-mono">(Coming Soon)</span>}
                   </button>
                 );
               })}
@@ -624,7 +626,7 @@ export const ProfileView: React.FC = () => {
       {showDeleteModal && (
         <DeleteAccountModal 
           onClose={() => setShowDeleteModal(false)}
-          onConfirmDelete={logout}
+          onConfirmDelete={deleteAccount}
         />
       )}
 
@@ -632,54 +634,35 @@ export const ProfileView: React.FC = () => {
   );
 };
 
-const DeleteAccountModal: React.FC<{ onClose: () => void; onConfirmDelete: () => void }> = ({ onClose, onConfirmDelete }) => {
-  const [countdown, setCountdown] = useState<number | null>(null);
+const DeleteAccountModal: React.FC<{ onClose: () => void; onConfirmDelete: () => Promise<void> }> = ({ onClose, onConfirmDelete }) => {
+  const [isDeleting, setIsDeleting] = useState(false);
 
-  useEffect(() => {
-    if (countdown === null) return;
-    if (countdown <= 0) {
-      onConfirmDelete();
-      return;
-    }
-    const timer = setTimeout(() => setCountdown(countdown - 1), 1000);
-    return () => clearTimeout(timer);
-  }, [countdown, onConfirmDelete]);
+  const handleConfirm = async () => {
+    setIsDeleting(true);
+    await onConfirmDelete();
+  };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4">
       <GlassCard heavy className="max-w-md w-full p-6 space-y-4 text-left border-red-300">
         <div className="flex items-center gap-3 text-red-600">
           <AlertTriangle size={24} />
-          <h3 className="text-base font-bold text-slate-800">Queue Permanent Account Deletion</h3>
+          <h3 className="text-base font-bold text-slate-800">Permanent Account Deletion</h3>
         </div>
 
-        {countdown === null ? (
-          <>
-            <p className="text-xs text-slate-600 leading-relaxed">
-              This action will queue your account for permanent deletion. Once initiated, a 10-second countdown will start during which you may cancel the operation.
-            </p>
-            <div className="flex items-center justify-end gap-2 pt-2">
-              <GlassButton onClick={onClose} variant="secondary" className="py-2 px-4 text-xs">
-                Cancel
-              </GlassButton>
-              <GlassButton onClick={() => setCountdown(10)} variant="danger" className="py-2 px-4 text-xs font-bold">
-                Start Deletion Queue
-              </GlassButton>
-            </div>
-          </>
-        ) : (
-          <div className="text-center py-4 space-y-4">
-            <div className="w-20 h-20 mx-auto rounded-full bg-red-500/10 border-2 border-red-500/30 flex items-center justify-center">
-              <span className="text-3xl font-extrabold text-red-600 font-mono">{countdown}s</span>
-            </div>
-            <p className="text-xs text-red-600 font-medium">
-              Deleting account in {countdown} seconds... Background deletion job scheduled.
-            </p>
-            <GlassButton onClick={onClose} variant="secondary" className="w-full py-2.5 text-xs font-bold">
-              Cancel Deletion & Keep Account
-            </GlassButton>
-          </div>
-        )}
+        <p className="text-xs text-slate-600 leading-relaxed">
+          This action will permanently delete your account, authentication credentials, and database profile. This action cannot be undone.
+        </p>
+
+        <div className="flex items-center justify-end gap-2 pt-2">
+          <GlassButton onClick={onClose} disabled={isDeleting} variant="secondary" className="py-2 px-4 text-xs">
+            Cancel
+          </GlassButton>
+          <GlassButton onClick={handleConfirm} disabled={isDeleting} variant="danger" className="py-2 px-4 text-xs font-bold flex items-center gap-2">
+            {isDeleting && <RefreshCw className="animate-spin" size={14} />}
+            <span>Permanently Delete Account</span>
+          </GlassButton>
+        </div>
       </GlassCard>
     </div>
   );

@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { GoogleAuth } from '@codetrix-studio/capacitor-google-auth';
+import { FirebaseAuthentication } from '@capacitor-firebase/authentication';
 import { supabase } from '../lib/supabase/client';
 
 /**
@@ -39,12 +39,7 @@ export async function initializeGoogleAuth(): Promise<void> {
   try {
     const isNative = typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
     if (isNative) {
-      console.log('[Relay GoogleAuth] Initializing native GoogleAuth with Web Client ID:', GOOGLE_WEB_CLIENT_ID);
-      await GoogleAuth.initialize({
-        clientId: GOOGLE_WEB_CLIENT_ID,
-        scopes: ['profile', 'email'],
-        grantOfflineAccess: true,
-      });
+      console.log('[Relay GoogleAuth] Initializing Capacitor Firebase Auth with Web Client ID:', GOOGLE_WEB_CLIENT_ID);
       isGoogleAuthInitialized = true;
     }
   } catch (err) {
@@ -61,15 +56,18 @@ export async function performNativeGoogleSignIn(): Promise<{ success: boolean; e
 
     const isNative = typeof window !== 'undefined' && !!(window as any).Capacitor?.isNativePlatform?.();
     let idToken: string | null = null;
+    let accessToken: string | null = null;
 
     if (isNative) {
-      console.log('[Relay GoogleAuth] Triggering native GoogleAuth.signIn()...');
-      const googleUser = await GoogleAuth.signIn();
-      console.log('[Relay GoogleAuth] Native sign-in response received:', googleUser ? 'Success' : 'Empty');
+      console.log('[Relay GoogleAuth] Triggering native FirebaseAuthentication.signInWithGoogle()...');
+      const result = await FirebaseAuthentication.signInWithGoogle();
+      console.log('[Relay GoogleAuth] Native sign-in response received:', result ? 'Success' : 'Empty');
 
-      idToken = googleUser.authentication?.idToken || (googleUser as any).idToken || null;
+      idToken = result.credential?.idToken || (result as any).idToken || null;
+      accessToken = result.credential?.accessToken || null;
+
       if (!idToken) {
-        throw new Error('Google Sign-In failed: No ID Token returned from Google Auth SDK.');
+        throw new Error('Google Sign-In failed: No ID Token returned from Capacitor Firebase Auth SDK.');
       }
     } else {
       // Web / Browser environment fallback using Google GIS JS or prompt
@@ -84,6 +82,7 @@ export async function performNativeGoogleSignIn(): Promise<{ success: boolean; e
     const { data, error } = await supabase.auth.signInWithIdToken({
       provider: 'google',
       token: idToken,
+      ...(accessToken ? { access_token: accessToken } : {}),
     });
 
     if (error) {

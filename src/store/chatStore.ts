@@ -393,16 +393,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createGroupChat: async (name, description, participantIds, isPrivate, avatarUrl) => {
     set({ isLoading: true, error: null });
     try {
-      // 8-second timeout guard to prevent infinite hanging
-      const timeoutPromise = new Promise<never>((_, reject) => {
-        const id = setTimeout(() => {
-          clearTimeout(id);
-          reject(new Error("Group creation request timed out after 8 seconds. Please check network connection."));
-        }, 8000);
-      });
-
-      const createPromise = apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
-      const res = await Promise.race([createPromise, timeoutPromise]);
+      const res = await apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
       const chat = res.chat;
 
       if (!chat || !chat.id) {

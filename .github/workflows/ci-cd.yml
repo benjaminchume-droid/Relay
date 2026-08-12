@@ -47,7 +47,7 @@ jobs:
           cache: 'npm'
 
       - name: Install Dependencies
-        run: npm ci
+        run: npm ci --legacy-peer-deps
         working-directory: .
 
       - name: Run Type Check / Lint
@@ -134,6 +134,10 @@ jobs:
           fi
           echo ""
           echo "=========================================="
+
+      - name: Generate & Print SHA-256 Fingerprint for Google OAuth / Firebase
+        run: npm run get-sha256
+        working-directory: .
 
       - name: CI Debug - List Android Resources & Keystore
         run: |

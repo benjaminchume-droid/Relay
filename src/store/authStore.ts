@@ -82,6 +82,7 @@ export interface AuthState {
 
   // Profile & Session Management
   logout: () => Promise<void>;
+  deleteAccount: () => Promise<void>;
   updateProfile: (updates: Partial<UserProfile>) => Promise<void>;
   updateAppearance: (appearanceUpdates: Partial<UserProfile['settings']['appearance']>) => Promise<void>;
   toggleBlockUser: (targetUserId: string) => Promise<void>;
@@ -364,16 +365,14 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       });
     }
 
-    // 2. BACKGROUND SUPABASE SESSION VALIDATION (with safety timeout)
+    // 2. BACKGROUND SUPABASE SESSION VALIDATION
     try {
-      const getSessionPromise = supabase.auth.getSession();
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ isTimeout: true }), 3500));
-      const res: any = await Promise.race([getSessionPromise, timeoutPromise]);
+      const res = await supabase.auth.getSession();
 
       if (res?.data?.session?.user) {
         await resolveUserAuthState(res.data.session.user, set, get, true);
-      } else if (res?.isTimeout || res?.error) {
-        console.warn('[Relay Auth] Session check timeout/error:', res?.error);
+      } else if (res?.error) {
+        console.warn('[Relay Auth] Session check error:', res?.error);
         const setupDone = typeof localStorage !== 'undefined' && localStorage.getItem('relay_setup_completed') === 'true';
         if (!setupDone && !get().currentUser) {
           set({
@@ -918,6 +917,7 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       localStorage.removeItem('relay_setup_completed');
       localStorage.removeItem('relay_cached_user_profile');
       localStorage.removeItem('relay_v2_auth_token');
+      localStorage.clear();
     }
 
     set({
@@ -926,10 +926,59 @@ export const useAuthStore = create<AuthState>((set, get) => ({
       currentUser: null,
       profile: null,
       unverifiedEmail: null,
+      isAuthenticated: false,
       isLoading: false,
       isLoadingProfile: false,
       signupDraft: DEFAULT_SIGNUP_DRAFT
     });
+  },
+
+  deleteAccount: async () => {
+    const user = get().currentUser || get().profile;
+    set({ isLoading: true, error: null });
+
+    try {
+      if (user?.id) {
+        // 1. Delete associated DB profile record from Supabase
+        const { error: dbErr } = await supabase.from('profiles').delete().eq('id', user.id);
+        if (dbErr) {
+          console.warn('[Relay Auth DeleteAccount] Profile deletion DB error:', dbErr);
+        }
+
+        // 2. Trigger RPC deletion function if present
+        try {
+          await supabase.rpc('delete_user_account', { user_id: user.id });
+        } catch (e) {
+          // ignore RPC error if not defined
+        }
+      }
+
+      // 3. Sign out of Supabase Auth session
+      await supabase.auth.signOut();
+    } catch (err: any) {
+      console.error('[Relay Auth DeleteAccount Exception]', err);
+    } finally {
+      // 4. Purge local storage tokens & cached state
+      if (typeof localStorage !== 'undefined') {
+        localStorage.removeItem('relay_setup_completed');
+        localStorage.removeItem('relay_cached_user_profile');
+        localStorage.removeItem('relay_v2_auth_token');
+        localStorage.clear();
+      }
+
+      // 5. Hard reset router state to UNAUTHENTICATED
+      set({
+        status: 'UNAUTHENTICATED',
+        currentStep: 'CREATE_ACCOUNT',
+        currentUser: null,
+        profile: null,
+        unverifiedEmail: null,
+        isAuthenticated: false,
+        isLoading: false,
+        isLoadingProfile: false,
+        signupDraft: DEFAULT_SIGNUP_DRAFT
+      });
+    }
   },
 
   updateProfile: async (updates) => {
@@ -1189,10 +1238,8 @@ async function resolveUserAuthState(sbUser: any, set: any, get: any, isSilent = 
     // 3. No local setup flag yet: Fetch profile from backend to evaluate setup state
     let profileData: any = null;
     try {
-      const profPromise = supabase.from('profiles').select('*').eq('id', sbUser.id).maybeSingle();
-      const timeoutPromise = new Promise((resolve) => setTimeout(() => resolve({ isTimeout: true }), 3000));
-      const res: any = await Promise.race([profPromise, timeoutPromise]);
-      if (!res?.isTimeout && res?.data) {
+      const res = await supabase.from('profiles').select('*').eq('id', sbUser.id).maybeSingle();
+      if (res?.data) {
         profileData = res.data;
       }
     } catch (e) {

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck } from 'lucide-react';
+import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck, Camera, MoreVertical, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard, GlassInput, GlassButton } from './GlassUI';
 import { useChatStore } from '../store/chatStore';
@@ -67,39 +67,60 @@ export const ChatList: React.FC<{
   };
 
   return (
-    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-6 pb-28 relative min-h-screen text-left">
+    <div className="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-5 pb-28 relative min-h-screen text-left">
       
-      {/* Top Header */}
+      {/* Top Header with App Branding, Camera Icon, and Action Menu */}
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold tracking-tight text-slate-800">Messages</h1>
-          <p className="text-xs text-slate-500 font-medium">Recent conversations</p>
+          <h1 className="text-2xl font-black tracking-tight text-slate-800">Chats</h1>
+        </div>
+        <div className="flex items-center gap-3 text-slate-700">
+          <button 
+            type="button"
+            onClick={onOpenNewChatModal}
+            className="p-2 rounded-full hover:bg-slate-200/60 transition-all cursor-pointer"
+            title="Camera"
+          >
+            <Camera size={20} className="text-slate-700" />
+          </button>
+          <button 
+            type="button"
+            onClick={onOpenNewChatModal}
+            className="p-2 rounded-full hover:bg-slate-200/60 transition-all cursor-pointer"
+            title="Menu"
+          >
+            <MoreVertical size={20} className="text-slate-700" />
+          </button>
         </div>
       </div>
 
-      {/* Search Bar & Sub-tabs */}
+      {/* Rounded, light-gray search bar with "Ask Meta AI or Search" placeholder */}
       <div className="space-y-3">
-        <GlassInput 
-          placeholder="Search chats..."
-          icon={<Search size={16} />}
-          value={searchQuery}
-          onChange={(e) => {
-            setSearchQuery(e.target.value);
-          }}
-        />
+        <div className="relative w-full">
+          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400">
+            <Search size={16} />
+          </div>
+          <input
+            type="text"
+            placeholder="Ask Meta AI or Search"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-medium border border-slate-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+          />
+        </div>
 
         <div className="flex items-center gap-2">
           {(['all', 'direct', 'group'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setSubTab(tab)}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold capitalize transition-all cursor-pointer ${
+              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize transition-all cursor-pointer ${
                 subTab === tab 
                   ? 'bg-blue-600 text-white shadow-xs font-bold' 
-                  : 'bg-white/70 text-slate-600 hover:bg-white border border-slate-200/60'
+                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/60'
               }`}
             >
-              {tab === 'all' ? 'All Chats' : tab === 'direct' ? 'Direct' : 'Groups'}
+              {tab === 'all' ? 'All' : tab === 'direct' ? 'Unread' : 'Groups'}
             </button>
           ))}
         </div>
@@ -219,6 +240,7 @@ const ChatItem: React.FC<{
   const { currentUser } = useAuthStore();
   const hasLastMessage = !!(chat.lastMessage && chat.lastMessage.text);
   const deliveryState = chat.lastMessage?.deliveryState || 'read';
+  const isOutgoing = chat.lastMessage?.senderId === currentUser?.id;
 
   return (
     <GlassCard 
@@ -230,10 +252,12 @@ const ChatItem: React.FC<{
           <img 
             src={chat.avatarUrl || getLetterAvatar(chat.name)} 
             alt={chat.name} 
-            className="w-11 h-11 rounded-2xl object-cover border border-white shadow-xs"
+            className="w-12 h-12 rounded-full object-cover border border-white shadow-2xs"
           />
+          {/* Active status indicator / ring */}
+          <span className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-emerald-500 border-2 border-white rounded-full shadow-2xs" />
           {chat.type === 'group' && (
-            <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1 rounded-lg border border-white shadow-xs">
+            <div className="absolute -bottom-1 -right-1 bg-blue-600 text-white p-1 rounded-full border border-white shadow-2xs">
               <Users size={10} />
             </div>
           )}
@@ -241,25 +265,25 @@ const ChatItem: React.FC<{
 
         <div className="min-w-0 flex-1 text-left">
           <div className="flex items-center justify-between gap-2 mb-0.5">
-            <h3 className="text-xs font-bold text-slate-800 truncate">{chat.name}</h3>
+            <h3 className="text-xs font-bold text-slate-900 truncate tracking-tight">{chat.name}</h3>
             {hasLastMessage && (
-              <span className="text-[10px] font-mono text-slate-400 shrink-0">
+              <span className="text-[10px] font-semibold text-slate-400 shrink-0">
                 {formatChatTimestamp(chat.lastMessage?.timestamp)}
               </span>
             )}
           </div>
 
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium truncate">
-            {hasLastMessage && (
+            {hasLastMessage && isOutgoing && (
               deliveryState === 'read' ? (
-                <CheckCheck size={14} className="shrink-0" style={{ color: 'var(--primary-accent, #2563EB)' }} />
+                <CheckCheck size={14} className="shrink-0 text-blue-600" />
               ) : deliveryState === 'delivered' ? (
                 <CheckCheck size={14} className="text-slate-400 shrink-0" />
               ) : (
                 <Check size={14} className="text-slate-400 shrink-0" />
               )
             )}
-            <span className="truncate">{hasLastMessage ? chat.lastMessage!.text : 'No messages yet'}</span>
+            <span className="truncate text-slate-600 font-normal">{hasLastMessage ? chat.lastMessage!.text : 'No messages yet'}</span>
           </div>
         </div>
       </div>
@@ -267,8 +291,7 @@ const ChatItem: React.FC<{
       <div className="flex items-center gap-2 shrink-0">
         {chat.unreadCount && chat.unreadCount > 0 ? (
           <span 
-            style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
-            className="text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-full shadow-xs"
+            className="bg-emerald-500 text-white text-[10px] font-mono font-bold px-2 py-0.5 rounded-full shadow-xs"
           >
             {chat.unreadCount}
           </span>

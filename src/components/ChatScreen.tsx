@@ -359,14 +359,14 @@ export const ChatScreen: React.FC<{
       <AmbientLiquidBackground />
 
       {/* Grounded Edge-to-Edge Pinned Header */}
-      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/85 dark:bg-slate-900/85 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800 dark:text-slate-100">
-        <div className="flex items-center gap-3 min-w-0 flex-1">
+      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800 dark:text-slate-100">
+        <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button 
             onClick={onBack}
-            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center transition-all cursor-pointer border border-slate-200 shrink-0"
+            className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shrink-0"
             title="Back to chats"
           >
-            <ArrowLeft size={18} />
+            <ArrowLeft size={20} />
           </button>
 
           <div 
@@ -378,26 +378,35 @@ export const ChatScreen: React.FC<{
               <img 
                 src={headerAvatar} 
                 alt={headerDisplayName}
-                className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs" 
+                className="w-10 h-10 rounded-full object-cover border border-slate-200 shadow-2xs" 
               />
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
             </div>
 
             <div className="text-left min-w-0 flex-1">
-              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight truncate group-hover:text-blue-600 transition-colors">
+              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight truncate group-hover:text-blue-600 transition-colors">
                 {headerDisplayName}
               </h2>
-              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block truncate">
-                {activeTypingUsers.length > 0 ? 'Typing...' : headerUsername}
+              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block truncate">
+                {activeTypingUsers.length > 0 ? 'Typing...' : 'online'}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex items-center gap-2 shrink-0 text-slate-700 dark:text-slate-200">
           <button 
+            type="button"
+            onClick={() => setIsCameraOpen(true)}
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+            title="Camera"
+          >
+            <Camera size={18} />
+          </button>
+          <button 
+            type="button"
             onClick={() => setShowProfileScreen(true)}
-            className="w-9 h-9 rounded-full hover:bg-slate-100 text-slate-600 flex items-center justify-center transition-all cursor-pointer border border-transparent hover:border-slate-200"
+            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
             title="More Options"
           >
             <MoreVertical size={18} />
@@ -420,6 +429,13 @@ export const ChatScreen: React.FC<{
 
       {/* Messages Scroll Area */}
       <div className="flex-1 overflow-y-auto px-3 py-3 md:px-6 space-y-2 max-w-4xl w-full mx-auto flex flex-col">
+
+        {/* Centered Date Divider Pill */}
+        <div className="flex justify-center my-2 sticky top-2 z-20 pointer-events-none">
+          <span className="px-3 py-1 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-md text-[10px] font-bold text-slate-500 dark:text-slate-400 shadow-2xs border border-slate-200/60 dark:border-slate-700/60 uppercase tracking-wider">
+            Today
+          </span>
+        </div>
 
         {chatMsgs.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[280px] my-auto py-10 px-4 text-center">
@@ -741,30 +757,6 @@ export const ChatScreen: React.FC<{
                 className="hidden" 
               />
 
-              {/* Attach '+' Button */}
-              {!isRecordingVoice && (
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="w-9 h-9 rounded-full bg-slate-100/90 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200/90 transition-all cursor-pointer shrink-0 shadow-xs"
-                  title="Attach File or Photo"
-                >
-                  <Plus size={18} />
-                </button>
-              )}
-
-              {/* In-App Camera Button */}
-              {!isRecordingVoice && (
-                <button
-                  type="button"
-                  onClick={() => setIsCameraOpen(true)}
-                  className="w-9 h-9 rounded-full bg-slate-100/90 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200/90 transition-all cursor-pointer shrink-0 shadow-xs"
-                  title="Open In-App Camera"
-                >
-                  <Camera size={17} />
-                </button>
-              )}
-
               {isRecordingVoice ? (
                 <VoiceRecorderUI
                   onSendVoiceNote={handleVoiceNoteRecorded}
@@ -773,40 +765,66 @@ export const ChatScreen: React.FC<{
                 />
               ) : (
                 <>
-                  <div className="flex-1 relative flex items-center">
-                    <input 
-                      type="text"
-                      placeholder="Type a message..."
-                      value={text}
-                      onChange={handleInputChange}
-                      className="w-full py-2 pl-4 pr-10 rounded-full bg-white/90 border border-slate-300/80 text-xs text-slate-900 placeholder-slate-400 font-medium focus:outline-none focus:bg-white focus:ring-2 focus:ring-blue-500/30 transition-all shadow-xs"
-                    />
+                  {/* Capsule-shaped text input field */}
+                  <div className="flex-1 relative flex items-center bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-2xs px-3 py-1">
+                    {/* Left side inside field: Emoji picker icon (Smile) */}
                     <button
                       type="button"
                       onClick={() => setIsStickerPickerOpen(true)}
-                      className="absolute right-2 text-slate-400 hover:text-slate-700 p-1 rounded-full transition-colors cursor-pointer"
-                      title="Open Sticker Store"
+                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full transition-colors cursor-pointer shrink-0"
+                      title="Emoji & Stickers"
                     >
-                      <Smile size={18} />
+                      <Smile size={19} />
                     </button>
+
+                    <input 
+                      type="text"
+                      placeholder="Message"
+                      value={text}
+                      onChange={handleInputChange}
+                      className="flex-1 py-1.5 px-2 bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 font-medium focus:outline-none"
+                    />
+
+                    {/* Right side inside field: Paperclip attachment icon & Camera icon */}
+                    <div className="flex items-center gap-1 shrink-0 text-slate-400">
+                      <button
+                        type="button"
+                        onClick={() => fileInputRef.current?.click()}
+                        className="hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full transition-colors cursor-pointer"
+                        title="Attach file"
+                      >
+                        <Paperclip size={18} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setIsCameraOpen(true)}
+                        className="hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full transition-colors cursor-pointer"
+                        title="Camera"
+                      >
+                        <Camera size={18} />
+                      </button>
+                    </div>
                   </div>
 
+                  {/* Separate circular action button on far right containing Mic or Send */}
                   {text.trim() || attachmentDrafts.length > 0 ? (
                     <button
                       type="submit"
                       style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
-                      className="w-9 h-9 rounded-full text-white flex items-center justify-center shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all shrink-0 border border-white/20"
+                      className="w-10 h-10 rounded-full text-white flex items-center justify-center shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all shrink-0"
+                      title="Send message"
                     >
-                      <Send size={15} />
+                      <Send size={16} />
                     </button>
                   ) : (
                     <button
                       type="button"
                       onClick={() => setIsRecordingVoice(true)}
-                      className="w-9 h-9 rounded-full bg-slate-100/90 hover:bg-slate-200 text-slate-700 flex items-center justify-center border border-slate-200/90 transition-all cursor-pointer shrink-0 shadow-xs"
-                      title="Tap to record voice note"
+                      style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
+                      className="w-10 h-10 rounded-full text-white flex items-center justify-center shadow-md cursor-pointer hover:scale-105 active:scale-95 transition-all shrink-0"
+                      title="Record voice note"
                     >
-                      <Mic size={17} />
+                      <Mic size={18} />
                     </button>
                   )}
                 </>
