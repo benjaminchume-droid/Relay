@@ -38,7 +38,7 @@ jobs:
           cache-overwrite-existing: true
 
       - name: Set up Android SDK
-        uses: android-actions/setup-android@v3
+        uses: android-actions/setup-android@v4
 
       - name: Setup Node.js for Asset Generation
         uses: actions/setup-node@v4
