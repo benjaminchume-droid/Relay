@@ -30,7 +30,7 @@ jobs:
           distribution: 'temurin'
 
       - name: Set up Gradle Cache
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v6
         with:
           build-root-directory: android
           cache-overwrite-existing: true
