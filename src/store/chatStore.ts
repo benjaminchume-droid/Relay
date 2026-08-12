@@ -242,11 +242,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!chatId) return;
 
     try {
-      const { message } = await apiService.editMessage(chatId, messageId, content);
+      await apiService.editMessage(chatId, messageId, content);
       set((state) => ({
         messages: {
           ...state.messages,
-          [chatId]: (state.messages[chatId] || []).map((m) => (m.id === messageId ? message : m))
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === messageId ? { ...m, content, isEdited: true } : m
+          )
         }
       }));
     } catch (err: any) {
@@ -389,18 +391,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createGroupChat: async (name, description, participantIds, isPrivate, avatarUrl) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
-      const { chat } = await apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
+      // 8-second timeout guard to prevent infinite hanging
+      const timeoutPromise = new Promise<never>((_, reject) => {
+        const id = setTimeout(() => {
+          clearTimeout(id);
+          reject(new Error("Group creation request timed out after 8 seconds. Please check network connection."));
+        }, 8000);
+      });
+
+      const createPromise = apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
+      const res = await Promise.race([createPromise, timeoutPromise]);
+      const chat = res.chat;
+
+      if (!chat || !chat.id) {
+        throw new Error("Failed to create group chat: invalid payload returned");
+      }
+
       set((state) => ({
-        chats: [chat, ...state.chats],
+        chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)],
         activeChatId: chat.id,
-        isLoading: false
+        isLoading: false,
+        error: null
       }));
       await get().fetchMessages(chat.id);
       return chat.id;
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
+      console.error("[chatStore] createGroupChat error:", err);
+      set({ error: err.message || "Failed to create group. Please try again.", isLoading: false });
       return '';
     }
   },

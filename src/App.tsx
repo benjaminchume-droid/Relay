@@ -9,6 +9,7 @@ import { useThemeStore, applyThemeVars } from './store/themeStore';
 import { useChatStore } from './store/chatStore';
 import { AmbientLiquidBackground, RelayLogoEmblem } from './components/GlassUI';
 import { AuthFlow } from './components/AuthFlow';
+import { EmailVerificationPendingScreen } from './components/EmailVerificationPendingScreen';
 import { MainNavigation, MainTab } from './components/Navigation';
 import { ChatList } from './components/ChatList';
 import { ChatScreen } from './components/ChatScreen';
@@ -29,7 +30,7 @@ export const App: React.FC = () => {
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
 
-  const { isAuthenticated, isLoading, initializeSession } = useAuthStore();
+  const { status, initializeSession, isLoadingProfile, profile, currentUser } = useAuthStore();
   const { customization } = useThemeStore();
   const { activeChatId, setActiveChat } = useChatStore();
   const { connectionState } = useRelayRealtime();
@@ -43,21 +44,51 @@ export const App: React.FC = () => {
     applyThemeVars(customization);
   }, [customization]);
 
-  if (isLoading) {
+  // 1. BOOTSTRAPPING Guard (Splash Screen Gate)
+  // Keep splash screen locked ONLY during initial cold boot when no local cached profile is available
+  if ((status === 'BOOTSTRAPPING' || status === 'AUTH_LOADING') && !profile && !currentUser) {
     return (
       <div className="min-h-screen w-full relative flex flex-col items-center justify-center bg-slate-50">
         <AmbientLiquidBackground />
         <div className="flex flex-col items-center gap-4 z-10">
           <RelayLogoEmblem size={56} className="animate-pulse" />
           <span className="text-xs font-bold tracking-[0.2em] text-slate-700 uppercase">
-            Initializing Session...
+            Initializing Relay...
           </span>
         </div>
       </div>
     );
   }
 
-  if (!isAuthenticated) {
+  // Active user profile & persistent setup check
+  const activeProfile = profile || currentUser;
+  const isSetupDone = 
+    (typeof localStorage !== 'undefined' && localStorage.getItem('relay_setup_completed') === 'true') ||
+    activeProfile?.onboarding_completed === true || 
+    activeProfile?.onboardingCompleted === true;
+
+  // 2. EMAIL_UNVERIFIED Guard
+  if (status === 'EMAIL_UNVERIFIED') {
+    return (
+      <div className="min-h-screen w-full relative flex items-center justify-center">
+        <AmbientLiquidBackground />
+        <EmailVerificationPendingScreen />
+      </div>
+    );
+  }
+
+  // 3. UNAUTHENTICATED Guard -> Route to Create Relay Account / Sign In
+  if (status === 'UNAUTHENTICATED') {
+    return (
+      <div className="min-h-screen w-full relative flex items-center justify-center">
+        <AmbientLiquidBackground />
+        <AuthFlow onSuccess={() => setActiveTab('chats')} />
+      </div>
+    );
+  }
+
+  // 4. NEEDS_SETUP Guard -> Route to Relay Setup Wizard
+  if (status === 'NEEDS_SETUP' || status === 'ONBOARDING_REQUIRED' || (!isSetupDone && status !== 'READY' && status !== 'AUTHENTICATED')) {
     return (
       <div className="min-h-screen w-full relative flex items-center justify-center">
         <AmbientLiquidBackground />
@@ -67,8 +98,20 @@ export const App: React.FC = () => {
   }
 
   return (
-    <div className="min-h-screen w-full relative overflow-hidden text-slate-800">
+    <div className="min-h-screen w-full relative overflow-hidden text-slate-800 flex flex-col">
       <AmbientLiquidBackground />
+
+      {/* Non-blocking Relay Connection Banner for background socket reconnects */}
+      {connectionState !== 'Connected' && (
+        <div className="w-full bg-amber-500/10 border-b border-amber-400/20 py-1.5 px-4 text-center text-xs font-semibold text-amber-700 flex items-center justify-center gap-2 select-none shrink-0 relative z-50 backdrop-blur-xs">
+          <span className="w-2 h-2 rounded-full bg-amber-500 animate-pulse" />
+          <span>
+            {connectionState === 'Connecting' || connectionState === 'Reconnecting' 
+              ? 'Reconnecting to Relay...' 
+              : 'Relay Offline — Showing local cached messages'}
+          </span>
+        </div>
+      )}
 
       <MainNavigation 
         activeTab={activeTab} 

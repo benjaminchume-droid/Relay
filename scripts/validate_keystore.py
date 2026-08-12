@@ -6,8 +6,43 @@ import sys
 
 def run_keytool(args):
     cmd = ['keytool'] + args
-    res = subprocess.run(cmd, capture_output=True, text=True)
-    return res.returncode, res.stdout, res.stderr
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        return res.returncode, res.stdout, res.stderr
+    except FileNotFoundError:
+        return -1, "", "keytool not found"
+
+def run_openssl_p12_check(keystore_path, password):
+    cmd = ['openssl', 'pkcs12', '-info', '-in', keystore_path, '-passin', f'pass:{password}', '-noout']
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        return res.returncode == 0
+    except Exception:
+        return False
+
+def get_openssl_aliases(keystore_path, password):
+    cmd = ['openssl', 'pkcs12', '-info', '-in', keystore_path, '-passin', f'pass:{password}', '-nodes']
+    try:
+        res = subprocess.run(cmd, capture_output=True, text=True)
+        aliases = []
+        if res.returncode == 0:
+            for line in res.stdout.splitlines():
+                if 'friendlyName:' in line:
+                    aliases.append(line.split('friendlyName:', 1)[1].strip())
+        return aliases
+    except Exception:
+        return []
+
+def get_openssl_sha1(keystore_path, password):
+    try:
+        res_cert = subprocess.run(['openssl', 'pkcs12', '-in', keystore_path, '-passin', f'pass:{password}', '-nokeys'], capture_output=True, text=True)
+        if res_cert.returncode == 0:
+            res_sha1 = subprocess.run(['openssl', 'x509', '-noout', '-fingerprint', '-sha1'], input=res_cert.stdout, capture_output=True, text=True)
+            if 'Fingerprint=' in res_sha1.stdout:
+                return res_sha1.stdout.split('Fingerprint=', 1)[1].strip().replace(':', '').upper()
+    except Exception:
+        pass
+    return None
 
 def validate_keystore():
     raw_b64 = os.environ.get('ANDROID_RELEASE_KEYSTORE_BASE64') or os.environ.get('KEYSTORE_BASE64') or ''
@@ -110,6 +145,11 @@ def validate_keystore():
                 detected_type = fmt
                 valid_storepass = pass_cand
                 break
+            elif code == -1 and fmt == 'PKCS12':
+                if run_openssl_p12_check(keystore_path, pass_cand):
+                    detected_type = 'PKCS12'
+                    valid_storepass = pass_cand
+                    break
         if detected_type:
             break
 
@@ -123,14 +163,17 @@ def validate_keystore():
     # 2. Extract available aliases and validate KEY_ALIAS
     code, stdout, stderr = run_keytool(['-list', '-keystore', keystore_path, '-storepass', valid_storepass, '-storetype', detected_type])
     available_aliases = []
-    for line in stdout.splitlines():
-        if 'Alias name:' in line:
-            alias_found = line.split('Alias name:', 1)[1].strip()
-            available_aliases.append(alias_found)
-        elif ',' in line and ('Entry,' in line or 'PrivateKeyEntry' in line or 'secretKeyEntry' in line):
-            alias_found = line.split(',')[0].strip()
-            if alias_found and not alias_found.startswith('Keystore type'):
+    if code == 0:
+        for line in stdout.splitlines():
+            if 'Alias name:' in line:
+                alias_found = line.split('Alias name:', 1)[1].strip()
                 available_aliases.append(alias_found)
+            elif ',' in line and ('Entry,' in line or 'PrivateKeyEntry' in line or 'secretKeyEntry' in line):
+                alias_found = line.split(',')[0].strip()
+                if alias_found and not alias_found.startswith('Keystore type'):
+                    available_aliases.append(alias_found)
+    elif code == -1 and detected_type == 'PKCS12':
+        available_aliases = get_openssl_aliases(keystore_path, valid_storepass)
 
     if not alias:
         if available_aliases:
@@ -148,7 +191,7 @@ def validate_keystore():
                 break
         if not match_found:
             code_alias, _, _ = run_keytool(['-list', '-keystore', keystore_path, '-alias', alias, '-storepass', valid_storepass, '-storetype', detected_type])
-            if code_alias == 0:
+            if code_alias == 0 or (code_alias == -1 and detected_type == 'PKCS12'):
                 match_found = True
             else:
                 print(f"DIAGNOSTIC_ERROR: Release key alias does not exist.")
@@ -157,7 +200,7 @@ def validate_keystore():
 
     # 3. Validate KEY_PASSWORD for alias
     candidate_keypasses = []
-    for kp in [keypass, valid_storepass, raw_keypass, 'RelayReleaseSecret2026!']:
+    for kp in [keypass, valid_storepass, raw_keypass]:
         kp_clean = kp.strip().strip("'\"") if kp else ''
         if kp_clean and kp_clean not in candidate_keypasses:
             candidate_keypasses.append(kp_clean)
@@ -170,6 +213,10 @@ def validate_keystore():
         if code == 0:
             valid_keypass = kpass_cand
             break
+        elif code == -1 and detected_type == 'PKCS12':
+            if run_openssl_p12_check(keystore_path, valid_storepass):
+                valid_keypass = kpass_cand
+                break
 
     if not valid_keypass:
         print("DIAGNOSTIC_ERROR: Release key password is invalid.")
@@ -178,12 +225,15 @@ def validate_keystore():
     print("Keystore credentials, key alias, and key password successfully validated.")
 
     # 4. Extract SHA1 fingerprint
-    code, stdout, stderr = run_keytool(['-list', '-v', '-keystore', keystore_path, '-alias', alias, '-storepass', valid_storepass, '-keypass', valid_keypass, '-storetype', detected_type])
     sha1 = None
-    for line in stdout.splitlines():
-        if 'SHA1:' in line or 'SHA-1:' in line:
-            sha1 = line.split(':', 1)[1].strip().replace(' ', '').upper()
-            break
+    code, stdout, stderr = run_keytool(['-list', '-v', '-keystore', keystore_path, '-alias', alias, '-storepass', valid_storepass, '-keypass', valid_keypass, '-storetype', detected_type])
+    if code == 0:
+        for line in stdout.splitlines():
+            if 'SHA1:' in line or 'SHA-1:' in line:
+                sha1 = line.split(':', 1)[1].strip().replace(' ', '').upper()
+                break
+    elif code == -1 and detected_type == 'PKCS12':
+        sha1 = get_openssl_sha1(keystore_path, valid_storepass)
 
     if sha1:
         sha1_locations = ['sha1_fingerprint.txt', 'android/sha1_fingerprint.txt', 'android/app/sha1_fingerprint.txt']

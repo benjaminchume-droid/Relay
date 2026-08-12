@@ -61,7 +61,7 @@ export const ProfileView: React.FC = () => {
     const reader = new FileReader();
     reader.onload = async () => {
       const base64 = reader.result as string;
-      await uploadAvatarOrBanner(base64, file.name, isBanner);
+      await uploadAvatarOrBanner(base64, isBanner ? 'banner' : 'avatar');
     };
     reader.readAsDataURL(file);
   };

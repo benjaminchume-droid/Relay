@@ -17,6 +17,7 @@ import { useThemeStore, ACCENT_COLOR_CONFIG } from '../store/themeStore';
 import { useContactsStore } from '../store/contactsStore';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
+import { supabase } from '../lib/supabase/client';
 import { formatChatTimestamp, formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
 import { ContactProfileScreen } from './ContactProfileScreen';
@@ -327,6 +328,26 @@ export const ChatScreen: React.FC<{
     setActiveContextMenuMsg(msg);
   };
 
+  const [recipientProfile, setRecipientProfile] = useState<{ display_name?: string; full_name?: string; username?: string; avatar_url?: string } | null>(null);
+
+  useEffect(() => {
+    const targetUserId = chat.participants?.find((p) => p !== currentUser?.id) || chatId;
+    if (targetUserId && chat.type !== 'group') {
+      supabase
+        .from('profiles')
+        .select('display_name, full_name, username, avatar_url')
+        .eq('id', targetUserId)
+        .maybeSingle()
+        .then(({ data }) => {
+          if (data) setRecipientProfile(data);
+        });
+    }
+  }, [chatId, chat.participants, currentUser?.id, chat.type]);
+
+  const headerDisplayName = recipientProfile?.display_name || recipientProfile?.full_name || chat.name || 'Conversation';
+  const headerUsername = recipientProfile?.username ? `@${recipientProfile.username}` : (formatHandle((chat as any).username || (chat as any).handle) || 'Tap for contact info');
+  const headerAvatar = recipientProfile?.avatar_url || chat.avatarUrl || getLetterAvatar(headerDisplayName);
+
   const pinnedMsg = chat.pinnedMessageId ? chatMsgs.find((m) => m.id === chat.pinnedMessageId) : null;
 
   const currentWallpaper = customization.perChatThemes?.[chat.id]?.wallpaper || customization.chatWallpaper || 'glass-gradient';
@@ -355,19 +376,19 @@ export const ChatScreen: React.FC<{
           >
             <div className="relative shrink-0">
               <img 
-                src={chat.avatarUrl || getLetterAvatar(chat.name)} 
-                alt={chat.name}
+                src={headerAvatar} 
+                alt={headerDisplayName}
                 className="w-9 h-9 rounded-full object-cover border border-slate-200 shadow-xs" 
               />
               <span className="absolute bottom-0 right-0 w-2.5 h-2.5 rounded-full bg-emerald-500 ring-2 ring-white" />
             </div>
 
             <div className="text-left min-w-0 flex-1">
-              <h2 className="text-sm font-bold text-slate-900 leading-tight truncate group-hover:text-blue-600 transition-colors">
-                {chat.name}
+              <h2 className="text-sm font-bold text-slate-900 dark:text-slate-100 leading-tight truncate group-hover:text-blue-600 transition-colors">
+                {headerDisplayName}
               </h2>
-              <span className="text-[11px] text-slate-500 font-medium block truncate">
-                {activeTypingUsers.length > 0 ? 'Typing...' : formatHandle((chat as any).username || (chat as any).handle) || 'Tap for contact info'}
+              <span className="text-[11px] text-slate-500 dark:text-slate-400 font-medium block truncate">
+                {activeTypingUsers.length > 0 ? 'Typing...' : headerUsername}
               </span>
             </div>
           </div>

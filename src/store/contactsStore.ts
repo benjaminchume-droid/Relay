@@ -26,6 +26,7 @@ interface ContactsState {
 }
 
 let currentSearchSeq = 0;
+let activeSearchController: AbortController | null = null;
 
 export const useContactsStore = create<ContactsState>((set, get) => ({
   searchResults: [],
@@ -39,18 +40,30 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
   searchUsers: async (rawQuery: string) => {
     const cleanQuery = rawQuery.trim().replace(/^@+/, '').trim();
     if (!cleanQuery) {
+      if (activeSearchController) {
+        activeSearchController.abort();
+        activeSearchController = null;
+      }
       set({ searchResults: [], searchStatus: 'idle', searchError: null, lastSearchQuery: '', isLoading: false });
       return;
     }
+
+    // Cancel any previous inflight search
+    if (activeSearchController) {
+      activeSearchController.abort();
+    }
+    const controller = new AbortController();
+    activeSearchController = controller;
 
     const seq = ++currentSearchSeq;
     set({ isLoading: true, searchStatus: 'loading', searchError: null, lastSearchQuery: cleanQuery });
     console.log("[Relay Search UI] Triggering user search for:", cleanQuery);
 
     try {
-      const res = await apiService.searchUsers(cleanQuery);
+      const res = await apiService.searchUsers(cleanQuery, controller.signal);
       const users = res?.users || [];
-      if (seq === currentSearchSeq) {
+
+      if (seq === currentSearchSeq && !controller.signal.aborted) {
         if (users.length > 0) {
           console.log("[Relay Search UI] Search success, found:", users.length);
           set({ searchResults: users, searchStatus: 'success', searchError: null, isLoading: false });
@@ -60,6 +73,10 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
         }
       }
     } catch (err: any) {
+      if (err.name === 'AbortError') {
+        console.log("[Relay Search UI] Search cancelled via AbortController");
+        return;
+      }
       if (seq === currentSearchSeq) {
         console.error("[Relay Search UI] Search API error:", err);
         set({
@@ -68,6 +85,10 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
           searchError: err.message || "We couldn't complete the search. Try again.",
           isLoading: false
         });
+      }
+    } finally {
+      if (activeSearchController === controller) {
+        activeSearchController = null;
       }
     }
   },

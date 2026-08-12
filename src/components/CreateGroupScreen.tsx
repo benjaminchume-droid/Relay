@@ -50,8 +50,9 @@ export const CreateGroupScreen: React.FC<{
   const [selectedUserIds, setSelectedUserIds] = useState<string[]>([]);
   const [memberSearch, setMemberSearch] = useState('');
 
-  const { createGroupChat } = useChatStore();
+  const { createGroupChat, isLoading, error: chatError } = useChatStore();
   const { searchResults, searchUsers } = useContactsStore();
+  const [localError, setLocalError] = useState<string | null>(null);
 
   useEffect(() => {
     searchUsers(memberSearch);
@@ -66,11 +67,14 @@ export const CreateGroupScreen: React.FC<{
   };
 
   const handleCreateGroup = async () => {
-    if (!groupName.trim()) return;
+    if (!groupName.trim() || isLoading) return;
+    setLocalError(null);
     const finalAvatar = avatarUrl || generateInitialAvatar(groupName);
     const chatId = await createGroupChat(groupName, description, selectedUserIds, false, finalAvatar);
     if (chatId) {
       onSuccess(chatId);
+    } else {
+      setLocalError("Failed to create group. Please check your network connection.");
     }
   };
 
@@ -242,12 +246,23 @@ export const CreateGroupScreen: React.FC<{
             </div>
           </GlassCard>
 
+          {(chatError || localError) && (
+            <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-2xl font-medium">
+              {chatError || localError}
+            </div>
+          )}
+
           <div className="flex justify-between">
             <GlassButton onClick={() => setStep(2)} variant="secondary" className="py-2.5 px-5 text-xs">
               Back
             </GlassButton>
-            <GlassButton onClick={handleCreateGroup} variant="primary" className="py-2.5 px-6 text-xs font-bold">
-              Create Group
+            <GlassButton 
+              onClick={handleCreateGroup} 
+              variant="primary" 
+              disabled={isLoading || !groupName.trim()}
+              className="py-2.5 px-6 text-xs font-bold"
+            >
+              {isLoading ? 'Creating Group...' : 'Create Group'}
             </GlassButton>
           </div>
         </div>

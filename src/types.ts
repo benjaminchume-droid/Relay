@@ -138,6 +138,8 @@ export interface UserProfile {
   settings: UserSettings;
   createdAt: string;
   supabaseAccessToken?: string;
+  onboardingCompleted?: boolean;
+  onboarding_completed?: boolean;
 }
 
 export type MessageType = 'text' | 'voice' | 'image' | 'video' | 'file' | 'location' | 'contact' | 'system';

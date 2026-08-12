@@ -247,7 +247,7 @@ export const userRepo = {
         id: uData.id,
         username: uData.username || `user_${uData.id.substring(0, 6)}`,
         name: uData.display_name || uData.full_name || uData.username,
-        email: uData.email || `${uData.username}@relay.app`,
+        email: uData.email || '',
         avatarUrl: uData.avatar_url || undefined,
         bio: uData.bio || "Exploring Relay.",
         statusMessage: "Available",
@@ -408,7 +408,7 @@ export const userRepo = {
             id: u.id,
             username: u.username || `user_${u.id.substring(0, 6)}`,
             name: u.display_name || u.full_name || u.username,
-            email: u.email || `${u.username}@relay.app`,
+            email: u.email || '',
             avatarUrl: u.avatar_url || undefined,
             bio: u.bio || "Exploring Relay.",
             statusMessage: "Available",
@@ -704,7 +704,7 @@ export const chatRepo = {
           id: pid,
           username: `user_${pid.substring(0, 6)}`,
           name: 'Relay Member',
-          email: `${pid}@relay.app`
+          email: ''
         });
       }
     }

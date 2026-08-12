@@ -184,7 +184,26 @@ To automate signed releases in CI/CD without committing secrets to Git:
 
 ---
 
-## 8. Asset & Icon Generation Script
+## 8. Google OAuth & Certificate Fingerprints
+
+### CI/CD Production Release SHA-1 Fingerprint
+The GitHub Actions release signing certificate SHA-1 fingerprint for Relay Android client (`com.glassline.relay`):
+
+- **Formatted (Colons)**: `70:67:FD:A4:65:32:79:FA:00:79:03:56:0E:27:06:2D:72:48:75:36`
+- **Raw Hex**: `7067FDA4653279FA007903560E27062D72487536`
+
+### Usage for Google Sign-In & Supabase / Firebase OAuth:
+1. **Google Cloud Console**:
+   - Go to **APIs & Services > Credentials**.
+   - Select or create an **Android Client ID**.
+   - Set Application ID / Package Name to `com.glassline.relay`.
+   - Add the SHA-1 fingerprint above (`70:67:FD:A4:65:32:79:FA:00:79:03:56:0E:27:06:2D:72:48:75:36`).
+2. **Supabase / Firebase Auth Configuration**:
+   - Paste the generated Google Client ID into your Supabase / Firebase Auth Provider settings to enable native Google OAuth for release APKs and App Bundles.
+
+---
+
+## 9. Asset & Icon Generation Script
 
 Relay provides an automated script to regenerate all Android density launcher icons (`mipmap-mdpi`, `mipmap-hdpi`, `mipmap-xhdpi`, `mipmap-xxhdpi`, `mipmap-xxxhdpi`):
 

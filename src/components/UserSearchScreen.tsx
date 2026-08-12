@@ -27,6 +27,21 @@ export const UserSearchScreen: React.FC<{
     resetSearch();
   }, []);
 
+  // 300ms Debounce search as user types
+  useEffect(() => {
+    const trimmed = query.trim();
+    if (!trimmed) {
+      resetSearch();
+      return;
+    }
+    const timer = setTimeout(() => {
+      setChatStartError(null);
+      searchUsers(trimmed);
+    }, 300);
+
+    return () => clearTimeout(timer);
+  }, [query]);
+
   const handleExecuteSearch = () => {
     if (!query.trim()) return;
     setChatStartError(null);

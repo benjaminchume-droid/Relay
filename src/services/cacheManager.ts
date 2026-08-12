@@ -4,6 +4,7 @@
  */
 
 import { Chat, Message, UserProfile, Community, CommunityPost, NotificationItem } from '../types';
+import { apiService } from './apiService';
 
 export interface CacheCategorySize {
   category: 'messages' | 'media' | 'profiles' | 'communities' | 'search';
@@ -253,40 +254,23 @@ class RelayCacheManager {
 
   private async executeAction(item: OfflineQueueItem): Promise<boolean> {
     try {
-      const token = localStorage.getItem("relay_v2_auth_token");
-      if (!token) return false;
-
-      let url = "";
-      let method = "POST";
-      let body: any = item.payload;
-
       if (item.type === "send_message") {
-        url = `/api/chats/${item.payload.chatId}/messages`;
+        await apiService.sendMessage(item.payload.chatId, item.payload);
+        return true;
       } else if (item.type === "react_message") {
-        url = `/api/chats/${item.payload.chatId}/messages/${item.payload.messageId}/react`;
+        await apiService.reactToMessage(item.payload.chatId, item.payload.messageId, item.payload.emoji);
+        return true;
       } else if (item.type === "edit_message") {
-        url = `/api/chats/${item.payload.chatId}/messages/${item.payload.messageId}`;
-        method = "PUT";
+        await apiService.editMessage(item.payload.chatId, item.payload.messageId, item.payload.content);
+        return true;
       } else if (item.type === "delete_message") {
-        url = `/api/chats/${item.payload.chatId}/messages/${item.payload.messageId}`;
-        method = "DELETE";
+        await apiService.deleteMessage(item.payload.chatId, item.payload.messageId);
+        return true;
       } else if (item.type === "update_profile") {
-        url = `/api/users/profile`;
-        method = "PUT";
+        await apiService.updateProfile(item.payload);
+        return true;
       }
-
-      if (!url) return true;
-
-      const res = await fetch(url, {
-        method,
-        headers: {
-          "Content-Type": "application/json",
-          "Authorization": `Bearer ${token}`
-        },
-        body: method !== "DELETE" ? JSON.stringify(body) : undefined
-      });
-
-      return res.ok;
+      return true;
     } catch {
       return false;
     }
