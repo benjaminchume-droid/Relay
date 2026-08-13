@@ -14,56 +14,47 @@
   --color-frost-tint: #DDE7EF;
 }
 
-/* Theme Modes support (Light, Dark, Pure Black AMOLED, Glass, System) */
-[data-theme-mode="dark"] {
-  background-color: #0B0F19 !important;
-  color: #F1F5F9 !important;
-}
-
+/* Theme Modes support - Standardized to Light Liquid Glass Aesthetic */
+[data-theme-mode="dark"],
 [data-theme-mode="pure-black"],
 [data-theme-mode="black"] {
-  background-color: #000000 !important;
-  color: #FFFFFF !important;
+  background-color: #F8FAFC !important;
+  color: #1E293B !important;
 }
 
 [data-theme-mode="dark"] .glass-panel,
-[data-theme-mode="dark"] .liquid-glass-card {
-  background: rgba(17, 24, 39, 0.75) !important;
-  border-color: rgba(255, 255, 255, 0.1) !important;
-  color: #F1F5F9 !important;
-}
-
+[data-theme-mode="dark"] .liquid-glass-card,
 [data-theme-mode="pure-black"] .glass-panel,
 [data-theme-mode="pure-black"] .liquid-glass-card,
 [data-theme-mode="black"] .glass-panel,
 [data-theme-mode="black"] .liquid-glass-card {
-  background: rgba(0, 0, 0, 0.95) !important;
-  border-color: rgba(255, 255, 255, 0.15) !important;
-  color: #FFFFFF !important;
+  background: rgba(255, 255, 255, 0.75) !important;
+  border-color: rgba(255, 255, 255, 0.85) !important;
+  color: #1E293B !important;
 }
 
 [data-theme-mode="dark"] .glass-input,
 [data-theme-mode="pure-black"] .glass-input,
 [data-theme-mode="black"] .glass-input {
-  background: rgba(255, 255, 255, 0.08) !important;
-  color: #FFFFFF !important;
-  border-color: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.6) !important;
+  color: #0F172A !important;
+  border-color: rgba(226, 232, 240, 0.9) !important;
 }
 
 [data-theme-mode="dark"] .glass-bubble-other,
 [data-theme-mode="pure-black"] .glass-bubble-other,
 [data-theme-mode="black"] .glass-bubble-other,
 .dark .glass-bubble-other {
-  background: rgba(30, 41, 59, 0.92) !important;
-  color: #F8FAFC !important;
-  border-color: rgba(255, 255, 255, 0.12) !important;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4), inset 0 1px 1px rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #0F172A !important;
+  border-color: rgba(226, 232, 240, 0.8) !important;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.05), inset 0 1px 1px rgba(255, 255, 255, 0.95) !important;
 }
 
 [data-theme-mode="dark"] text,
 [data-theme-mode="pure-black"] text,
 [data-theme-mode="black"] text {
-  fill: #FFFFFF !important;
+  fill: #0F172A !important;
 }
 
 /* Glassline Liquid Aesthetic System */
@@ -74,58 +65,56 @@ body {
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   background-image: 
-    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.08) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.08) 0px, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.06) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.05) 0px, transparent 50%);
   background-attachment: fixed;
 }
 
 [data-theme-mode="dark"] body {
-  background-color: #0B0F19 !important;
+  background-color: #F8FAFC !important;
   background-image: 
-    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.15) 0px, transparent 50%),
-    radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.12) 0px, transparent 50%);
+    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.06) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.05) 0px, transparent 50%);
 }
 
 /* Glass Sidebar & Navigation Depth */
 .glass-sidebar {
-  background: rgba(255, 255, 255, 0.65);
+  background: rgba(255, 255, 255, 0.75);
   backdrop-filter: blur(32px) saturate(180%);
   -webkit-backdrop-filter: blur(32px) saturate(180%);
-  border-right: 1px solid rgba(255, 255, 255, 0.7);
+  border-right: 1px solid rgba(226, 232, 240, 0.8);
   box-shadow: 
-    8px 0 32px rgba(15, 23, 42, 0.04),
-    inset -1px 0 2px rgba(255, 255, 255, 0.8),
-    inset 1px 1px 2px rgba(255, 255, 255, 0.9);
+    8px 0 32px rgba(15, 23, 42, 0.03),
+    inset -1px 0 2px rgba(255, 255, 255, 0.9);
 }
 
 [data-theme-mode="dark"] .glass-sidebar,
 .dark .glass-sidebar {
-  background: rgba(15, 23, 42, 0.75) !important;
-  border-right-color: rgba(255, 255, 255, 0.1) !important;
+  background: rgba(255, 255, 255, 0.85) !important;
+  border-right-color: rgba(226, 232, 240, 0.8) !important;
   box-shadow: 
-    8px 0 32px rgba(0, 0, 0, 0.4),
-    inset -1px 0 1px rgba(255, 255, 255, 0.15) !important;
+    8px 0 32px rgba(15, 23, 42, 0.04),
+    inset -1px 0 1px rgba(255, 255, 255, 0.9) !important;
 }
 
 .glass-nav-floating {
-  background: rgba(255, 255, 255, 0.75);
+  background: rgba(255, 255, 255, 0.85);
   backdrop-filter: blur(32px) saturate(200%);
   -webkit-backdrop-filter: blur(32px) saturate(200%);
-  border: 1px solid rgba(255, 255, 255, 0.8);
+  border: 1px solid rgba(255, 255, 255, 0.9);
   box-shadow: 
-    0 16px 40px rgba(15, 23, 42, 0.12),
-    0 2px 6px rgba(15, 23, 42, 0.04),
-    inset 0 1.5px 2px rgba(255, 255, 255, 0.95),
-    inset 0 -1px 1.5px rgba(0, 0, 0, 0.05);
+    0 16px 40px rgba(15, 23, 42, 0.08),
+    0 2px 6px rgba(15, 23, 42, 0.03),
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.95);
 }
 
 [data-theme-mode="dark"] .glass-nav-floating,
 .dark .glass-nav-floating {
-  background: rgba(15, 23, 42, 0.85) !important;
-  border-color: rgba(255, 255, 255, 0.15) !important;
+  background: rgba(255, 255, 255, 0.88) !important;
+  border-color: rgba(255, 255, 255, 0.9) !important;
   box-shadow: 
-    0 16px 40px rgba(0, 0, 0, 0.5),
-    inset 0 1px 1.5px rgba(255, 255, 255, 0.2) !important;
+    0 16px 40px rgba(15, 23, 42, 0.08),
+    inset 0 1px 1.5px rgba(255, 255, 255, 0.95) !important;
 }
 
 .liquid-glass-card {

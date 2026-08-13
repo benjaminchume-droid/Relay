@@ -219,6 +219,7 @@ export interface Chat {
   permissions?: GroupPermissions;
   inviteLink?: string;
   createdAt?: string;
+  updatedAt?: string;
 }
 
 export interface CommunityChannel {

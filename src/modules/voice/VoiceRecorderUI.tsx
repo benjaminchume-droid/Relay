@@ -47,6 +47,12 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
     clearPreview,
   } = useVoiceRecorder();
 
+  useEffect(() => {
+    if (status === 'idle') {
+      startRecording();
+    }
+  }, []);
+
   // Format timer `00:05`
   const formatSeconds = (totalSecs: number) => {
     const mins = Math.floor(totalSecs / 60);

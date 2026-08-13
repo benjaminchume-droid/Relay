@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
+import { chatCache } from '../services/chatCache';
 import { useAuthStore } from './authStore';
 
 // In-memory idempotency tracking to prevent duplicate sends from rapid taps
@@ -54,9 +55,9 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  chats: [],
+  chats: chatCache.getChats(),
   activeChatId: null,
-  messages: {},
+  messages: chatCache.getMessages(),
   activeTyping: {},
   replyingToMessage: null,
   forwardingMessage: null,
@@ -67,7 +68,25 @@ export const useChatStore = create<ChatState>((set, get) => ({
   fetchChats: async () => {
     try {
       const { chats } = await apiService.getChats();
-      set({ chats });
+      if (chats) {
+        set((state) => {
+          // Merge with existing cached chats
+          const merged = chats.map((c) => {
+            const existing = state.chats.find((sc) => sc.id === c.id);
+            if (existing) {
+              return {
+                ...existing,
+                ...c,
+                name: c.name && c.name !== 'Chat' ? c.name : existing.name,
+                avatarUrl: c.avatarUrl || existing.avatarUrl
+              };
+            }
+            return c;
+          });
+          chatCache.setChats(merged);
+          return { chats: merged };
+        });
+      }
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -84,13 +103,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   fetchMessages: async (chatId) => {
     try {
-      const { messages } = await apiService.getMessages(chatId);
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [chatId]: messages
+      const { messages: serverMsgs } = await apiService.getMessages(chatId);
+      set((state) => {
+        const existing = state.messages[chatId] || [];
+        const inFlightOrFailed = existing.filter((m) => m.deliveryState === 'sending' || m.deliveryState === 'failed' || m.id.startsWith('temp_'));
+        
+        const combined = [...serverMsgs];
+        for (const localMsg of inFlightOrFailed) {
+          if (!combined.some((m) => m.id === localMsg.id || (m.content === localMsg.content && m.timestamp === localMsg.timestamp))) {
+            combined.push(localMsg);
+          }
         }
-      }));
+
+        const newMap = { ...state.messages, [chatId]: combined };
+        chatCache.setMessages(newMap);
+        return { messages: newMap };
+      });
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -155,17 +183,62 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       // 2. Replace pending message with server confirmed message
       set((state) => {
-        const currentMsgs = state.messages[chatId] || [];
+        const realChatId = chat.id || message.chatId || chatId;
+        const currentMsgs = state.messages[chatId] || state.messages[realChatId] || [];
+        const confirmedMsg = { ...message, deliveryState: 'sent' as const };
         const updatedMsgs = currentMsgs.map((m) =>
-          m.id === tempId ? { ...message, deliveryState: 'sent' as const } : m
+          m.id === tempId ? confirmedMsg : m
         );
-        const updatedChats = state.chats.map((c) => (c.id === chatId ? chat : c));
+        
+        const existingChatIdx = state.chats.findIndex((c) => c.id === chatId || c.id === realChatId);
+        let updatedChats: Chat[];
+        
+        if (existingChatIdx !== -1) {
+          updatedChats = state.chats.map((c, i) =>
+            i === existingChatIdx
+              ? {
+                  ...c,
+                  id: realChatId,
+                  lastMessage: {
+                    text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+                    timestamp: message.timestamp,
+                    senderId: message.senderId,
+                    deliveryState: 'sent'
+                  },
+                  updatedAt: message.timestamp
+                }
+              : c
+          );
+        } else {
+          // New conversation: prepend immediately to Chat List
+          const newChat: Chat = {
+            id: realChatId,
+            name: chat.name || 'Conversation',
+            type: chat.type || 'direct',
+            avatarUrl: chat.avatarUrl,
+            participants: chat.participants || [currentUser?.id || 'me'],
+            unreadCount: 0,
+            lastMessage: {
+              text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+              timestamp: message.timestamp,
+              senderId: message.senderId,
+              deliveryState: 'sent'
+            },
+            updatedAt: message.timestamp
+          };
+          updatedChats = [newChat, ...state.chats];
+        }
+
+        const newMessagesMap = { ...state.messages };
+        if (realChatId !== chatId) {
+          delete newMessagesMap[chatId];
+        }
+        newMessagesMap[realChatId] = updatedMsgs;
+
         return {
-          messages: {
-            ...state.messages,
-            [chatId]: updatedMsgs
-          },
-          chats: updatedChats
+          messages: newMessagesMap,
+          chats: updatedChats,
+          activeChatId: state.activeChatId === chatId ? realChatId : state.activeChatId
         };
       });
     } catch (err: any) {
@@ -209,22 +282,50 @@ export const useChatStore = create<ChatState>((set, get) => ({
         type: targetMsg.type,
         attachments: targetMsg.attachments,
         replyToId: targetMsg.replyToId,
-        isForwarded: targetMsg.isForwarded
+        isForwarded: targetMsg.isForwarded,
+        clientMessageId: messageId
       });
 
       set((state) => {
-        const msgs = state.messages[chatId] || [];
-        const updatedMsgs = msgs.map((m) => (m.id === messageId ? { ...message, deliveryState: 'sent' as const } : m));
-        const updatedChats = state.chats.map((c) => (c.id === chatId ? chat : c));
+        const realChatId = chat.id || message.chatId || chatId;
+        const msgs = state.messages[chatId] || state.messages[realChatId] || [];
+        const confirmedMsg = { ...message, deliveryState: 'sent' as const };
+        const updatedMsgs = msgs.map((m) => (m.id === messageId ? confirmedMsg : m));
+
+        const updatedChats = state.chats.map((c) => {
+          if (c.id === chatId || c.id === realChatId) {
+            return {
+              ...c,
+              id: realChatId,
+              lastMessage: {
+                text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+                timestamp: message.timestamp,
+                senderId: message.senderId,
+                deliveryState: 'sent' as const
+              },
+              updatedAt: message.timestamp
+            };
+          }
+          return c;
+        });
+
+        const newMessagesMap = { ...state.messages };
+        if (realChatId !== chatId) {
+          delete newMessagesMap[chatId];
+        }
+        newMessagesMap[realChatId] = updatedMsgs;
+
+        chatCache.setMessages(newMessagesMap);
+        chatCache.setChats(updatedChats);
+
         return {
-          messages: {
-            ...state.messages,
-            [chatId]: updatedMsgs
-          },
-          chats: updatedChats
+          messages: newMessagesMap,
+          chats: updatedChats,
+          activeChatId: state.activeChatId === chatId ? realChatId : state.activeChatId
         };
       });
     } catch (err: any) {
+      console.error('[retryMessage] Resend failed:', err);
       set((state) => ({
         messages: {
           ...state.messages,
@@ -324,21 +425,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const activeChatId = get().activeChatId;
     try {
       const { chats } = await apiService.getChats();
-      set({ chats });
+      if (chats && chats.length > 0) {
+        set((state) => {
+          // Preserve local lastMessage if remote is empty or older
+          const merged = chats.map((c) => {
+            const existing = state.chats.find((sc) => sc.id === c.id);
+            if (existing && existing.lastMessage && (!c.lastMessage || new Date(existing.lastMessage.timestamp) > new Date(c.lastMessage.timestamp))) {
+              return { ...c, lastMessage: existing.lastMessage };
+            }
+            return c;
+          });
+          return { chats: merged };
+        });
+      }
 
       if (activeChatId) {
-        const { messages } = await apiService.getMessages(activeChatId);
+        const { messages: serverMsgs } = await apiService.getMessages(activeChatId);
         const { activeTyping } = await apiService.getTypingState(activeChatId);
-        set((state) => ({
-          messages: {
-            ...state.messages,
-            [activeChatId]: messages
-          },
-          activeTyping: {
-            ...state.activeTyping,
-            [activeChatId]: activeTyping
-          }
-        }));
+
+        if (serverMsgs && serverMsgs.length > 0) {
+          set((state) => {
+            const existing = state.messages[activeChatId] || [];
+            // Keep sending/failed messages that are in flight or retryable
+            const inFlightOrFailed = existing.filter((m) => m.deliveryState === 'sending' || m.deliveryState === 'failed' || m.id.startsWith('temp_'));
+            
+            const combined = [...serverMsgs];
+            for (const temp of inFlightOrFailed) {
+              if (!combined.some((m) => m.content === temp.content || m.id === temp.id)) {
+                combined.push(temp);
+              }
+            }
+
+            const newMap = {
+              ...state.messages,
+              [activeChatId]: combined
+            };
+            chatCache.setMessages(newMap);
+
+            return {
+              messages: newMap,
+              activeTyping: {
+                ...state.activeTyping,
+                [activeChatId]: activeTyping
+              }
+            };
+          });
+        }
       }
     } catch (err) {
       // background polling

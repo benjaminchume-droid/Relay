@@ -19,7 +19,7 @@ export const ChatList: React.FC<{
   onOpenNewChatModal: () => void;
 }> = ({ onSelectChat, onOpenNewChatModal }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [subTab, setSubTab] = useState<'all' | 'direct' | 'group'>('all');
+  const [subTab, setSubTab] = useState<'all' | 'unread' | 'group' | 'favorites'>('all');
   const [isFabVisible, setIsFabVisible] = useState(true);
 
   const { chats, fetchChats, setActiveChat, createDirectChat } = useChatStore();
@@ -51,8 +51,9 @@ export const ChatList: React.FC<{
   const filteredChats = chats.filter((c) => {
     const matchesSearch = c.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       (c.lastMessage?.text || '').toLowerCase().includes(searchQuery.toLowerCase());
-    if (subTab === 'direct') return matchesSearch && c.type === 'direct';
+    if (subTab === 'unread') return matchesSearch && (c.unreadCount || 0) > 0;
     if (subTab === 'group') return matchesSearch && c.type === 'group';
+    if (subTab === 'favorites') return matchesSearch && c.isPinned;
     return matchesSearch;
   });
 
@@ -102,27 +103,35 @@ export const ChatList: React.FC<{
           </div>
           <input
             type="text"
-            placeholder="Ask Meta AI or Search"
+            placeholder="Search conversations..."
             value={searchQuery}
             onChange={(e) => setSearchQuery(e.target.value)}
-            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-slate-100 dark:bg-slate-800/80 text-slate-800 dark:text-slate-100 placeholder-slate-400 text-xs font-medium border border-slate-200/60 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all"
+            className="w-full pl-10 pr-4 py-2.5 rounded-2xl bg-white/80 text-slate-800 placeholder-slate-400 text-xs font-medium border border-slate-200/80 focus:outline-none focus:ring-2 focus:ring-blue-500/50 transition-all shadow-2xs"
           />
         </div>
 
-        <div className="flex items-center gap-2">
-          {(['all', 'direct', 'group'] as const).map((tab) => (
-            <button
-              key={tab}
-              onClick={() => setSubTab(tab)}
-              className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize transition-all cursor-pointer ${
-                subTab === tab 
-                  ? 'bg-blue-600 text-white shadow-xs font-bold' 
-                  : 'bg-slate-100 text-slate-600 hover:bg-slate-200/80 border border-slate-200/60'
-              }`}
-            >
-              {tab === 'all' ? 'All' : tab === 'direct' ? 'Unread' : 'Groups'}
-            </button>
-          ))}
+        <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar">
+          {(['all', 'unread', 'group', 'favorites'] as const).map((tab) => {
+            const totalUnreadCount = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
+            return (
+              <button
+                key={tab}
+                onClick={() => setSubTab(tab as any)}
+                className={`px-3.5 py-1.5 rounded-full text-xs font-semibold capitalize transition-all cursor-pointer shrink-0 flex items-center gap-1.5 ${
+                  subTab === tab 
+                    ? 'bg-blue-600 text-white shadow-xs font-bold' 
+                    : 'bg-white/80 text-slate-600 hover:bg-slate-100 border border-slate-200/80'
+                }`}
+              >
+                <span>{tab === 'all' ? 'All' : tab === 'unread' ? 'Unread' : tab === 'group' ? 'Groups' : 'Favorites'}</span>
+                {tab === 'unread' && totalUnreadCount > 0 && (
+                  <span className={`px-1.5 py-0.2 text-[9px] font-mono rounded-full ${subTab === tab ? 'bg-white text-blue-600' : 'bg-blue-600 text-white'}`}>
+                    {totalUnreadCount}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

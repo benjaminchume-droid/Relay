@@ -89,7 +89,7 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
           transform: `translateX(${dragX}px)`,
           transition: isSwiping ? 'none' : 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
-        className="relative z-0 w-full flex flex-col items-inherit"
+        className={`relative z-0 w-full flex flex-col ${className.includes('items-end') ? 'items-end' : 'items-start'}`}
       >
         {children}
       </div>

@@ -11,6 +11,8 @@ import { supabase } from "../lib/supabase/client";
 import { formatProfileRecord, createDefaultSettings } from "../store/authStore";
 import { auditSupabaseCall } from "../lib/supabase/logger";
 
+import { profileCache } from "./profileCache";
+
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
 
 export const getAuthToken = (): string | null => {
@@ -59,89 +61,142 @@ export function formatMessageRecord(m: any): Message {
   };
 }
 
+const pendingDirectChatPromises = new Map<string, Promise<string>>();
+
+export async function getCurrentProfile(): Promise<{ sbUser: any; profile: any; profileId: string } | null> {
+  const { data: { user: sbUser } } = await supabase.auth.getUser();
+  if (!sbUser) return null;
+
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('*')
+    .or(`auth_user_id.eq.${sbUser.id},id.eq.${sbUser.id}`)
+    .maybeSingle();
+
+  if (profile) {
+    profileCache.set(formatProfileRecord(profile));
+  }
+
+  const profileId = profile?.id || sbUser.id;
+  return { sbUser, profile, profileId };
+}
+
+async function resolveExactProfileId(inputUserId: string): Promise<string> {
+  if (!inputUserId) return inputUserId;
+  const cached = profileCache.get(inputUserId);
+  if (cached && cached.id) return cached.id;
+
+  try {
+    const { data } = await supabase
+      .from('profiles')
+      .select('id, auth_user_id, display_name, username, avatar_url')
+      .or(`id.eq.${inputUserId},auth_user_id.eq.${inputUserId}`)
+      .maybeSingle();
+
+    if (data) {
+      if (data.id) return data.id;
+    }
+  } catch (e) {
+    console.warn('[resolveExactProfileId] Error querying profile:', e);
+  }
+  return inputUserId;
+}
+
 export async function getOrCreateDirectChat(currentUserId: string, targetUserId: string): Promise<string> {
   if (!currentUserId || !targetUserId) {
     throw new Error("Missing user IDs for direct chat lookup/creation");
   }
 
-  // 1. Try 'chats' table
-  try {
-    const { data: existingChats, error: searchError } = await supabase
-      .from('chats')
-      .select('id, participant_ids')
-      .eq('is_group', false)
-      .contains('participant_ids', [currentUserId, targetUserId]);
+  const realCurrentUserId = await resolveExactProfileId(currentUserId);
+  const realTargetUserId = await resolveExactProfileId(targetUserId);
 
-    if (!searchError && existingChats && existingChats.length > 0) {
-      return existingChats[0].id;
-    }
-
-    if (!searchError) {
-      const { data: newChat, error: createError } = await supabase
-        .from('chats')
-        .insert({
-          is_group: false,
-          participant_ids: [currentUserId, targetUserId],
-          created_by: currentUserId,
-          updated_at: new Date().toISOString(),
-        })
-        .select('id')
-        .single();
-
-      if (!createError && newChat) {
-        return newChat.id;
-      }
-    }
-  } catch {
-    // Fallback to conversations table
+  const pairKey = [realCurrentUserId, realTargetUserId].sort().join('_');
+  if (pendingDirectChatPromises.has(pairKey)) {
+    return pendingDirectChatPromises.get(pairKey)!;
   }
 
-  // 2. Fallback to 'conversations' & 'conversation_members'
-  try {
-    const { data: myMemberships } = await supabase
-      .from('conversation_members')
-      .select('conversation_id')
-      .eq('profile_id', currentUserId);
-
-    if (myMemberships && myMemberships.length > 0) {
-      const convIds = myMemberships.map((m: any) => m.conversation_id);
-      const { data: targetMemberships } = await supabase
+  const promise = (async () => {
+    // 1. Check existing direct conversation in 'conversation_members' & 'conversations'
+    try {
+      const { data: myMemberships } = await supabase
         .from('conversation_members')
         .select('conversation_id')
-        .eq('profile_id', targetUserId)
-        .in('conversation_id', convIds);
+        .eq('profile_id', realCurrentUserId);
 
-      if (targetMemberships && targetMemberships.length > 0) {
-        return targetMemberships[0].conversation_id;
+      if (myMemberships && myMemberships.length > 0) {
+        const convIds = myMemberships.map((m: any) => m.conversation_id);
+        const { data: targetMemberships } = await supabase
+          .from('conversation_members')
+          .select('conversation_id, conversations!inner(id, conversation_type)')
+          .eq('profile_id', realTargetUserId)
+          .in('conversation_id', convIds);
+
+        if (targetMemberships && targetMemberships.length > 0) {
+          const directMatch = targetMemberships.find((tm: any) => {
+            const conv = tm.conversations;
+            return conv && (conv.conversation_type === 'direct' || !conv.conversation_type);
+          });
+          if (directMatch) {
+            return directMatch.conversation_id;
+          }
+          return targetMemberships[0].conversation_id;
+        }
       }
+    } catch (e) {
+      console.warn("[getOrCreateDirectChat] Error querying conversation_members:", e);
     }
 
-    // Insert new conversation
-    const { data: newConv, error: convErr } = await supabase
-      .from('conversations')
-      .insert({
-        conversation_type: 'direct',
-        created_by: currentUserId,
-        updated_at: new Date().toISOString(),
-      })
-      .select('id')
-      .single();
+    // 2. Insert new conversation in 'conversations' table
+    let newConvId: string | null = null;
+    let lastErr: any = null;
 
-    if (!convErr && newConv) {
-      // Add conversation members
-      await supabase.from('conversation_members').insert([
-        { conversation_id: newConv.id, profile_id: currentUserId, role: 'owner' },
-        { conversation_id: newConv.id, profile_id: targetUserId, role: 'member' }
+    try {
+      const { data: newConv, error: convErr } = await supabase
+        .from('conversations')
+        .insert({
+          conversation_type: 'direct',
+          created_by: realCurrentUserId,
+          updated_at: new Date().toISOString(),
+          last_message_at: new Date().toISOString()
+        })
+        .select('id')
+        .maybeSingle();
+
+      if (!convErr && newConv) {
+        newConvId = newConv.id;
+      } else {
+        lastErr = convErr;
+      }
+    } catch (e) {
+      lastErr = e;
+    }
+
+    if (newConvId) {
+      // 3. Add members to 'conversation_members'
+      const { error: memErr } = await supabase.from('conversation_members').insert([
+        { conversation_id: newConvId, profile_id: realCurrentUserId, role: 'owner' },
+        { conversation_id: newConvId, profile_id: realTargetUserId, role: 'member' }
       ]);
-      return newConv.id;
-    }
-  } catch (err: any) {
-    console.warn("[getOrCreateDirectChat] Supabase direct chat insert fallback triggered:", err);
-  }
 
-  // 3. Fallback to deterministic client chat ID if RLS or DB prevents remote row creation
-  const clientChatId = `dm_${[currentUserId, targetUserId].sort().join('_')}`;
-  return clientChatId;
+      if (memErr) {
+        console.warn("[getOrCreateDirectChat] conversation_members insert error:", memErr);
+      }
+
+      return newConvId;
+    }
+
+    const errMsg = lastErr?.message || "Failed to establish direct conversation in database";
+    console.error("[getOrCreateDirectChat] Failed DB creation:", lastErr);
+    throw new Error(errMsg);
+  })();
+
+  pendingDirectChatPromises.set(pairKey, promise);
+  try {
+    const res = await promise;
+    return res;
+  } finally {
+    pendingDirectChatPromises.delete(pairKey);
+  }
 }
 
 export const apiService = {
@@ -265,8 +320,8 @@ export const apiService = {
 
     // Direct table fallback
     try {
-      const tableResult = await auditSupabaseCall("table/chats/search_groups", { query: cleanQuery }, async () =>
-        await supabase.from("chats").select("*").eq("is_group", true).ilike("name", `%${cleanQuery}%`).limit(25)
+      const tableResult = await auditSupabaseCall("table/conversations/search_groups", { query: cleanQuery }, async () =>
+        await supabase.from("conversations").select("*").eq("conversation_type", "group").ilike("name", `%${cleanQuery}%`).limit(25)
       );
 
       if (signal?.aborted) throw new DOMException('Aborted', 'AbortError');
@@ -380,124 +435,95 @@ export const apiService = {
 
   // --- Messaging & Communities ---
   getChats: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return { chats: [] };
+    const current = await getCurrentProfile();
+    if (!current) return { chats: [] };
+    const { profileId } = current;
 
     try {
-      // 1. Try 'chats' table
-      const { data: directChats } = await supabase
-        .from('chats')
-        .select('*')
-        .contains('participant_ids', [user.id])
-        .order('updated_at', { ascending: false });
-
-      if (directChats && directChats.length > 0) {
-        const chatsList: Chat[] = [];
-        for (const c of directChats) {
-          let name = c.name || 'Chat';
-          let avatarUrl = c.avatar_url || undefined;
-          const otherUserId = (c.participant_ids || []).find((id: string) => id !== user.id);
-
-          if (otherUserId) {
-            const { data: prof } = await supabase.from('profiles').select('display_name, full_name, username, avatar_url').eq('id', otherUserId).maybeSingle();
-            if (prof) {
-              name = prof.display_name || prof.full_name || prof.username || name;
-              avatarUrl = prof.avatar_url || avatarUrl;
-            }
-          }
-
-          const { data: lastMsgs } = await supabase
-            .from('messages')
-            .select('content, created_at, sender_id')
-            .or(`chat_id.eq.${c.id},conversation_id.eq.${c.id}`)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          chatsList.push({
-            id: c.id,
-            name,
-            type: c.is_group ? 'group' : 'direct',
-            avatarUrl,
-            participants: c.participant_ids || [user.id],
-            unreadCount: 0,
-            lastMessage: lastMsgs?.[0] ? {
-              text: lastMsgs[0].content,
-              timestamp: lastMsgs[0].created_at,
-              senderId: lastMsgs[0].sender_id
-            } : undefined
-          });
-        }
-        return { chats: chatsList };
-      }
-
-      // 2. Fallback to conversation_members
-      const { data: memberships } = await supabase
+      const { data: memberships, error } = await supabase
         .from('conversation_members')
         .select('conversation_id, unread_count, conversations(*)')
-        .eq('profile_id', user.id);
+        .eq('profile_id', profileId);
 
-      if (memberships && memberships.length > 0) {
-        const chatsList: Chat[] = [];
-        for (const m of memberships) {
-          const conv = (m as any).conversations;
-          if (!conv) continue;
+      if (error) {
+        console.warn("[getChats] Error querying conversation_members:", error);
+        return { chats: [] };
+      }
 
-          let recipientName = conv.name || "Chat";
-          let recipientAvatar = conv.avatar_url || undefined;
-          let participantIds: string[] = [user.id];
+      if (!memberships || memberships.length === 0) {
+        return { chats: [] };
+      }
 
-          const { data: otherMembers } = await supabase
-            .from('conversation_members')
-            .select('profile_id, profiles(*)')
-            .eq('conversation_id', conv.id);
+      const chatsList: Chat[] = [];
+      for (const m of memberships) {
+        const conv = (m as any).conversations;
+        if (!conv) continue;
 
-          if (otherMembers) {
-            participantIds = otherMembers.map((om: any) => om.profile_id);
-            const other: any = otherMembers.find((om: any) => om.profile_id !== user.id);
-            const pData = Array.isArray(other?.profiles) ? other.profiles[0] : other?.profiles;
-            if (pData) {
-              recipientName = pData.display_name || pData.full_name || pData.username || recipientName;
-              recipientAvatar = pData.avatar_url || recipientAvatar;
+        let name = conv.name || "Chat";
+        let avatarUrl = conv.avatar_url || undefined;
+        let participantIds: string[] = [profileId];
+
+        const { data: otherMembers } = await supabase
+          .from('conversation_members')
+          .select('profile_id, profiles(*)')
+          .eq('conversation_id', conv.id);
+
+        if (otherMembers) {
+          participantIds = otherMembers.map((om: any) => om.profile_id);
+          const other: any = otherMembers.find((om: any) => om.profile_id !== profileId);
+          const pData = Array.isArray(other?.profiles) ? other.profiles[0] : other?.profiles;
+          if (pData) {
+            const formattedProf = formatProfileRecord(pData);
+            profileCache.set(formattedProf);
+            if (conv.conversation_type !== 'group') {
+              name = formattedProf.name || formattedProf.username || name;
+              avatarUrl = formattedProf.avatarUrl || avatarUrl;
             }
           }
-
-          const { data: lastMsgs } = await supabase
-            .from('messages')
-            .select('content, created_at, sender_id')
-            .or(`conversation_id.eq.${conv.id},chat_id.eq.${conv.id}`)
-            .order('created_at', { ascending: false })
-            .limit(1);
-
-          chatsList.push({
-            id: conv.id,
-            name: recipientName,
-            type: conv.conversation_type === 'group' ? 'group' : 'direct',
-            avatarUrl: recipientAvatar,
-            participants: participantIds,
-            unreadCount: m.unread_count || 0,
-            lastMessage: lastMsgs?.[0] ? {
-              text: lastMsgs[0].content,
-              timestamp: lastMsgs[0].created_at,
-              senderId: lastMsgs[0].sender_id
-            } : undefined
-          });
         }
-        return { chats: chatsList };
-      }
-    } catch (e) {
-      console.warn("[getChats] Error:", e);
-    }
 
-    return { chats: [] };
+        const { data: lastMsgs } = await supabase
+          .from('messages')
+          .select('content, created_at, sender_id')
+          .eq('conversation_id', conv.id)
+          .order('created_at', { ascending: false })
+          .limit(1);
+
+        chatsList.push({
+          id: conv.id,
+          name,
+          type: conv.conversation_type === 'group' ? 'group' : 'direct',
+          avatarUrl,
+          participants: participantIds,
+          unreadCount: m.unread_count || 0,
+          lastMessage: lastMsgs?.[0] ? {
+            text: lastMsgs[0].content,
+            timestamp: lastMsgs[0].created_at,
+            senderId: lastMsgs[0].sender_id
+          } : undefined
+        });
+      }
+
+      return { chats: chatsList };
+    } catch (e) {
+      console.warn("[getChats] Exception:", e);
+      return { chats: [] };
+    }
   },
 
   createDirectChat: async (targetUserId: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Not authenticated");
+    const current = await getCurrentProfile();
+    if (!current) throw new Error("Not authenticated");
+    const { profileId } = current;
 
-    const chatId = await getOrCreateDirectChat(user.id, targetUserId);
+    const chatId = await getOrCreateDirectChat(profileId, targetUserId);
 
-    const { data: prof } = await supabase.from('profiles').select('display_name, full_name, username, avatar_url').eq('id', targetUserId).maybeSingle();
+    const { data: prof } = await supabase
+      .from('profiles')
+      .select('display_name, full_name, username, avatar_url')
+      .eq('id', targetUserId)
+      .maybeSingle();
+
     const chatName = prof?.display_name || prof?.full_name || prof?.username || "Direct Message";
 
     const chat: Chat = {
@@ -505,80 +531,55 @@ export const apiService = {
       name: chatName,
       type: "direct",
       avatarUrl: prof?.avatar_url || undefined,
-      participants: [user.id, targetUserId],
+      participants: [profileId, targetUserId],
       unreadCount: 0
     };
     return { chat };
   },
 
   createGroupChat: async (name: string, description?: string, participantIds?: string[], isPrivate?: boolean, avatarUrl?: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Not authenticated");
+    const current = await getCurrentProfile();
+    if (!current) throw new Error("Not authenticated");
+    const { profileId } = current;
 
-    const allParticipants = Array.from(new Set([user.id, ...(participantIds || [])]));
+    const allParticipants = Array.from(new Set([profileId, ...(participantIds || [])]));
 
-    // Try creating in 'chats' table
-    try {
-      const { data: newChat, error: cErr } = await supabase
-        .from('chats')
-        .insert({
-          name,
-          is_group: true,
-          participant_ids: allParticipants,
-          created_by: user.id,
-          avatar_url: avatarUrl || null,
-          updated_at: new Date().toISOString()
-        })
-        .select()
-        .single();
-
-      if (!cErr && newChat) {
-        const chat: Chat = {
-          id: newChat.id,
-          name: newChat.name || name,
-          type: "group",
-          description,
-          avatarUrl: newChat.avatar_url || avatarUrl,
-          participants: allParticipants,
-          unreadCount: 0
-        };
-        return { chat };
-      }
-    } catch {
-      // Fallback
-    }
-
-    // Fallback to conversations table
-    const { data: newConv } = await supabase
+    const { data: newConv, error: convErr } = await supabase
       .from('conversations')
       .insert({
         name,
         description,
         conversation_type: 'group',
         avatar_url: avatarUrl || null,
-        created_by: user.id,
+        created_by: profileId,
         is_public: !isPrivate,
         updated_at: new Date().toISOString()
       })
       .select()
       .single();
 
-    if (newConv) {
-      await supabase.from('conversation_members').insert(
-        allParticipants.map((pId) => ({
-          conversation_id: newConv.id,
-          profile_id: pId,
-          role: pId === user.id ? 'owner' : 'member'
-        }))
-      );
+    if (convErr || !newConv) {
+      throw new Error(`Failed to create group conversation: ${convErr?.message || 'Unknown error'}`);
+    }
+
+    const { error: memErr } = await supabase.from('conversation_members').insert(
+      allParticipants.map((pId) => ({
+        conversation_id: newConv.id,
+        profile_id: pId,
+        role: pId === profileId ? 'owner' : 'member'
+      }))
+    );
+
+    if (memErr) {
+      console.warn('[createGroupChat] conversation_members error:', memErr);
     }
 
     const chat: Chat = {
-      id: newConv?.id || `group_${Date.now()}`,
-      name,
+      id: newConv.id,
+      name: newConv.name || name,
       type: "group",
       description,
-      avatarUrl,
+      avatarUrl: newConv.avatar_url || avatarUrl,
       participants: allParticipants,
       unreadCount: 0
     };
@@ -587,7 +588,6 @@ export const apiService = {
 
   deleteChat: async (chatId: string) => {
     try {
-      await supabase.from('chats').delete().eq('id', chatId);
       await supabase.from('conversations').delete().eq('id', chatId);
     } catch {
       // ignore
@@ -600,89 +600,153 @@ export const apiService = {
       const { data, error } = await supabase
         .from('messages')
         .select('*, sender:profiles(*)')
-        .or(`conversation_id.eq.${chatId},chat_id.eq.${chatId}`)
+        .eq('conversation_id', chatId)
         .order('created_at', { ascending: true });
 
       if (error) {
-        const { data: d2 } = await supabase
-          .from('messages')
-          .select('*, sender:profiles(*)')
-          .eq('conversation_id', chatId)
-          .order('created_at', { ascending: true });
-
-        if (d2) {
-          return { messages: d2.map(formatMessageRecord) };
-        }
-      } else if (data) {
-        return { messages: data.map(formatMessageRecord) };
+        console.warn("[getMessages] Error querying messages:", error);
+        return { messages: [] };
       }
+
+      return { messages: (data || []).map(formatMessageRecord) };
     } catch (e) {
-      console.warn("[getMessages] Error:", e);
+      console.warn("[getMessages] Exception:", e);
+      return { messages: [] };
     }
-    return { messages: [] };
   },
 
   sendMessage: async (chatId: string, payload: any) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) throw new Error("Not authenticated");
+    const current = await getCurrentProfile();
+    if (!current) {
+      throw new Error("Not authenticated");
+    }
+
+    const { sbUser, profile, profileId } = current;
+
+    let targetUserId: string | null = null;
+    let targetConvId = chatId;
+
+    if (chatId.startsWith('dm_')) {
+      const parts = chatId.replace('dm_', '').split('_');
+      targetUserId = parts.find((p) => p !== profileId) || parts[0];
+      if (targetUserId) {
+        try {
+          const resolvedId = await getOrCreateDirectChat(profileId, targetUserId);
+          if (resolvedId && !resolvedId.startsWith('dm_')) {
+            targetConvId = resolvedId;
+          }
+        } catch (e: any) {
+          console.error('[MESSAGE] failure in getOrCreateDirectChat:', e);
+          throw e;
+        }
+      }
+    }
+
+    const clientMsgId = payload.clientMessageId || `client_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+
+    // Required audit logging
+    console.log(`[MESSAGE AUDIT]`);
+    console.log(`auth_user_id: ${sbUser.id}`);
+    console.log(`profile_id: ${profileId}`);
+    console.log(`profile.auth_user_id: ${profile?.auth_user_id || 'N/A'}`);
+    console.log(`conversation_id: ${targetConvId}`);
+    console.log(`recipient_profile_id: ${targetUserId || 'group'}`);
+    console.log(`sender_id: ${profileId}`);
+    console.log(`client_message_id: ${clientMsgId}`);
+    console.log(`message_type: ${payload.type || 'text'}`);
+    console.log(`content: ${payload.content || ''}`);
+    console.log(`insert_started: ${new Date().toISOString()}`);
+
+    // Idempotency check: recent identical message
+    try {
+      const { data: existingDup } = await supabase
+        .from('messages')
+        .select('*, sender:profiles(*)')
+        .eq('conversation_id', targetConvId)
+        .eq('sender_id', profileId)
+        .eq('content', payload.content || '')
+        .gt('created_at', new Date(Date.now() - 5000).toISOString())
+        .maybeSingle();
+
+      if (existingDup) {
+        console.log(`database_message_id: ${existingDup.id}`);
+        console.log(`delivery_state: sent`);
+        const msgFormatted = formatMessageRecord(existingDup);
+        msgFormatted.chatId = chatId;
+        return { message: msgFormatted, chat: { id: targetConvId, name: "Conversation", type: "direct", participants: [profileId] } as Chat };
+      }
+    } catch (_) {}
 
     const messageData: any = {
-      conversation_id: chatId,
-      chat_id: chatId,
-      sender_id: user.id,
+      conversation_id: targetConvId,
+      sender_id: profileId,
       content: payload.content || "",
       message_type: payload.type || "text",
       media_url: payload.attachments?.[0]?.url || null,
       file_name: payload.attachments?.[0]?.fileName || null,
+      duration_seconds: payload.attachments?.[0]?.duration || null,
+      reply_to_message_id: payload.replyToId || null,
+      is_forwarded: payload.isForwarded || false,
+      send_status: 'sent',
       created_at: new Date().toISOString()
     };
 
     let confirmedMsg: any = null;
+    let lastErr: any = null;
 
     try {
       const { data, error } = await supabase
         .from('messages')
         .insert(messageData)
         .select('*, sender:profiles(*)')
-        .single();
+        .maybeSingle();
+
+      console.log(`insert_response:`, data);
+      console.log(`insert_error:`, error);
 
       if (!error && data) {
         confirmedMsg = data;
       } else {
-        const { chat_id, ...cleanData } = messageData;
-        const { data: d2 } = await supabase
-          .from('messages')
-          .insert(cleanData)
-          .select('*, sender:profiles(*)')
-          .single();
-
-        if (d2) confirmedMsg = d2;
+        lastErr = error;
       }
-    } catch (err) {
-      console.error("[sendMessage] Supabase error:", err);
+    } catch (err: any) {
+      lastErr = err;
+      console.error("[MESSAGE] Supabase exception:", err);
     }
 
-    const msgFormatted = confirmedMsg ? formatMessageRecord(confirmedMsg) : {
-      id: `msg_${Date.now()}`,
-      chatId,
-      senderId: user.id,
-      senderName: user.user_metadata?.full_name || "Me",
-      type: payload.type || "text",
-      content: payload.content || "",
-      attachments: payload.attachments,
-      timestamp: new Date().toISOString(),
-      deliveryState: "sent"
-    } as Message;
+    if (!confirmedMsg) {
+      const errStr = lastErr ? `Error ${lastErr.code || ''}: ${lastErr.message || JSON.stringify(lastErr)}` : "Database rejected message creation";
+      console.error(`delivery_state: failed - ${errStr}`);
+      throw new Error(errStr);
+    }
+
+    console.log(`database_message_id: ${confirmedMsg.id}`);
+    console.log(`delivery_state: sent`);
+
+    // Touch conversation last_message_at and updated_at
+    try {
+      await supabase
+        .from('conversations')
+        .update({
+          last_message_at: confirmedMsg.created_at,
+          last_message_id: confirmedMsg.id,
+          updated_at: new Date().toISOString()
+        })
+        .eq('id', targetConvId);
+    } catch (_) {}
+
+    const msgFormatted = formatMessageRecord(confirmedMsg);
+    msgFormatted.chatId = targetConvId;
 
     const chat: Chat = {
-      id: chatId,
-      name: "Chat",
+      id: targetConvId,
+      name: "Conversation",
       type: "direct",
-      participants: [user.id],
+      participants: [profileId, ...(targetUserId ? [targetUserId] : [])],
       lastMessage: {
         text: payload.content || "",
         timestamp: new Date().toISOString(),
-        senderId: user.id,
+        senderId: profileId,
         deliveryState: "sent"
       }
     };

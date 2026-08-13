@@ -1192,7 +1192,7 @@ async function resolveUserAuthState(sbUser: any, set: any, get: any, isSilent = 
     // 2. If local setup is ALREADY completed OR if running silently during an active session
     if (cachedSetupDone || (isSilent && existingProfile && (currentState.status === 'READY' || currentState.status === 'AUTHENTICATED'))) {
       try {
-        const { data: profileData } = await supabase.from('profiles').select('*').eq('id', sbUser.id).maybeSingle();
+        const { data: profileData } = await supabase.from('profiles').select('*').or(`auth_user_id.eq.${sbUser.id},id.eq.${sbUser.id}`).maybeSingle();
         if (profileData) {
           const completeProfile = formatProfileRecord(profileData, sbUser);
           completeProfile.onboardingCompleted = true;
@@ -1238,7 +1238,7 @@ async function resolveUserAuthState(sbUser: any, set: any, get: any, isSilent = 
     // 3. No local setup flag yet: Fetch profile from backend to evaluate setup state
     let profileData: any = null;
     try {
-      const res = await supabase.from('profiles').select('*').eq('id', sbUser.id).maybeSingle();
+      const res = await supabase.from('profiles').select('*').or(`auth_user_id.eq.${sbUser.id},id.eq.${sbUser.id}`).maybeSingle();
       if (res?.data) {
         profileData = res.data;
       }

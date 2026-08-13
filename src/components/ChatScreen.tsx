@@ -44,6 +44,8 @@ export const ChatScreen: React.FC<{
   const [text, setText] = useState('');
   const [editingMsgId, setEditingMsgId] = useState<string | null>(null);
   const [isRecordingVoice, setIsRecordingVoice] = useState(false);
+  const [isSendingMsg, setIsSendingMsg] = useState(false);
+  const [isUploadingVoice, setIsUploadingVoice] = useState(false);
   const [voiceSeconds, setVoiceSeconds] = useState(0);
   const [showOptionsModal, setShowOptionsModal] = useState(false);
   const [showProfileScreen, setShowProfileScreen] = useState(false);
@@ -117,12 +119,12 @@ export const ChatScreen: React.FC<{
     });
   };
 
-  const { currentUser } = useAuthStore();
+  const { currentUser, profile } = useAuthStore();
   const { 
     chats, messages, activeTyping, replyingToMessage, 
     sendMessage, retryMessage, editMessage, deleteMessage, reactToMessage, 
     togglePinMessage, sendTypingSignal, pollUpdates, 
-    setReplyingToMessage, setForwardingMessage 
+    setReplyingToMessage, setForwardingMessage, setActiveChat 
   } = useChatStore();
 
   const { customization } = useThemeStore();
@@ -158,9 +160,9 @@ export const ChatScreen: React.FC<{
     }
   };
 
-  // Subscribe to Realtime messages & conversation events
+  // Subscribe to Realtime conversation & message events
   useEffect(() => {
-    subscriptions.subscribeToMessages(chatId);
+    setActiveChat(chatId);
     subscriptions.subscribeToConversation(chatId);
     return () => {
       subscriptions.unsubscribeFromConversation(chatId);
@@ -211,10 +213,13 @@ export const ChatScreen: React.FC<{
         />
       );
     }
-    const targetUserId = chat.participants?.find((p) => p !== currentUser?.id) || chat.id;
+    const myProfileId = profile?.id || currentUser?.id;
+    const myAuthId = currentUser?.id;
+    const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== myAuthId) || (chat as any).recipientId || chat.id;
     return (
       <ContactProfileScreen 
         targetUserId={targetUserId}
+        chatId={chat.id}
         onBack={() => setShowProfileScreen(false)}
         onStartChat={() => setShowProfileScreen(false)}
       />
@@ -228,24 +233,35 @@ export const ChatScreen: React.FC<{
 
   const handleSendText = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
+    if (isSendingMsg) return;
     if (!text.trim() && attachmentDrafts.length === 0) return;
 
-    if (editingMsgId) {
-      await editMessage(editingMsgId, text.trim());
-      setEditingMsgId(null);
-    } else {
-      await sendMessage({
-        content: text.trim(),
-        type: attachmentDrafts.length > 0 ? (attachmentDrafts[0].type === 'image' ? 'image' : 'file') : 'text',
-        attachments: attachmentDrafts.length > 0 ? attachmentDrafts : undefined
-      });
-    }
+    setIsSendingMsg(true);
+    try {
+      if (editingMsgId) {
+        await editMessage(editingMsgId, text.trim());
+        setEditingMsgId(null);
+      } else {
+        await sendMessage({
+          content: text.trim(),
+          type: attachmentDrafts.length > 0 ? (attachmentDrafts[0].type === 'image' ? 'image' : 'file') : 'text',
+          attachments: attachmentDrafts.length > 0 ? attachmentDrafts : undefined
+        });
+      }
 
-    setText('');
-    setAttachmentDrafts([]);
+      setText('');
+      setAttachmentDrafts([]);
+    } catch (err) {
+      console.error('Send message error:', err);
+      triggerToast('Failed to send message');
+    } finally {
+      setIsSendingMsg(false);
+    }
   };
 
   const handleVoiceNoteRecorded = async (voiceNote: VoiceNoteData) => {
+    if (isUploadingVoice) return;
+    setIsUploadingVoice(true);
     setIsRecordingVoice(false);
     try {
       const { url } = await voiceStorageService.uploadVoiceNote(voiceNote);
@@ -261,8 +277,12 @@ export const ChatScreen: React.FC<{
           waveformData: voiceNote.waveformData
         }]
       });
+      triggerToast('Voice note sent');
     } catch (err) {
       console.error('Failed to upload or send voice note:', err);
+      triggerToast('Voice note upload failed');
+    } finally {
+      setIsUploadingVoice(false);
     }
   };
 
@@ -353,17 +373,17 @@ export const ChatScreen: React.FC<{
   const currentWallpaper = customization.perChatThemes?.[chat.id]?.wallpaper || customization.chatWallpaper || 'glass-gradient';
 
   return (
-    <div className="w-full h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
+    <div className="w-full h-screen flex flex-col justify-between bg-slate-50 text-slate-900 relative overflow-hidden select-none">
       
       {/* Real Dynamic Viewport Wallpaper with Ambient Balls of Accent Color */}
       <AmbientLiquidBackground />
 
       {/* Grounded Edge-to-Edge Pinned Header */}
-      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-slate-800 px-3 sm:px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800 dark:text-slate-100">
+      <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/95 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button 
             onClick={onBack}
-            className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-700 dark:text-slate-200 flex items-center justify-center transition-all cursor-pointer shrink-0"
+            className="p-1.5 rounded-full hover:bg-slate-100 text-slate-700 flex items-center justify-center transition-all cursor-pointer shrink-0"
             title="Back to chats"
           >
             <ArrowLeft size={20} />
@@ -372,7 +392,7 @@ export const ChatScreen: React.FC<{
           <div 
             onClick={() => setShowProfileScreen(true)}
             className="flex items-center gap-2.5 cursor-pointer min-w-0 group flex-1"
-            title="View Contact Profile"
+            title="View Profile Info"
           >
             <div className="relative shrink-0">
               <img 
@@ -384,21 +404,21 @@ export const ChatScreen: React.FC<{
             </div>
 
             <div className="text-left min-w-0 flex-1">
-              <h2 className="text-xs font-bold text-slate-900 dark:text-slate-100 leading-tight truncate group-hover:text-blue-600 transition-colors">
+              <h2 className="text-xs font-bold text-slate-900 leading-tight truncate group-hover:text-blue-600 transition-colors">
                 {headerDisplayName}
               </h2>
-              <span className="text-[10px] text-emerald-600 dark:text-emerald-400 font-semibold block truncate">
-                {activeTypingUsers.length > 0 ? 'Typing...' : 'online'}
+              <span className="text-[10px] text-emerald-600 font-semibold block truncate">
+                {activeTypingUsers.length > 0 ? 'Typing...' : chat.type === 'group' ? `${chat.participants?.length || 1} members` : 'online'}
               </span>
             </div>
           </div>
         </div>
 
-        <div className="flex items-center gap-2 shrink-0 text-slate-700 dark:text-slate-200">
+        <div className="flex items-center gap-2 shrink-0 text-slate-700">
           <button 
             type="button"
             onClick={() => setIsCameraOpen(true)}
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+            className="p-2 rounded-full hover:bg-slate-100 transition-all cursor-pointer"
             title="Camera"
           >
             <Camera size={18} />
@@ -406,7 +426,7 @@ export const ChatScreen: React.FC<{
           <button 
             type="button"
             onClick={() => setShowProfileScreen(true)}
-            className="p-2 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 transition-all cursor-pointer"
+            className="p-2 rounded-full hover:bg-slate-100 transition-all cursor-pointer"
             title="More Options"
           >
             <MoreVertical size={18} />
@@ -432,34 +452,34 @@ export const ChatScreen: React.FC<{
 
         {/* Centered Date Divider Pill */}
         <div className="flex justify-center my-2 sticky top-2 z-20 pointer-events-none">
-          <span className="px-3 py-1 rounded-lg bg-white/80 dark:bg-slate-800/80 backdrop-blur-md text-[10px] font-bold text-slate-500 dark:text-slate-400 shadow-2xs border border-slate-200/60 dark:border-slate-700/60 uppercase tracking-wider">
+          <span className="px-3 py-1 rounded-lg bg-white/80 backdrop-blur-md text-[10px] font-bold text-slate-500 shadow-2xs border border-slate-200/60 uppercase tracking-wider">
             Today
           </span>
         </div>
 
         {chatMsgs.length === 0 ? (
           <div className="flex flex-col items-center justify-center min-h-[280px] my-auto py-10 px-4 text-center">
-            <div className="w-14 h-14 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 dark:text-blue-400 flex items-center justify-center mb-3 shadow-xs">
+            <div className="w-14 h-14 rounded-full bg-blue-500/10 border border-blue-500/20 text-blue-600 flex items-center justify-center mb-3 shadow-xs">
               <MessageSquare size={26} />
             </div>
-            <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 mb-1">
+            <h3 className="text-sm font-bold text-slate-800 mb-1">
               No messages here yet
             </h3>
-            <p className="text-xs text-slate-500 dark:text-slate-400 max-w-xs mb-5">
+            <p className="text-xs text-slate-500 max-w-xs mb-5">
               Send a message below to start this conversation. End-to-end encrypted & secure.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-2 max-w-xs">
               <button
                 type="button"
                 onClick={() => setText('Hello! 👋')}
-                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
               >
                 Say Hello 👋
               </button>
               <button
                 type="button"
                 onClick={() => setText('How are you today? 😊')}
-                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
+                className="px-3 py-1.5 rounded-full text-xs font-semibold bg-white border border-slate-200 text-slate-700 hover:border-blue-500 transition-all shadow-xs cursor-pointer"
               >
                 Ask how they are 😊
               </button>
@@ -510,7 +530,7 @@ export const ChatScreen: React.FC<{
                   } ${
                     isMine 
                       ? 'text-white rounded-br-xs shadow-xs' 
-                      : 'bg-white/95 dark:bg-slate-800/95 border border-slate-200/90 dark:border-slate-700/80 text-slate-900 dark:text-slate-100 rounded-bl-xs shadow-xs'
+                      : 'bg-white/95 border border-slate-200/90 text-slate-900 rounded-bl-xs shadow-xs'
                   }`}
                 >
                   {/* Quoted Reply Banner */}
@@ -719,11 +739,16 @@ export const ChatScreen: React.FC<{
 
           {/* Attached Attachment Drafts */}
           {attachmentDrafts.length > 0 && (
-            <div className="px-3 py-1.5 bg-slate-100/90 border border-slate-200 rounded-xl flex items-center gap-2 overflow-x-auto shadow-xs">
+            <div className="px-3 py-1.5 bg-slate-100/90 border border-slate-200 rounded-xl flex items-center gap-2 overflow-x-auto shadow-xs mb-2">
               {attachmentDrafts.map((att, i) => (
                 <div key={i} className="relative p-1.5 bg-white rounded-lg text-xs flex items-center gap-2 border border-slate-200">
+                  {att.type === 'image' && att.url ? (
+                    <img src={att.url} alt={att.fileName} className="w-8 h-8 object-cover rounded-md border border-slate-200" />
+                  ) : (
+                    <Paperclip size={14} className="text-blue-600 shrink-0" />
+                  )}
                   <span className="truncate max-w-[120px] font-bold text-slate-800">{att.fileName}</span>
-                  <button onClick={() => setAttachmentDrafts((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-700">
+                  <button onClick={() => setAttachmentDrafts((prev) => prev.filter((_, idx) => idx !== i))} className="text-slate-400 hover:text-slate-700 cursor-pointer">
                     <X size={12} />
                   </button>
                 </div>
@@ -749,7 +774,7 @@ export const ChatScreen: React.FC<{
               </button>
             </div>
           ) : (
-            <form onSubmit={handleSendText} className="flex items-center gap-2">
+            <form onSubmit={handleSendText} className="flex items-center gap-2 w-full max-w-full overflow-hidden">
               <input 
                 type="file" 
                 ref={fileInputRef} 
@@ -761,17 +786,17 @@ export const ChatScreen: React.FC<{
                 <VoiceRecorderUI
                   onSendVoiceNote={handleVoiceNoteRecorded}
                   onCancel={() => setIsRecordingVoice(false)}
-                  className="flex-1"
+                  className="flex-1 min-w-0"
                 />
               ) : (
                 <>
                   {/* Capsule-shaped text input field */}
-                  <div className="flex-1 relative flex items-center bg-white dark:bg-slate-800 rounded-full border border-slate-200 dark:border-slate-700 shadow-2xs px-3 py-1">
+                  <div className="flex-1 min-w-0 relative flex items-center bg-white/95 rounded-full border border-slate-200/90 shadow-2xs px-3 py-1">
                     {/* Left side inside field: Emoji picker icon (Smile) */}
                     <button
                       type="button"
                       onClick={() => setIsStickerPickerOpen(true)}
-                      className="text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full transition-colors cursor-pointer shrink-0"
+                      className="text-slate-400 hover:text-slate-600 p-1.5 rounded-full transition-colors cursor-pointer shrink-0"
                       title="Emoji & Stickers"
                     >
                       <Smile size={19} />
@@ -782,7 +807,7 @@ export const ChatScreen: React.FC<{
                       placeholder="Message"
                       value={text}
                       onChange={handleInputChange}
-                      className="flex-1 py-1.5 px-2 bg-transparent text-xs text-slate-900 dark:text-slate-100 placeholder-slate-400 font-medium focus:outline-none"
+                      className="flex-1 min-w-0 py-1.5 px-2 bg-transparent text-xs text-slate-900 placeholder-slate-400 font-medium focus:outline-none"
                     />
 
                     {/* Right side inside field: Paperclip attachment icon & Camera icon */}
@@ -790,7 +815,7 @@ export const ChatScreen: React.FC<{
                       <button
                         type="button"
                         onClick={() => fileInputRef.current?.click()}
-                        className="hover:text-slate-600 dark:hover:text-slate-200 p-1.5 rounded-full transition-colors cursor-pointer"
+                        className="hover:text-slate-600 p-1.5 rounded-full transition-colors cursor-pointer"
                         title="Attach file"
                       >
                         <Paperclip size={18} />

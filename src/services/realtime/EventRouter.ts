@@ -13,6 +13,8 @@ import { logger } from './RealtimeLogger';
 import { useChatStore } from '../../store/chatStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { useAuthStore } from '../../store/authStore';
+import { formatMessageRecord } from '../apiService';
+import { chatCache } from '../chatCache';
 
 export type EventCategoryHandler = (event: ClassifiedEvent) => void;
 
@@ -141,24 +143,73 @@ export class EventRouter {
     // 1. Message Events
     this.registerHandler('Message', (event) => {
       const { eventType, data } = event;
-      if (!data || !data.chatId) return;
+      if (!data) return;
+
+      console.log(`[MESSAGE] realtime event:`, { eventType, id: data.id, content: data.content, chatId: data.chatId || data.conversation_id });
+
+      const chatId = data.chatId || data.conversation_id || data.chat_id;
+      if (!chatId) return;
 
       const chatStore = useChatStore.getState();
-      const chatId = data.chatId;
 
       if (eventType === 'INSERT') {
-        const currentMsgs = chatStore.messages[chatId] || [];
-        // Prevent duplicate messages
-        if (!currentMsgs.some((m) => m.id === data.id)) {
-          useChatStore.setState((state) => ({
-            messages: {
-              ...state.messages,
-              [chatId]: [...(state.messages[chatId] || []), data],
-            },
-          }));
-          // Refresh chats list to update lastMessage and ordering
-          chatStore.fetchChats();
-        }
+        const formattedData = formatMessageRecord(data);
+        const msgId = formattedData.id || data.id;
+
+        useChatStore.setState((state) => {
+          const currentMsgs = state.messages[chatId] || [];
+          
+          // 1. Check if message already exists by real ID
+          if (currentMsgs.some((m) => m.id === msgId)) {
+            return state;
+          }
+
+          // 2. Check if there is an optimistic temp message matching this server message
+          const tempIdx = currentMsgs.findIndex(
+            (m) =>
+              m.id.startsWith('temp_') &&
+              (m.content === formattedData.content || (m as any).clientMessageId === (data as any).clientMessageId)
+          );
+
+          let updatedMsgs: typeof currentMsgs;
+          if (tempIdx !== -1) {
+            // Replace temp message with server confirmed message
+            updatedMsgs = [...currentMsgs];
+            updatedMsgs[tempIdx] = { ...formattedData, deliveryState: 'sent' };
+          } else {
+            // Append new incoming message
+            updatedMsgs = [...currentMsgs, { ...formattedData, deliveryState: 'sent' }];
+          }
+
+          // Update chat list preview immediately
+          const updatedChats = state.chats.map((c) => {
+            if (c.id === chatId) {
+              return {
+                ...c,
+                lastMessage: {
+                  text: formattedData.content || (formattedData.type === 'image' ? '📷 Photo' : formattedData.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+                  timestamp: formattedData.timestamp || new Date().toISOString(),
+                  senderId: formattedData.senderId
+                }
+              };
+            }
+            return c;
+          });
+
+          const newMessagesMap = {
+            ...state.messages,
+            [chatId]: updatedMsgs,
+          };
+          chatCache.setMessages(newMessagesMap);
+
+          return {
+            messages: newMessagesMap,
+            chats: updatedChats
+          };
+        });
+
+        // Trigger background fetchChats to keep counts accurate
+        chatStore.fetchChats();
       } else if (eventType === 'UPDATE') {
         useChatStore.setState((state) => ({
           messages: {

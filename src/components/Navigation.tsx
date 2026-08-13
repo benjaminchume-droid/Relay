@@ -133,44 +133,48 @@ export const MainNavigation: React.FC<{
           {children}
         </main>
 
-        {/* Mobile Viewport Flush Edge-to-Edge Navigation Bar */}
+        {/* Mobile Floating Glass Navigation Dock */}
         {currentUser && !shouldHideBottomNav && (
-          <nav 
-            className="md:hidden fixed bottom-0 left-0 right-0 w-full h-13 bg-slate-900/95 backdrop-blur-xl border-t border-slate-800/80 flex items-center justify-around px-2 z-50 select-none shrink-0 shadow-lg transition-all"
-            style={{
-              paddingBottom: 'env(safe-area-inset-bottom, 0px)'
-            }}
-          >
-            {tabs.map((tab) => {
-              const isActive = activeTab === tab.id;
-              const IconComponent = tab.icon;
-              return (
-                <button
-                  key={tab.id}
-                  onClick={() => onSelectTab(tab.id)}
-                  className={`flex flex-col items-center justify-center py-1 px-3 rounded-lg cursor-pointer relative transition-all duration-200 ${
-                    isActive 
-                      ? 'font-bold' 
-                      : 'text-slate-400 hover:text-white font-medium'
-                  }`}
-                  style={isActive ? { backgroundColor: 'var(--primary-accent, #2563EB)', color: '#FFFFFF' } : {}}
-                >
-                  <div className="relative flex items-center justify-center">
+          <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+            <nav 
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[24px] bg-white/85 backdrop-blur-2xl border border-white/80 shadow-lg shadow-slate-900/5 select-none"
+              style={{
+                marginBottom: 'env(safe-area-inset-bottom, 0px)'
+              }}
+            >
+              {tabs.map((tab) => {
+                const isActive = activeTab === tab.id;
+                const IconComponent = tab.icon;
+                return (
+                  <button
+                    key={tab.id}
+                    onClick={() => onSelectTab(tab.id)}
+                    className={`relative p-2.5 rounded-[18px] transition-all duration-200 cursor-pointer flex items-center justify-center ${
+                      isActive 
+                        ? 'text-white shadow-md scale-105' 
+                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60'
+                    }`}
+                    style={isActive ? { 
+                      backgroundColor: 'var(--primary-accent, #2563EB)', 
+                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)' 
+                    } : {}}
+                    title={tab.label}
+                  >
                     <IconComponent size={18} className={isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'} />
                     {tab.badge && tab.badge > 0 ? (
                       <span 
-                        style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
-                        className="absolute -top-1.5 -right-2 px-1 py-0.2 min-w-[14px] h-3.5 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-slate-900 shadow-xs"
+                        className={`absolute -top-1 -right-1 px-1 py-0.2 min-w-[15px] h-3.5 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-white shadow-2xs ${
+                          isActive ? 'bg-amber-500' : 'bg-blue-600'
+                        }`}
                       >
-                        {tab.badge}
+                        {tab.badge > 99 ? '99+' : tab.badge}
                       </span>
                     ) : null}
-                  </div>
-                  <span className="text-[9px] tracking-tight mt-0.5">{tab.label}</span>
-                </button>
-              );
-            })}
-          </nav>
+                  </button>
+                );
+              })}
+            </nav>
+          </div>
         )}
       </div>
 

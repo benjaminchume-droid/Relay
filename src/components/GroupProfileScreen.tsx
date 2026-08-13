@@ -42,7 +42,19 @@ export const GroupProfileScreen: React.FC<{
   const accent = ACCENT_COLOR_CONFIG[customization.accentColor] || ACCENT_COLOR_CONFIG['liquid-azure'];
   const chat = chats.find((c) => c.id === chatId);
 
-  if (!chat) return null;
+  if (!chat) {
+    return (
+      <div className="w-full min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center text-slate-700">
+        <p className="text-sm font-semibold mb-3">Group details unavailable</p>
+        <button 
+          onClick={onBack} 
+          className="px-4 py-2 bg-slate-900 text-white rounded-xl text-xs font-bold cursor-pointer hover:bg-slate-800"
+        >
+          Go Back
+        </button>
+      </div>
+    );
+  }
 
   const roles = chat.roles || {};
   const myRole = roles[currentUser?.id || ''] || (chat.participants[0] === currentUser?.id ? 'creator' : 'member');
