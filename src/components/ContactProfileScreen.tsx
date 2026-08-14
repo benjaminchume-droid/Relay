@@ -140,7 +140,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
   // Safe target user fallback using formatProfileRecord so targetUser.settings is guaranteed
   const targetUser: UserProfile = fetchedUser || profileCache.get(resolvedUserId) || formatProfileRecord({
     id: resolvedUserId,
-    display_name: (foundChat as any)?.name || 'Relay Contact',
+    display_name: (foundChat as any)?.name || `@${resolvedUserId.substring(0, 8)}`,
     username: (foundChat as any)?.username || (foundChat as any)?.handle || 'user',
     avatar_url: (foundChat as any)?.avatarUrl,
     bio: (foundChat as any)?.bio || 'Hey there! I am using Relay.',

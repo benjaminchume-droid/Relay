@@ -17,6 +17,7 @@ import { useThemeStore, ACCENT_COLOR_CONFIG } from '../store/themeStore';
 import { useContactsStore } from '../store/contactsStore';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
+import { profileCache } from '../services/profileCache';
 import { supabase } from '../lib/supabase/client';
 import { formatChatTimestamp, formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
@@ -351,21 +352,33 @@ export const ChatScreen: React.FC<{
   const [recipientProfile, setRecipientProfile] = useState<{ display_name?: string; full_name?: string; username?: string; avatar_url?: string } | null>(null);
 
   useEffect(() => {
-    const targetUserId = chat.participants?.find((p) => p !== currentUser?.id) || chatId;
+    const myProfileId = profile?.id || currentUser?.id;
+    const myAuthId = currentUser?.id;
+    const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== myAuthId) || (chat as any).recipientId;
+
     if (targetUserId && chat.type !== 'group') {
+      const cached = profileCache.get(targetUserId);
+      if (cached) {
+        setRecipientProfile({
+          display_name: cached.name,
+          username: cached.username,
+          avatar_url: cached.avatarUrl
+        });
+      }
+
       supabase
         .from('profiles')
         .select('display_name, full_name, username, avatar_url')
-        .eq('id', targetUserId)
+        .or(`id.eq.${targetUserId},auth_user_id.eq.${targetUserId}`)
         .maybeSingle()
         .then(({ data }) => {
           if (data) setRecipientProfile(data);
         });
     }
-  }, [chatId, chat.participants, currentUser?.id, chat.type]);
+  }, [chatId, chat.participants, currentUser?.id, profile?.id, chat.type]);
 
-  const headerDisplayName = recipientProfile?.display_name || recipientProfile?.full_name || chat.name || 'Conversation';
-  const headerUsername = recipientProfile?.username ? `@${recipientProfile.username}` : (formatHandle((chat as any).username || (chat as any).handle) || 'Tap for contact info');
+  const headerDisplayName = recipientProfile?.display_name || recipientProfile?.full_name || (recipientProfile?.username ? `@${recipientProfile.username}` : (chat.name || (chat.type === 'group' ? 'Group Conversation' : 'Conversation')));
+  const headerUsername = recipientProfile?.username ? `@${recipientProfile.username}` : (formatHandle((chat as any).username || (chat as any).handle) || '');
   const headerAvatar = recipientProfile?.avatar_url || chat.avatarUrl || getLetterAvatar(headerDisplayName);
 
   const pinnedMsg = chat.pinnedMessageId ? chatMsgs.find((m) => m.id === chat.pinnedMessageId) : null;
@@ -415,14 +428,6 @@ export const ChatScreen: React.FC<{
         </div>
 
         <div className="flex items-center gap-2 shrink-0 text-slate-700">
-          <button 
-            type="button"
-            onClick={() => setIsCameraOpen(true)}
-            className="p-2 rounded-full hover:bg-slate-100 transition-all cursor-pointer"
-            title="Camera"
-          >
-            <Camera size={18} />
-          </button>
           <button 
             type="button"
             onClick={() => setShowProfileScreen(true)}
@@ -487,7 +492,8 @@ export const ChatScreen: React.FC<{
           </div>
         ) : (
           chatMsgs.map((msg) => {
-            const isMine = (currentUser && msg.senderId === currentUser.id) || msg.senderId === 'me' || msg.senderId === 'currentUser';
+            const myProfileId = profile?.id || currentUser?.id;
+            const isMine = (currentUser && (msg.senderId === currentUser.id || msg.senderId === myProfileId)) || msg.senderId === 'me' || msg.senderId === 'currentUser';
             const isStarred = starredMsgIds.has(msg.id);
             const deliveryState = msg.deliveryState || 'read';
 

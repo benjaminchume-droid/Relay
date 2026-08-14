@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck, Camera, MoreVertical, MessageSquarePlus } from 'lucide-react';
+import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck, MessageSquarePlus } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard, GlassInput, GlassButton } from './GlassUI';
 import { useChatStore } from '../store/chatStore';
@@ -70,28 +70,10 @@ export const ChatList: React.FC<{
   return (
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-5 pb-28 relative min-h-screen text-left">
       
-      {/* Top Header with App Branding, Camera Icon, and Action Menu */}
+      {/* Top Header with App Branding */}
       <div className="flex items-center justify-between">
         <div>
           <h1 className="text-2xl font-black tracking-tight text-slate-800">Chats</h1>
-        </div>
-        <div className="flex items-center gap-3 text-slate-700">
-          <button 
-            type="button"
-            onClick={onOpenNewChatModal}
-            className="p-2 rounded-full hover:bg-slate-200/60 transition-all cursor-pointer"
-            title="Camera"
-          >
-            <Camera size={20} className="text-slate-700" />
-          </button>
-          <button 
-            type="button"
-            onClick={onOpenNewChatModal}
-            className="p-2 rounded-full hover:bg-slate-200/60 transition-all cursor-pointer"
-            title="Menu"
-          >
-            <MoreVertical size={20} className="text-slate-700" />
-          </button>
         </div>
       </div>
 

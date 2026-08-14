@@ -44,6 +44,38 @@ export const App: React.FC = () => {
     applyThemeVars(customization);
   }, [customization]);
 
+  // Handle browser / system back button navigation stack
+  useEffect(() => {
+    const handlePopState = () => {
+      if (showNewChatModal) {
+        setShowNewChatModal(false);
+        return;
+      }
+      if (showCreateCommunityModal) {
+        setShowCreateCommunityModal(false);
+        return;
+      }
+      if (activeSubRoute) {
+        setActiveSubRoute(null);
+        return;
+      }
+      if (activeChatId) {
+        setActiveChat(null);
+        return;
+      }
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, [showNewChatModal, showCreateCommunityModal, activeSubRoute, activeChatId]);
+
+  const handleSelectChat = (chatId: string | null) => {
+    if (chatId) {
+      window.history.pushState({ type: 'chat', chatId }, '');
+    }
+    setActiveChat(chatId);
+  };
+
   // 1. BOOTSTRAPPING Guard (Splash Screen Gate)
   // Keep splash screen locked ONLY during initial cold boot when no local cached profile is available
   if ((status === 'BOOTSTRAPPING' || status === 'AUTH_LOADING') && !profile && !currentUser) {
@@ -137,7 +169,7 @@ export const App: React.FC = () => {
             onSuccess={(chatId) => {
               setActiveSubRoute(null);
               setActiveTab('chats');
-              setActiveChat(chatId);
+              handleSelectChat(chatId);
             }} 
           />
         ) : activeSubRoute === 'explore-search' ? (
@@ -146,7 +178,7 @@ export const App: React.FC = () => {
             onSelectChat={(chatId) => {
               setActiveSubRoute(null);
               setActiveTab('chats');
-              setActiveChat(chatId);
+              handleSelectChat(chatId);
             }} 
           />
         ) : activeTab === 'chats' && activeChatId ? (
@@ -156,21 +188,30 @@ export const App: React.FC = () => {
           />
         ) : activeTab === 'chats' ? (
           <ChatList 
-            onSelectChat={(id) => setActiveChat(id)} 
-            onOpenNewChatModal={() => setShowNewChatModal(true)} 
+            onSelectChat={(id) => handleSelectChat(id)} 
+            onOpenNewChatModal={() => {
+              window.history.pushState({ modal: 'new-chat' }, '');
+              setShowNewChatModal(true);
+            }} 
           />
         ) : activeTab === 'communities' ? (
           <CommunitiesView 
-            onOpenCreateCommunityModal={() => setActiveSubRoute('create-community')} 
+            onOpenCreateCommunityModal={() => {
+              window.history.pushState({ route: 'create-community' }, '');
+              setActiveSubRoute('create-community');
+            }} 
             onCommunityChatStateChange={(isOpen) => setIsCommunityChatOpen(isOpen)}
           />
         ) : activeTab === 'explore' ? (
           <ExploreView 
             onSelectChat={(id) => {
               setActiveTab('chats');
-              setActiveChat(id);
+              handleSelectChat(id);
             }} 
-            onOpenUserSearch={() => setActiveSubRoute('explore-search')}
+            onOpenUserSearch={() => {
+              window.history.pushState({ route: 'explore-search' }, '');
+              setActiveSubRoute('explore-search');
+            }}
           />
         ) : (
           <ProfileView />
@@ -183,11 +224,14 @@ export const App: React.FC = () => {
         onCloseNewChatModal={() => setShowNewChatModal(false)}
         showCreateCommunityModal={showCreateCommunityModal}
         onCloseCreateCommunityModal={() => setShowCreateCommunityModal(false)}
-        onOpenCreateGroup={() => setActiveSubRoute('create-group')}
+        onOpenCreateGroup={() => {
+          window.history.pushState({ route: 'create-group' }, '');
+          setActiveSubRoute('create-group');
+        }}
         onSelectChat={(id) => {
           setActiveSubRoute(null);
           setActiveTab('chats');
-          setActiveChat(id);
+          handleSelectChat(id);
         }}
       />
     </div>

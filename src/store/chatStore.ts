@@ -77,7 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               return {
                 ...existing,
                 ...c,
-                name: c.name && c.name !== 'Chat' ? c.name : existing.name,
+                name: c.name || existing.name,
                 avatarUrl: c.avatarUrl || existing.avatarUrl
               };
             }
@@ -213,7 +213,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           // New conversation: prepend immediately to Chat List
           const newChat: Chat = {
             id: realChatId,
-            name: chat.name || 'Conversation',
+            name: chat.name || (chat.type === 'group' ? 'Group Conversation' : `@${realChatId.substring(0, 8)}`),
             type: chat.type || 'direct',
             avatarUrl: chat.avatarUrl,
             participants: chat.participants || [currentUser?.id || 'me'],

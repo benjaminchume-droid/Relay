@@ -172,14 +172,23 @@ export async function getOrCreateDirectChat(currentUserId: string, targetUserId:
     }
 
     if (newConvId) {
-      // 3. Add members to 'conversation_members'
-      const { error: memErr } = await supabase.from('conversation_members').insert([
-        { conversation_id: newConvId, profile_id: realCurrentUserId, role: 'owner' },
-        { conversation_id: newConvId, profile_id: realTargetUserId, role: 'member' }
+      // 3. Add members to 'conversation_members' (support both user_id and profile_id columns)
+      let { error: memErr } = await supabase.from('conversation_members').insert([
+        { conversation_id: newConvId, profile_id: realCurrentUserId, user_id: realCurrentUserId, role: 'owner' },
+        { conversation_id: newConvId, profile_id: realTargetUserId, user_id: realTargetUserId, role: 'member' }
       ]);
 
       if (memErr) {
-        console.warn("[getOrCreateDirectChat] conversation_members insert error:", memErr);
+        const { error: memErr2 } = await supabase.from('conversation_members').insert([
+          { conversation_id: newConvId, profile_id: realCurrentUserId, role: 'owner' },
+          { conversation_id: newConvId, profile_id: realTargetUserId, role: 'member' }
+        ]);
+        if (memErr2) {
+          await supabase.from('conversation_members').insert([
+            { conversation_id: newConvId, user_id: realCurrentUserId, role: 'owner' },
+            { conversation_id: newConvId, user_id: realTargetUserId, role: 'member' }
+          ]);
+        }
       }
 
       return newConvId;
@@ -459,7 +468,7 @@ export const apiService = {
         const conv = (m as any).conversations;
         if (!conv) continue;
 
-        let name = conv.name || "Chat";
+        let name = conv.name || "";
         let avatarUrl = conv.avatar_url || undefined;
         let participantIds: string[] = [profileId];
 
@@ -471,15 +480,31 @@ export const apiService = {
         if (otherMembers) {
           participantIds = otherMembers.map((om: any) => om.profile_id);
           const other: any = otherMembers.find((om: any) => om.profile_id !== profileId);
-          const pData = Array.isArray(other?.profiles) ? other.profiles[0] : other?.profiles;
+          let pData = Array.isArray(other?.profiles) ? other.profiles[0] : other?.profiles;
+          if (!pData && other?.profile_id) {
+            try {
+              const { data: fallbackProf } = await supabase
+                .from('profiles')
+                .select('*')
+                .or(`id.eq.${other.profile_id},auth_user_id.eq.${other.profile_id}`)
+                .maybeSingle();
+              pData = fallbackProf;
+            } catch (_) {}
+          }
           if (pData) {
             const formattedProf = formatProfileRecord(pData);
             profileCache.set(formattedProf);
             if (conv.conversation_type !== 'group') {
-              name = formattedProf.name || formattedProf.username || name;
+              name = formattedProf.name || (formattedProf.username ? `@${formattedProf.username}` : name);
               avatarUrl = formattedProf.avatarUrl || avatarUrl;
             }
+          } else if (other?.profile_id && conv.conversation_type !== 'group') {
+            name = `@${other.profile_id.substring(0, 8)}`;
           }
+        }
+
+        if (!name) {
+          name = conv.conversation_type === 'group' ? 'Group Conversation' : 'Conversation';
         }
 
         const { data: lastMsgs } = await supabase
@@ -521,10 +546,10 @@ export const apiService = {
     const { data: prof } = await supabase
       .from('profiles')
       .select('display_name, full_name, username, avatar_url')
-      .eq('id', targetUserId)
+      .or(`id.eq.${targetUserId},auth_user_id.eq.${targetUserId}`)
       .maybeSingle();
 
-    const chatName = prof?.display_name || prof?.full_name || prof?.username || "Direct Message";
+    const chatName = prof?.display_name || prof?.full_name || (prof?.username ? `@${prof.username}` : `@${targetUserId.substring(0, 8)}`);
 
     const chat: Chat = {
       id: chatId,
@@ -682,14 +707,13 @@ export const apiService = {
       sender_id: profileId,
       content: payload.content || "",
       message_type: payload.type || "text",
-      media_url: payload.attachments?.[0]?.url || null,
-      file_name: payload.attachments?.[0]?.fileName || null,
-      duration_seconds: payload.attachments?.[0]?.duration || null,
-      reply_to_message_id: payload.replyToId || null,
-      is_forwarded: payload.isForwarded || false,
-      send_status: 'sent',
       created_at: new Date().toISOString()
     };
+
+    if (payload.attachments?.[0]?.url) {
+      messageData.media_url = payload.attachments[0].url;
+      messageData.file_name = payload.attachments[0].fileName || null;
+    }
 
     let confirmedMsg: any = null;
     let lastErr: any = null;
@@ -698,7 +722,7 @@ export const apiService = {
       const { data, error } = await supabase
         .from('messages')
         .insert(messageData)
-        .select('*, sender:profiles(*)')
+        .select('*')
         .maybeSingle();
 
       console.log(`insert_response:`, data);
@@ -708,6 +732,28 @@ export const apiService = {
         confirmedMsg = data;
       } else {
         lastErr = error;
+        // Fallback: If extra column error occurred, try bare core schema payload
+        if (error?.message?.includes('column') || error?.code === 'PGRST204') {
+          const coreData = {
+            conversation_id: targetConvId,
+            sender_id: profileId,
+            content: payload.content || "",
+            message_type: payload.type || "text",
+            created_at: new Date().toISOString()
+          };
+          const { data: fallbackData, error: fallbackErr } = await supabase
+            .from('messages')
+            .insert(coreData)
+            .select('*')
+            .maybeSingle();
+          
+          if (!fallbackErr && fallbackData) {
+            confirmedMsg = fallbackData;
+            lastErr = null;
+          } else if (fallbackErr) {
+            lastErr = fallbackErr;
+          }
+        }
       }
     } catch (err: any) {
       lastErr = err;
@@ -738,10 +784,40 @@ export const apiService = {
     const msgFormatted = formatMessageRecord(confirmedMsg);
     msgFormatted.chatId = targetConvId;
 
+    let targetName = "";
+    let targetAvatar: string | undefined = undefined;
+
+    if (targetUserId) {
+      const cached = profileCache.get(targetUserId);
+      if (cached) {
+        targetName = cached.name || (cached.username ? `@${cached.username}` : "");
+        targetAvatar = cached.avatarUrl;
+      }
+      if (!targetName) {
+        try {
+          const { data: profData } = await supabase
+            .from('profiles')
+            .select('display_name, full_name, username, avatar_url')
+            .or(`id.eq.${targetUserId},auth_user_id.eq.${targetUserId}`)
+            .maybeSingle();
+
+          if (profData) {
+            targetName = profData.display_name || profData.full_name || (profData.username ? `@${profData.username}` : "");
+            targetAvatar = profData.avatar_url || undefined;
+          }
+        } catch (_) {}
+      }
+    }
+
+    if (!targetName) {
+      targetName = targetUserId ? `@${targetUserId.substring(0, 8)}` : "Group Conversation";
+    }
+
     const chat: Chat = {
       id: targetConvId,
-      name: "Conversation",
-      type: "direct",
+      name: targetName,
+      type: targetUserId ? "direct" : "group",
+      avatarUrl: targetAvatar,
       participants: [profileId, ...(targetUserId ? [targetUserId] : [])],
       lastMessage: {
         text: payload.content || "",
