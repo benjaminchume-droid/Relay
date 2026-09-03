@@ -23,6 +23,7 @@ import { UserSearchScreen } from './components/UserSearchScreen';
 import { ModalsOverlay } from './components/Modals';
 import { useRelayRealtime } from './services/realtime/useRelayRealtime';
 import { GlobalCallHost } from './components/GlobalCallHost';
+import { registerCurrentDevice, tryRegisterNativePush } from './services/deviceService';
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<MainTab>('chats');
@@ -40,6 +41,22 @@ export const App: React.FC = () => {
     initializeSession();
     applyThemeVars(customization);
   }, []);
+
+  // Phase 5: register device + optional native push when authenticated
+  useEffect(() => {
+    const pid = (profile as any)?.id || (currentUser as any)?.id || (profile as any)?.profile_id;
+    if (status !== 'AUTHENTICATED' || !pid) return;
+    let cancelled = false;
+    (async () => {
+      const res = await registerCurrentDevice(pid);
+      if (!cancelled && res.ok) {
+        await tryRegisterNativePush(pid);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [status, profile, currentUser]);
 
   useEffect(() => {
     applyThemeVars(customization);
