@@ -5,12 +5,12 @@
 
 import { create } from 'zustand';
 import { Community, CommunityPost } from '../types';
-import { apiService } from '../services/apiService';
+import * as phase1 from '../services/phase1Service';
 
 interface CommunityState {
   communities: Community[];
   activeCommunityId: string | null;
-  posts: Record<string, CommunityPost[]>; // communityId -> posts
+  posts: Record<string, CommunityPost[]>;
   isLoading: boolean;
   error: string | null;
 
@@ -46,28 +46,23 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
   fetchCommunities: async () => {
     set({ isLoading: true });
     try {
-      const { communities } = await apiService.getCommunities();
-      set({ communities, isLoading: false });
+      const communities = await phase1.listCommunities();
+      set({ communities, isLoading: false, error: null });
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
+      set({ error: err.message || 'Failed to load communities', isLoading: false });
     }
   },
 
   setActiveCommunity: async (id) => {
     set({ activeCommunityId: id });
-    if (id) {
-      await get().fetchPosts(id);
-    }
+    if (id) await get().fetchPosts(id);
   },
 
   fetchPosts: async (communityId) => {
     try {
-      const { posts } = await apiService.getCommunityPosts(communityId);
+      const posts = await phase1.listCommunityThreads(communityId);
       set((state) => ({
-        posts: {
-          ...state.posts,
-          [communityId]: posts
-        }
+        posts: { ...state.posts, [communityId]: posts },
       }));
     } catch (err: any) {
       set({ error: err.message });
@@ -77,123 +72,125 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
   createCommunity: async (payload) => {
     set({ isLoading: true });
     try {
-      const { community } = await apiService.createCommunity(payload);
+      const community = await phase1.createCommunity(payload);
       set((state) => ({
         communities: [community, ...state.communities],
-        activeCommunityId: community.id,
-        isLoading: false
+        isLoading: false,
+        error: null,
       }));
-      await get().fetchPosts(community.id);
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
+      set({ error: err.message || 'Failed to create community', isLoading: false });
+      throw err;
     }
+  },
+
+  updateCommunityInfo: async (id, payload) => {
+    set((state) => ({
+      communities: state.communities.map((c) =>
+        c.id === id
+          ? {
+              ...c,
+              description: payload.description ?? c.description,
+              isPrivate: payload.isPrivate ?? c.isPrivate,
+              category: payload.category ?? c.category,
+            }
+          : c
+      ),
+    }));
   },
 
   joinCommunity: async (id) => {
     try {
-      const { community } = await apiService.joinCommunity(id);
+      await phase1.joinCommunity(id);
       set((state) => ({
-        communities: state.communities.map((c) => (c.id === id ? community : c))
+        communities: state.communities.map((c) =>
+          c.id === id
+            ? { ...c, isJoined: true, memberCount: (c.memberCount || 0) + 1 }
+            : c
+        ),
       }));
     } catch (err: any) {
-      set({ error: err.message });
+      set({ error: err.message || 'Failed to join' });
+      throw err;
     }
   },
 
   leaveCommunity: async (id) => {
     try {
-      const { community } = await apiService.leaveCommunity(id);
+      await phase1.leaveCommunity(id);
       set((state) => ({
-        communities: state.communities.map((c) => (c.id === id ? community : c))
+        communities: state.communities.map((c) =>
+          c.id === id
+            ? { ...c, isJoined: false, memberCount: Math.max(0, (c.memberCount || 1) - 1) }
+            : c
+        ),
       }));
     } catch (err: any) {
-      set({ error: err.message });
+      set({ error: err.message || 'Failed to leave' });
+      throw err;
     }
   },
 
   deleteCommunity: async (id) => {
-    try {
-      await apiService.deleteCommunity(id);
-      set((state) => ({
-        communities: state.communities.filter((c) => c.id !== id),
-        activeCommunityId: state.activeCommunityId === id ? null : state.activeCommunityId
-      }));
-    } catch (err: any) {
-      set({ error: err.message });
-    }
+    set((state) => ({
+      communities: state.communities.filter((c) => c.id !== id),
+      activeCommunityId: state.activeCommunityId === id ? null : state.activeCommunityId,
+    }));
   },
 
   createPost: async (communityId, payload) => {
     try {
-      const { post } = await apiService.createCommunityPost(communityId, payload);
-      set((state) => {
-        const existing = state.posts[communityId] || [];
-        return {
-          posts: {
-            ...state.posts,
-            [communityId]: [post, ...existing]
-          }
-        };
-      });
+      const post = await phase1.createCommunityThread(communityId, payload);
+      set((state) => ({
+        posts: {
+          ...state.posts,
+          [communityId]: [post, ...(state.posts[communityId] || [])],
+        },
+      }));
     } catch (err: any) {
-      set({ error: err.message });
+      set({ error: err.message || 'Failed to post thread' });
+      throw err;
     }
   },
 
   likePost: async (communityId, postId) => {
-    try {
-      const { likesCount, isLiked } = await apiService.likeCommunityPost(postId);
-      set((state) => {
-        const commPosts = state.posts[communityId] || [];
-        return {
-          posts: {
-            ...state.posts,
-            [communityId]: commPosts.map((p) => (p.id === postId ? { ...p, likesCount, isLiked } : p))
-          }
-        };
-      });
-    } catch (err: any) {
-      set({ error: err.message });
-    }
+    set((state) => ({
+      posts: {
+        ...state.posts,
+        [communityId]: (state.posts[communityId] || []).map((p) =>
+          p.id === postId
+            ? { ...p, isLiked: !p.isLiked, likes: (p.likes || 0) + (p.isLiked ? -1 : 1) }
+            : p
+        ),
+      },
+    }));
   },
 
   addComment: async (communityId, postId, content) => {
-    try {
-      const { comment, commentsCount } = await apiService.addPostComment(postId, content);
-      set((state) => {
-        const commPosts = state.posts[communityId] || [];
-        return {
-          posts: {
-            ...state.posts,
-            [communityId]: commPosts.map((p) => {
-              if (p.id === postId) {
-                const existingComments = p.comments || [];
-                return {
-                  ...p,
-                  commentsCount,
-                  comments: [...existingComments, comment]
-                };
+    set((state) => ({
+      posts: {
+        ...state.posts,
+        [communityId]: (state.posts[communityId] || []).map((p) =>
+          p.id === postId
+            ? {
+                ...p,
+                commentCount: (p.commentCount || 0) + 1,
+                comments: [
+                  ...(p.comments || []),
+                  {
+                    id: `local_${Date.now()}`,
+                    authorId: 'me',
+                    authorName: 'You',
+                    content,
+                    createdAt: new Date().toISOString(),
+                  },
+                ],
               }
-              return p;
-            })
-          }
-        };
-      });
-    } catch (err: any) {
-      set({ error: err.message });
-    }
+            : p
+        ),
+      },
+    }));
   },
 
-  updateCommunityInfo: async (id, payload) => {
-    try {
-      const { community } = await apiService.updateCommunityInfo(id, payload);
-      set((state) => ({
-        communities: state.communities.map((c) => (c.id === id ? { ...c, ...community } : c))
-      }));
-    } catch (err: any) {
-      set({ error: err.message });
-    }
-  },
-
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
 }));
