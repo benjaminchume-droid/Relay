@@ -1,13 +1,10 @@
 /**
  * Lightweight WebRTC peer for 1:1 voice/video.
  * Signaling is delegated to callService (Supabase RPCs + realtime).
+ * Phase 5: ICE servers from iceConfig (STUN + optional TURN).
  */
 import { postSignal, subscribeCallSignals, type CallType } from "../../services/callService";
-
-const ICE_SERVERS: RTCIceServer[] = [
-  { urls: "stun:stun.l.google.com:19302" },
-  { urls: "stun:stun1.l.google.com:19302" },
-];
+import { getIceServers } from "./iceConfig";
 
 export type WebRtcHandlers = {
   onRemoteStream?: (stream: MediaStream) => void;
@@ -50,7 +47,11 @@ export class WebRtcManager {
 
   private ensurePeer(): RTCPeerConnection {
     if (this.pc) return this.pc;
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    const iceServers = getIceServers();
+    const pc = new RTCPeerConnection({
+      iceServers,
+      iceCandidatePoolSize: 4,
+    });
     this.pc = pc;
 
     pc.onicecandidate = (ev) => {
