@@ -6,6 +6,7 @@
 import { create } from 'zustand';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
+import { sendConversationMessage, getOrCreateDirectChat, getCurrentProfile } from '../services/messagingCore';
 import { chatCache } from '../services/chatCache';
 import { useAuthStore } from './authStore';
 
@@ -15,7 +16,7 @@ const activeSendPayloads = new Set<string>();
 interface ChatState {
   chats: Chat[];
   activeChatId: string | null;
-  messages: Record<string, Message[]>; // chatId -> messages
+  messages: Record<string, Message[]>;
   activeTyping: Record<string, { userId: string; name: string }[]>;
   replyingToMessage: Message | null;
   forwardingMessage: Message | null;
@@ -70,7 +71,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { chats } = await apiService.getChats();
       if (chats) {
         set((state) => {
-          // Merge with existing cached chats
           const merged = chats.map((c) => {
             const existing = state.chats.find((sc) => sc.id === c.id);
             if (existing) {
@@ -107,14 +107,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set((state) => {
         const existing = state.messages[chatId] || [];
         const inFlightOrFailed = existing.filter((m) => m.deliveryState === 'sending' || m.deliveryState === 'failed' || m.id.startsWith('temp_'));
-        
         const combined = [...serverMsgs];
         for (const localMsg of inFlightOrFailed) {
           if (!combined.some((m) => m.id === localMsg.id || (m.content === localMsg.content && m.timestamp === localMsg.timestamp))) {
             combined.push(localMsg);
           }
         }
-
         const newMap = { ...state.messages, [chatId]: combined };
         chatCache.setMessages(newMap);
         return { messages: newMap };
@@ -128,7 +126,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const chatId = get().activeChatId;
     if (!chatId) return;
 
-    // Idempotency key based on chat, content and type to prevent rapid double-clicks
     const payloadKey = `${chatId}:${type}:${content || ''}:${attachments?.[0]?.url || ''}`;
     if (activeSendPayloads.has(payloadKey)) {
       console.warn('[chatStore] Duplicate send prevented by idempotency lock:', payloadKey);
@@ -164,7 +161,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       isForwarded
     };
 
-    // 1. Immediately insert pending message into UI state
     set((state) => ({
       messages: {
         ...state.messages,
@@ -173,7 +169,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     try {
-      const { message, chat } = await apiService.sendMessage(chatId, {
+      const { message, chat } = await sendConversationMessage(chatId, {
         content,
         type,
         attachments,
@@ -181,7 +177,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         isForwarded
       });
 
-      // 2. Replace pending message with server confirmed message
       set((state) => {
         const realChatId = chat.id || message.chatId || chatId;
         const currentMsgs = state.messages[chatId] || state.messages[realChatId] || [];
@@ -189,10 +184,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const updatedMsgs = currentMsgs.map((m) =>
           m.id === tempId ? confirmedMsg : m
         );
-        
+
         const existingChatIdx = state.chats.findIndex((c) => c.id === chatId || c.id === realChatId);
         let updatedChats: Chat[];
-        
+
         if (existingChatIdx !== -1) {
           updatedChats = state.chats.map((c, i) =>
             i === existingChatIdx
@@ -200,7 +195,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
                   ...c,
                   id: realChatId,
                   lastMessage: {
-                    text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+                    text: message.content || (message.type === 'image' ? 'Photo' : message.type === 'voice' ? 'Voice Note' : 'Attachment'),
                     timestamp: message.timestamp,
                     senderId: message.senderId,
                     deliveryState: 'sent'
@@ -210,7 +205,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
               : c
           );
         } else {
-          // New conversation: prepend immediately to Chat List
           const newChat: Chat = {
             id: realChatId,
             name: chat.name || (chat.type === 'group' ? 'Group Conversation' : `@${realChatId.substring(0, 8)}`),
@@ -219,7 +213,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             participants: chat.participants || [currentUser?.id || 'me'],
             unreadCount: 0,
             lastMessage: {
-              text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+              text: message.content || (message.type === 'image' ? 'Photo' : message.type === 'voice' ? 'Voice Note' : 'Attachment'),
               timestamp: message.timestamp,
               senderId: message.senderId,
               deliveryState: 'sent'
@@ -235,6 +229,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
         newMessagesMap[realChatId] = updatedMsgs;
 
+        chatCache.setMessages(newMessagesMap);
+        chatCache.setChats(updatedChats);
+
         return {
           messages: newMessagesMap,
           chats: updatedChats,
@@ -243,7 +240,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       });
     } catch (err: any) {
       console.error('[chatStore] Send message error:', err);
-      // 3. Mark message as failed so user can tap to retry
       set((state) => ({
         messages: {
           ...state.messages,
@@ -266,7 +262,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const targetMsg = currentMsgs.find((m) => m.id === messageId);
     if (!targetMsg) return;
 
-    // Set state back to sending
     set((state) => ({
       messages: {
         ...state.messages,
@@ -277,7 +272,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }));
 
     try {
-      const { message, chat } = await apiService.sendMessage(chatId, {
+      const { message, chat } = await sendConversationMessage(chatId, {
         content: targetMsg.content,
         type: targetMsg.type,
         attachments: targetMsg.attachments,
@@ -298,7 +293,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               ...c,
               id: realChatId,
               lastMessage: {
-                text: message.content || (message.type === 'image' ? '📷 Photo' : message.type === 'voice' ? '🎤 Voice Note' : 'Attachment'),
+                text: message.content || (message.type === 'image' ? 'Photo' : message.type === 'voice' ? 'Voice Note' : 'Attachment'),
                 timestamp: message.timestamp,
                 senderId: message.senderId,
                 deliveryState: 'sent' as const
@@ -333,7 +328,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             m.id === messageId ? { ...m, deliveryState: 'failed' as const } : m
           )
         },
-        error: err.message || 'Failed to resend message'
+        error: err.message || 'Retry failed'
       }));
     }
   },
@@ -341,7 +336,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   editMessage: async (messageId, content) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
-
     try {
       await apiService.editMessage(chatId, messageId, content);
       set((state) => ({
@@ -360,13 +354,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   deleteMessage: async (messageId) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
-
     try {
-      const { message } = await apiService.deleteMessage(chatId, messageId);
+      await apiService.deleteMessage(chatId, messageId);
       set((state) => ({
         messages: {
           ...state.messages,
-          [chatId]: (state.messages[chatId] || []).map((m) => (m.id === messageId ? message : m))
+          [chatId]: (state.messages[chatId] || []).map((m) =>
+            m.id === messageId ? { ...m, isDeleted: true, content: 'This message was deleted' } : m
+          )
         }
       }));
     } catch (err: any) {
@@ -377,17 +372,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   reactToMessage: async (messageId, emoji) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
-
     try {
-      const { reactions } = await apiService.reactToMessage(chatId, messageId, emoji);
-      set((state) => ({
-        messages: {
-          ...state.messages,
-          [chatId]: (state.messages[chatId] || []).map((m) =>
-            m.id === messageId ? { ...m, reactions } : m
-          )
-        }
-      }));
+      await apiService.reactToMessage(chatId, messageId, emoji);
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -396,12 +382,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
   togglePinMessage: async (messageId) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
-
     try {
-      const { pinnedMessageId } = await apiService.togglePinMessage(chatId, messageId);
-      set((state) => ({
-        chats: state.chats.map((c) => (c.id === chatId ? { ...c, pinnedMessageId } : c))
-      }));
+      await apiService.togglePinMessage(chatId, messageId);
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -409,72 +391,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendTypingSignal: async (chatId) => {
     try {
-      const { activeTyping } = await apiService.sendTypingSignal(chatId);
-      set((state) => ({
-        activeTyping: {
-          ...state.activeTyping,
-          [chatId]: activeTyping
-        }
-      }));
-    } catch (err) {
+      await apiService.sendTypingSignal(chatId);
+    } catch {
       // ignore
     }
   },
 
   pollUpdates: async () => {
-    const activeChatId = get().activeChatId;
-    try {
-      const { chats } = await apiService.getChats();
-      if (chats && chats.length > 0) {
-        set((state) => {
-          // Preserve local lastMessage if remote is empty or older
-          const merged = chats.map((c) => {
-            const existing = state.chats.find((sc) => sc.id === c.id);
-            if (existing && existing.lastMessage && (!c.lastMessage || new Date(existing.lastMessage.timestamp) > new Date(c.lastMessage.timestamp))) {
-              return { ...c, lastMessage: existing.lastMessage };
-            }
-            return c;
-          });
-          return { chats: merged };
-        });
-      }
-
-      if (activeChatId) {
-        const { messages: serverMsgs } = await apiService.getMessages(activeChatId);
-        const { activeTyping } = await apiService.getTypingState(activeChatId);
-
-        if (serverMsgs && serverMsgs.length > 0) {
-          set((state) => {
-            const existing = state.messages[activeChatId] || [];
-            // Keep sending/failed messages that are in flight or retryable
-            const inFlightOrFailed = existing.filter((m) => m.deliveryState === 'sending' || m.deliveryState === 'failed' || m.id.startsWith('temp_'));
-            
-            const combined = [...serverMsgs];
-            for (const temp of inFlightOrFailed) {
-              if (!combined.some((m) => m.content === temp.content || m.id === temp.id)) {
-                combined.push(temp);
-              }
-            }
-
-            const newMap = {
-              ...state.messages,
-              [activeChatId]: combined
-            };
-            chatCache.setMessages(newMap);
-
-            return {
-              messages: newMap,
-              activeTyping: {
-                ...state.activeTyping,
-                [activeChatId]: activeTyping
-              }
-            };
-          });
-        }
-      }
-    } catch (err) {
-      // background polling
-    }
+    await get().fetchChats();
+    const active = get().activeChatId;
+    if (active) await get().fetchMessages(active);
   },
 
   setReplyingToMessage: (msg) => set({ replyingToMessage: msg }),
@@ -483,17 +409,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   forwardMessageToChats: async (targetChatIds) => {
     const msg = get().forwardingMessage;
     if (!msg) return;
-
     for (const chatId of targetChatIds) {
       try {
-        await apiService.sendMessage(chatId, {
+        await sendConversationMessage(chatId, {
           content: msg.content,
           type: msg.type,
           attachments: msg.attachments,
           isForwarded: true
         });
-      } catch (err) {
-        // ignore individual chat forward error
+      } catch (e) {
+        console.warn('[forward] failed for', chatId, e);
       }
     }
     set({ forwardingMessage: null });
@@ -502,11 +427,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createDirectChat: async (targetUserId) => {
     set({ isLoading: true });
     try {
-      const res = await apiService.createDirectChat(targetUserId);
-      const chat = res.chat || (res as any).conversation;
-      if (!chat || !chat.id) {
-        throw new Error("Invalid conversation object returned from server");
-      }
+      const current = await getCurrentProfile();
+      if (!current) throw new Error("Not authenticated");
+      const chatId = await getOrCreateDirectChat(current.profileId, targetUserId);
+      const chat = {
+        id: chatId,
+        name: "Conversation",
+        type: "direct" as const,
+        participants: [current.profileId, targetUserId],
+        unreadCount: 0,
+      };
       set((state) => ({
         chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)],
         activeChatId: chat.id,
@@ -523,27 +453,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createGroupChat: async (name, description, participantIds, isPrivate, avatarUrl) => {
-    set({ isLoading: true, error: null });
+    set({ isLoading: true });
     try {
       const res = await apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
       const chat = res.chat;
-
-      if (!chat || !chat.id) {
-        throw new Error("Failed to create group chat: invalid payload returned");
-      }
-
       set((state) => ({
-        chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)],
+        chats: [chat, ...state.chats],
         activeChatId: chat.id,
-        isLoading: false,
-        error: null
+        isLoading: false
       }));
-      await get().fetchMessages(chat.id);
       return chat.id;
     } catch (err: any) {
-      console.error("[chatStore] createGroupChat error:", err);
-      set({ error: err.message || "Failed to create group. Please try again.", isLoading: false });
-      return '';
+      set({ error: err.message, isLoading: false });
+      throw err;
     }
   },
 
@@ -561,9 +483,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateGroupInfo: async (chatId, payload) => {
     try {
-      const { chat } = await apiService.updateChatInfo(chatId, payload);
+      await apiService.updateChatInfo(chatId, payload);
       set((state) => ({
-        chats: state.chats.map((c) => (c.id === chatId ? { ...c, ...chat } : c))
+        chats: state.chats.map((c) => (c.id === chatId ? { ...c, ...payload } : c))
       }));
     } catch (err: any) {
       set({ error: err.message });
@@ -572,10 +494,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   addGroupMembers: async (chatId, memberIds) => {
     try {
-      const { chat } = await apiService.addGroupMembers(chatId, memberIds);
-      set((state) => ({
-        chats: state.chats.map((c) => (c.id === chatId ? { ...c, ...chat } : c))
-      }));
+      await apiService.addGroupMembers(chatId, memberIds);
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -583,30 +502,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   removeGroupMember: async (chatId, memberId) => {
     try {
-      const { chat } = await apiService.removeGroupMember(chatId, memberId);
-      set((state) => ({
-        chats: state.chats.map((c) => (c.id === chatId ? { ...c, ...chat } : c))
-      }));
+      await apiService.removeGroupMember(chatId, memberId);
     } catch (err: any) {
       set({ error: err.message });
     }
   },
 
-  updateMemberRole: async (chatId, memberId, role) => {
-    set((state) => ({
-      chats: state.chats.map((c) => {
-        if (c.id === chatId) {
-          return {
-            ...c,
-            roles: {
-              ...(c.roles || {}),
-              [memberId]: role
-            }
-          };
-        }
-        return c;
-      })
-    }));
+  updateMemberRole: async () => {
+    // role updates via API when available
   },
 
   setSearchQuery: (q) => set({ searchQuery: q }),
