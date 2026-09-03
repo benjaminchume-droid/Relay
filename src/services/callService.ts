@@ -1,5 +1,5 @@
 /**
- * Phase 2: Voice/Video call lifecycle against supabase1 RPCs + realtime signaling.
+ * Phase 2/4: Voice/Video call lifecycle against supabase1 RPCs + realtime signaling.
  */
 import { supabase } from "../lib/supabase/client";
 
@@ -103,7 +103,6 @@ export async function fetchCallHistory(limit = 50): Promise<RelayCall[]> {
   return (data || []).map(mapCall);
 }
 
-/** Subscribe to incoming calls for a conversation (postgres_changes). */
 export function subscribeConversationCalls(
   conversationId: string,
   onCall: (call: RelayCall) => void
@@ -140,7 +139,6 @@ export function subscribeConversationCalls(
   };
 }
 
-/** Subscribe to SDP/ICE signals for a call. */
 export function subscribeCallSignals(
   callId: string,
   myProfileId: string,
@@ -167,6 +165,40 @@ export function subscribeCallSignals(
           payload: row.payload,
           createdAt: row.created_at,
         });
+      }
+    )
+    .subscribe();
+  return () => {
+    supabase.removeChannel(channel);
+  };
+}
+
+/** Global incoming calls (any conversation the user can see via RLS). */
+export function subscribeGlobalIncomingCalls(
+  myProfileId: string,
+  onIncoming: (call: RelayCall) => void,
+  onUpdate?: (call: RelayCall) => void
+) {
+  const channel = supabase
+    .channel(`calls:global:${myProfileId}`)
+    .on(
+      "postgres_changes",
+      { event: "INSERT", schema: "public", table: "calls" },
+      (payload) => {
+        if (!payload.new) return;
+        const call = mapCall(payload.new);
+        if (call.status === "ringing" && call.callerId !== myProfileId) {
+          onIncoming(call);
+        }
+      }
+    )
+    .on(
+      "postgres_changes",
+      { event: "UPDATE", schema: "public", table: "calls" },
+      (payload) => {
+        if (!payload.new) return;
+        const call = mapCall(payload.new);
+        onUpdate?.(call);
       }
     )
     .subscribe();
