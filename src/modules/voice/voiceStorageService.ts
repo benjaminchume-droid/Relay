@@ -35,14 +35,12 @@ class VoiceStorageService {
     this.notify();
 
     try {
-      // 1. Prepare base64 / buffer data
       let base64Data = '';
       if (voiceNote.blob) {
         base64Data = await this.blobToBase64(voiceNote.blob);
       } else if (voiceNote.audioUrl.startsWith('data:')) {
         base64Data = voiceNote.audioUrl;
       } else {
-        // Already a remote URL
         queueItem.status = 'completed';
         queueItem.progress = 100;
         this.notify();
@@ -53,25 +51,28 @@ class VoiceStorageService {
       queueItem.progress = 25;
       this.notify();
 
-      // 2. Client-side Supabase Direct Upload if configured
       if (isSupabaseConfigured && voiceNote.blob) {
         try {
-          const fileName = `voice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${this.getExtensionFromMime(voiceNote.mimeType)}`;
+          const { data: { user } } = await supabase.auth.getUser();
+          const uid = user?.id || 'anon';
+          const fileName = `${uid}/voice_${Date.now()}_${Math.random().toString(36).substring(2, 7)}.${this.getExtensionFromMime(voiceNote.mimeType)}`;
           const { data: sbData, error: sbErr } = await supabase.storage
-            .from('relay-media')
+            .from('chat-media')
             .upload(fileName, voiceNote.blob, {
               contentType: voiceNote.mimeType || 'audio/webm',
               upsert: true,
             });
 
           if (!sbErr && sbData?.path) {
-            const { data: pubData } = supabase.storage.from('relay-media').getPublicUrl(sbData.path);
-            if (pubData?.publicUrl) {
+            const { data: signed } = await supabase.storage
+              .from('chat-media')
+              .createSignedUrl(sbData.path, 60 * 60 * 24 * 365);
+            if (signed?.signedUrl) {
               queueItem.status = 'completed';
               queueItem.progress = 100;
               this.notify();
               onProgress?.(100);
-              return { url: pubData.publicUrl, size: voiceNote.blob.size };
+              return { url: signed.signedUrl, size: voiceNote.blob.size };
             }
           }
         } catch (err) {
@@ -79,7 +80,6 @@ class VoiceStorageService {
         }
       }
 
-      // 3. Server API Upload fallback
       onProgress?.(50);
       queueItem.progress = 50;
       this.notify();

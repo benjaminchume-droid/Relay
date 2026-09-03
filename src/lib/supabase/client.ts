@@ -15,6 +15,14 @@ const globalForSupabase = globalThis as unknown as {
 
 export const supabase: SupabaseClient =
   globalForSupabase.supabaseBrowserInstance ||
-  (globalForSupabase.supabaseBrowserInstance = createClient(supabaseUrl, supabaseAnonKey));
-
-
+  (globalForSupabase.supabaseBrowserInstance = createClient(supabaseUrl, supabaseAnonKey, {
+    auth: {
+      persistSession: true,
+      autoRefreshToken: true,
+      detectSessionInUrl: true,
+      storage: typeof window !== "undefined" ? window.localStorage : undefined,
+    },
+    realtime: {
+      params: { eventsPerSecond: 12 },
+    },
+  }));
