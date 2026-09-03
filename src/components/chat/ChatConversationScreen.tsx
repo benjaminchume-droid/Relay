@@ -1,7 +1,7 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
- * Phase 3 ChatScreen — voice/video calls, day dividers, glass chat (WhatsApp-inspired layout, Relay design).
+ * Phase 3/4 ChatScreen — calls via GlobalCallHost, day dividers, glass chat.
  */
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -10,13 +10,12 @@ import {
 import { useChatStore } from "../../store/chatStore";
 import { useAuthStore } from "../../store/authStore";
 import { useThemeStore, ACCENT_COLOR_CONFIG } from "../../store/themeStore";
-import { Chat, Message } from "../../types";
+import { Chat } from "../../types";
 import { profileCache } from "../../services/profileCache";
 import { supabase } from "../../lib/supabase/client";
-import { formatChatTimestamp, formatHandle } from "../../lib/utils";
+import { formatChatTimestamp } from "../../lib/utils";
 import { getLetterAvatar } from "../../lib/avatar";
 import { useCallStore } from "../../store/callStore";
-import { CallOverlay } from "../../modules/calls/CallOverlay";
 import { AmbientLiquidBackground } from "../GlassUI";
 import { useRelayRealtime } from "../../services/realtime/useRelayRealtime";
 import { QuotedReplyBubble } from "../QuotedReplyBubble";
@@ -94,6 +93,7 @@ export const ChatConversationScreen: React.FC<{
     placeCall,
     watchConversation,
     stopWatching,
+    setPeerMeta,
   } = useCallStore();
   const myCallProfileId = profile?.id || currentUser?.id || "";
 
@@ -111,7 +111,6 @@ export const ChatConversationScreen: React.FC<{
   const { customization } = useThemeStore();
   const { subscriptions } = useRelayRealtime();
 
-  const accent = ACCENT_COLOR_CONFIG[customization.accentColor] || ACCENT_COLOR_CONFIG["liquid-azure"];
   const chat =
     chats.find((c) => c.id === chatId) ||
     ({
@@ -216,12 +215,6 @@ export const ChatConversationScreen: React.FC<{
     <div className="w-full h-screen flex flex-col justify-between bg-slate-50 text-slate-900 relative overflow-hidden select-none">
       <AmbientLiquidBackground />
 
-      <CallOverlay
-        peerName={headerDisplayName}
-        peerAvatar={headerAvatar}
-        myProfileId={myCallProfileId}
-      />
-
       <header className="w-full sticky top-0 left-0 right-0 z-30 h-[56px] bg-white/95 backdrop-blur-xl border-b border-slate-200/80 px-3 sm:px-4 flex items-center justify-between shadow-xs shrink-0 text-slate-800">
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button
@@ -260,7 +253,11 @@ export const ChatConversationScreen: React.FC<{
             <>
               <button
                 type="button"
-                onClick={() => myCallProfileId && placeCall(chatId, "voice", myCallProfileId)}
+                onClick={() => {
+                  if (!myCallProfileId) return;
+                  setPeerMeta(headerDisplayName, headerAvatar);
+                  placeCall(chatId, "voice", myCallProfileId);
+                }}
                 className="p-2 rounded-full hover:bg-emerald-50 text-emerald-600 transition-all cursor-pointer"
                 title="Voice call"
                 disabled={callPhase !== "idle"}
@@ -269,7 +266,11 @@ export const ChatConversationScreen: React.FC<{
               </button>
               <button
                 type="button"
-                onClick={() => myCallProfileId && placeCall(chatId, "video", myCallProfileId)}
+                onClick={() => {
+                  if (!myCallProfileId) return;
+                  setPeerMeta(headerDisplayName, headerAvatar);
+                  placeCall(chatId, "video", myCallProfileId);
+                }}
                 className="p-2 rounded-full hover:bg-blue-50 text-blue-600 transition-all cursor-pointer"
                 title="Video call"
                 disabled={callPhase !== "idle"}
