@@ -1,0 +1,71 @@
+/* Real dark mode overrides — import after index.css */
+html.dark,
+[data-theme-mode="dark"],
+[data-theme-mode="pure-black"],
+[data-theme-mode="black"] {
+  color-scheme: dark;
+  --relay-bg: #020617;
+  --relay-surface: rgba(15, 23, 42, 0.92);
+  --relay-text: #f1f5f9;
+  --relay-muted: #94a3b8;
+  --relay-border: rgba(255, 255, 255, 0.1);
+  --neutral-button: #1e293b;
+}
+
+html.dark body,
+[data-theme-mode="dark"] body,
+[data-theme-mode="pure-black"] body {
+  background-color: #020617 !important;
+  color: #f1f5f9 !important;
+  background-image:
+    radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.14) 0px, transparent 50%),
+    radial-gradient(at 100% 100%, rgba(124, 58, 237, 0.12) 0px, transparent 50%) !important;
+}
+
+html.dark .glass-panel,
+html.dark .liquid-glass-card,
+[data-theme-mode="dark"] .glass-panel,
+[data-theme-mode="dark"] .liquid-glass-card {
+  background: rgba(15, 23, 42, 0.75) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: #f1f5f9 !important;
+}
+
+html.dark .glass-input,
+[data-theme-mode="dark"] .glass-input {
+  background: rgba(30, 41, 59, 0.9) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+}
+
+html.dark .glass-bubble-other,
+[data-theme-mode="dark"] .glass-bubble-other,
+.dark .glass-bubble-other {
+  background: rgba(30, 41, 59, 0.95) !important;
+  color: #f1f5f9 !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .glass-sidebar,
+[data-theme-mode="dark"] .glass-sidebar,
+.dark .glass-sidebar {
+  background: rgba(15, 23, 42, 0.9) !important;
+  border-right-color: rgba(255, 255, 255, 0.08) !important;
+}
+
+html.dark .glass-nav-floating,
+[data-theme-mode="dark"] .glass-nav-floating {
+  background: rgba(15, 23, 42, 0.92) !important;
+  border-color: rgba(255, 255, 255, 0.1) !important;
+}
+
+html.dark .bg-slate-50 { background-color: #020617 !important; }
+html.dark .bg-white,
+html.dark .bg-white\/95 { background-color: rgba(15, 23, 42, 0.95) !important; }
+html.dark .bg-slate-100 { background-color: #1e293b !important; }
+html.dark .text-slate-800,
+html.dark .text-slate-900 { color: #f1f5f9 !important; }
+html.dark .text-slate-500,
+html.dark .text-slate-600 { color: #94a3b8 !important; }
+html.dark .border-slate-200,
+html.dark .border-slate-200\/80 { border-color: rgba(255, 255, 255, 0.1) !important; }
