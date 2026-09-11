@@ -11,13 +11,10 @@ import {
 } from "../types";
 import { supabase } from "../lib/supabase/client";
 import { formatProfileRecord, createDefaultSettings } from "../store/authStore";
-import { auditSupabaseCall } from "../lib/supabase/logger";
 import { profileCache } from "./profileCache";
 import {
-  formatMessageRecord,
   getCurrentProfile,
   sendConversationMessage as coreSendConversationMessage,
-  getOrCreateDirectChat,
 } from "./messagingCore";
 
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
@@ -85,7 +82,6 @@ function mapConversationRow(row: any, myProfileId: string): Chat {
 }
 
 export const apiService = {
-  // ---- Phase 1: Stories / Status (live RPCs) ----
   getStatuses: async () => {
     const { fetchActiveStories } = await import("./phase1Service");
     const stories = await fetchActiveStories();
@@ -151,7 +147,6 @@ export const apiService = {
     return { success: true };
   },
 
-  // ---- Phase 1: Communities ----
   createCommunity: async (payload: {
     name: string; handle: string; description?: string; category?: string;
     bannerUrl?: string; avatarUrl?: string; isPrivate?: boolean;
@@ -196,12 +191,10 @@ export const apiService = {
 
   likeCommunityPost: async (_communityId: string, _postId: string) => ({ success: true }),
 
-  // ---- Messaging (profile-id aware + shapes expected by chatStore) ----
   getChats: async (): Promise<{ chats: Chat[] }> => {
     const myProfileId = await resolveMyProfileId();
     if (!myProfileId) return { chats: [] };
 
-    // Prefer membership-filtered query with nested profiles for DM names
     const { data, error } = await supabase
       .from("conversation_members")
       .select(`
@@ -216,6 +209,8 @@ export const apiService = {
           avatar_url,
           last_message_at,
           last_message_id,
+          last_message_preview,
+          last_message_sender_id,
           updated_at,
           created_at,
           created_by
@@ -223,24 +218,14 @@ export const apiService = {
       `)
       .eq("profile_id", myProfileId)
       .eq("status", "active")
-      .is("left_at", null)
-      .order("conversation_id");
+      .is("left_at", null);
 
     if (error) {
       console.error("[apiService.getChats]", error);
-      // Fallback: list conversations via inner join
-      const { data: fallback, error: fbErr } = await supabase
-        .from("conversations")
-        .select("*, conversation_members!inner(profile_id, unread_count, status, left_at)")
-        .eq("conversation_members.profile_id", myProfileId)
-        .order("updated_at", { ascending: false });
-      if (fbErr) throw fbErr;
-      const chats = (fallback || []).map((row: any) => mapConversationRow(row, myProfileId));
-      return { chats };
+      throw error;
     }
 
     const rows = data || [];
-    // Enrich each conversation with all member profile ids + peer profile for DMs
     const chats: Chat[] = [];
     for (const row of rows) {
       const conv = (row as any).conversations;
@@ -273,23 +258,14 @@ export const apiService = {
   },
 
   getMessages: async (conversationId: string): Promise<{ messages: Message[] }> => {
-    if (!conversationId) return { messages: [] };
-
-    const { data, error } = await supabase
-      .from("messages")
-      .select("*")
-      .eq("conversation_id", conversationId)
-      .or("is_deleted.is.null,is_deleted.eq.false")
-      .order("created_at", { ascending: true })
-      .limit(200);
-
-    if (error) {
+    const { fetchConversationMessages } = await import("./messageFetch");
+    try {
+      const messages = await fetchConversationMessages(conversationId);
+      return { messages };
+    } catch (error: any) {
       console.error("[apiService.getMessages]", error);
       throw error;
     }
-
-    const messages = (data || []).map((m: any) => formatMessageRecord(m));
-    return { messages };
   },
 
   sendMessage: async (
@@ -297,7 +273,6 @@ export const apiService = {
     content: string,
     opts?: { type?: string; mediaUrl?: string; replyToId?: string; attachments?: any[] }
   ) => {
-    // Align with messagingCore signature used by chatStore
     return coreSendConversationMessage(conversationId, {
       content,
       type: opts?.type || "text",
@@ -331,7 +306,6 @@ export const apiService = {
   deleteChat: async (conversationId: string) => {
     const myProfileId = await resolveMyProfileId();
     if (!myProfileId) return { success: false };
-    // Soft-leave rather than hard-delete so peer keeps history
     await supabase
       .from("conversation_members")
       .update({ status: "left", left_at: new Date().toISOString() })
@@ -395,7 +369,6 @@ export const apiService = {
     return { success: true };
   },
 
-  // ---- Profile / users ----
   getCurrentUser: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return null;
@@ -442,7 +415,6 @@ export const apiService = {
     return { success: true };
   },
 
-  // ---- Media ----
   uploadFile: async (base64: string, fileName: string, mimeType: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Not authenticated");
@@ -456,7 +428,6 @@ export const apiService = {
     return { path, url: signed?.signedUrl || path };
   },
 
-  // ---- Notifications / misc ----
   getNotifications: async () => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return [];
