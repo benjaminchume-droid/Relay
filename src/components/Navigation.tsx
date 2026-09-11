@@ -16,16 +16,16 @@ export const MainNavigation: React.FC<{
   activeTab: MainTab;
   onSelectTab: (tab: MainTab) => void;
   hideBottomNav?: boolean;
+  /** App.tsx compatibility alias */
+  hideNav?: boolean;
   children: React.ReactNode;
-}> = ({ activeTab, onSelectTab, hideBottomNav = false, children }) => {
+}> = ({ activeTab, onSelectTab, hideBottomNav = false, hideNav = false, children }) => {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const { currentUser, logout } = useAuthStore();
   const { chats, activeChatId } = useChatStore();
 
   const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
-
-  // Automatically hide bottom navigation bar on active chat screen or full-screen routes
-  const shouldHideBottomNav = !!activeChatId || hideBottomNav;
+  const shouldHideBottomNav = !!activeChatId || hideBottomNav || hideNav;
 
   const tabs: Array<{ id: MainTab; label: string; icon: React.FC<{ size?: number; className?: string }>; badge?: number }> = [
     { id: 'chats', label: 'Chats', icon: MessageSquare, badge: totalUnread },
@@ -34,40 +34,34 @@ export const MainNavigation: React.FC<{
     { id: 'profile', label: 'Profile', icon: User }
   ];
 
-
   return (
-    <div className="w-full h-screen flex flex-row overflow-hidden relative bg-slate-50">
-      
-      {/* Desktop & Tablet Collapsible Sidebar */}
+    <div className="w-full h-screen flex flex-row overflow-hidden relative bg-slate-50 dark:bg-slate-950">
       {currentUser && (
-        <aside 
+        <aside
           className={`hidden md:flex flex-col justify-between glass-sidebar shrink-0 h-screen transition-all duration-300 z-40 relative select-none ${
             sidebarExpanded ? 'w-64 p-5' : 'w-20 p-4'
           }`}
         >
-          {/* Top Logo & Toggle */}
           <div className="space-y-6">
             <div className={`flex items-center ${sidebarExpanded ? 'justify-between' : 'justify-center'} px-1`}>
               {sidebarExpanded ? (
                 <div className="flex items-center gap-2.5">
                   <RelayLogoEmblem size={28} />
-                  <span className="text-sm font-bold tracking-[0.15em] text-slate-800">RELAY</span>
+                  <span className="text-sm font-bold tracking-[0.15em] text-slate-800 dark:text-white">RELAY</span>
                 </div>
               ) : (
                 <RelayLogoEmblem size={28} />
               )}
-
-              <button 
+              <button
                 onClick={() => setSidebarExpanded(!sidebarExpanded)}
-                className={`p-1.5 rounded-lg border border-slate-200 hover:bg-slate-100 text-slate-500 hover:text-slate-800 transition-colors cursor-pointer ${
-                  !sidebarExpanded ? 'absolute -right-3 top-6 bg-white rounded-full z-50 p-1 shadow-md' : ''
+                className={`p-1.5 rounded-lg border border-slate-200 dark:border-white/10 hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500 hover:text-slate-800 dark:hover:text-white transition-colors cursor-pointer ${
+                  !sidebarExpanded ? 'absolute -right-3 top-6 bg-white dark:bg-slate-900 rounded-full z-50 p-1 shadow-md' : ''
                 }`}
               >
                 {sidebarExpanded ? <ChevronLeft size={14} /> : <ChevronRight size={14} />}
               </button>
             </div>
 
-            {/* Sidebar Tabs */}
             <nav className="space-y-2 pt-2">
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -78,9 +72,9 @@ export const MainNavigation: React.FC<{
                     onClick={() => onSelectTab(tab.id)}
                     style={isActive ? { backgroundColor: 'var(--primary-accent, #2563EB)', color: '#FFFFFF', boxShadow: '0 8px 20px rgba(37, 99, 235, 0.3)' } : {}}
                     className={`w-full py-3 px-4 rounded-2xl flex items-center gap-4 transition-all text-xs cursor-pointer ${
-                      isActive 
-                        ? 'font-bold' 
-                        : 'text-slate-600 hover:bg-white/80 border border-transparent hover:border-slate-200 font-medium'
+                      isActive
+                        ? 'font-bold'
+                        : 'text-slate-600 dark:text-slate-300 hover:bg-white/80 dark:hover:bg-slate-800/80 border border-transparent hover:border-slate-200 dark:hover:border-white/10 font-medium'
                     } ${!sidebarExpanded ? 'justify-center' : 'justify-start'}`}
                   >
                     <IconComponent size={18} className={isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'} />
@@ -98,26 +92,24 @@ export const MainNavigation: React.FC<{
             </nav>
           </div>
 
-          {/* Bottom Profile Details */}
-          <div className="space-y-4 border-t border-slate-200/60 pt-4">
+          <div className="space-y-4 border-t border-slate-200/60 dark:border-white/10 pt-4">
             <div className={`flex items-center ${sidebarExpanded ? 'gap-3' : 'justify-center'} px-1`}>
-              <img 
-                src={currentUser.avatarUrl || getLetterAvatar(currentUser.name || currentUser.username)} 
-                alt="avatar" 
+              <img
+                src={currentUser.avatarUrl || getLetterAvatar(currentUser.name || currentUser.username)}
+                alt="avatar"
                 className="w-9 h-9 rounded-full border border-white/80 shadow-sm object-cover"
               />
               {sidebarExpanded && (
                 <div className="min-w-0 flex-1 text-left">
-                  <h4 className="text-xs font-bold text-slate-800 truncate leading-none mb-1">{currentUser.name}</h4>
+                  <h4 className="text-xs font-bold text-slate-800 dark:text-white truncate leading-none mb-1">{currentUser.name}</h4>
                   <span className="text-[10px] text-slate-500 font-mono">@{currentUser.username}</span>
                 </div>
               )}
             </div>
-
             {sidebarExpanded && (
-              <button 
+              <button
                 onClick={logout}
-                className="w-full py-2 px-3 rounded-xl border border-red-200/80 hover:bg-red-50 text-red-600 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
+                className="w-full py-2 px-3 rounded-xl border border-red-200/80 hover:bg-red-50 dark:hover:bg-red-950/40 text-red-600 font-semibold text-xs flex items-center justify-center gap-2 cursor-pointer transition-colors"
               >
                 <LogOut size={13} />
                 <span>Sign Out</span>
@@ -127,20 +119,14 @@ export const MainNavigation: React.FC<{
         </aside>
       )}
 
-      {/* Main Content Area */}
       <div className="flex-1 h-screen overflow-hidden flex flex-col justify-between relative">
-        <main className="w-full flex-1 overflow-y-auto relative">
-          {children}
-        </main>
+        <main className="w-full flex-1 overflow-y-auto relative">{children}</main>
 
-        {/* Mobile Floating Glass Navigation Dock */}
         {currentUser && !shouldHideBottomNav && (
           <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
-            <nav 
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[24px] bg-white/85 backdrop-blur-2xl border border-white/80 shadow-lg shadow-slate-900/5 select-none"
-              style={{
-                marginBottom: 'env(safe-area-inset-bottom, 0px)'
-              }}
+            <nav
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[24px] bg-white/85 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-lg shadow-slate-900/5 select-none"
+              style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
               {tabs.map((tab) => {
                 const isActive = activeTab === tab.id;
@@ -150,20 +136,20 @@ export const MainNavigation: React.FC<{
                     key={tab.id}
                     onClick={() => onSelectTab(tab.id)}
                     className={`relative p-2.5 rounded-[18px] transition-all duration-200 cursor-pointer flex items-center justify-center ${
-                      isActive 
-                        ? 'text-white shadow-md scale-105' 
-                        : 'text-slate-500 hover:text-slate-800 hover:bg-slate-100/60'
+                      isActive
+                        ? 'text-white shadow-md scale-105'
+                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
                     }`}
-                    style={isActive ? { 
-                      backgroundColor: 'var(--primary-accent, #2563EB)', 
-                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)' 
+                    style={isActive ? {
+                      backgroundColor: 'var(--primary-accent, #2563EB)',
+                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
                     } : {}}
                     title={tab.label}
                   >
                     <IconComponent size={18} className={isActive ? 'stroke-[2.5px]' : 'stroke-[2px]'} />
                     {tab.badge && tab.badge > 0 ? (
-                      <span 
-                        className={`absolute -top-1 -right-1 px-1 py-0.2 min-w-[15px] h-3.5 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-white shadow-2xs ${
+                      <span
+                        className={`absolute -top-1 -right-1 px-1 min-w-[15px] h-3.5 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-white shadow-2xs ${
                           isActive ? 'bg-amber-500' : 'bg-blue-600'
                         }`}
                       >
@@ -177,7 +163,6 @@ export const MainNavigation: React.FC<{
           </div>
         )}
       </div>
-
     </div>
   );
 };
