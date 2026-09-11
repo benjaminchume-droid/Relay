@@ -2,8 +2,7 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Restored core apiService. Phase1 status/community methods are delegated to phase1Service.
- * Full historical surface is being rebuilt; critical chat/profile paths retained.
+ * Core apiService aligned to live supabase1 Relay schema (conversations/messages RPCs).
  */
 
 import {
@@ -14,6 +13,12 @@ import { supabase } from "../lib/supabase/client";
 import { formatProfileRecord, createDefaultSettings } from "../store/authStore";
 import { auditSupabaseCall } from "../lib/supabase/logger";
 import { profileCache } from "./profileCache";
+import {
+  formatMessageRecord,
+  getCurrentProfile,
+  sendConversationMessage as coreSendConversationMessage,
+  getOrCreateDirectChat,
+} from "./messagingCore";
 
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
 
@@ -27,6 +32,57 @@ export const setAuthToken = (token: string | null) => {
     else localStorage.removeItem(TOKEN_STORAGE_KEY);
   } catch {}
 };
+
+async function resolveMyProfileId(): Promise<string | null> {
+  const current = await getCurrentProfile();
+  return current?.profileId || null;
+}
+
+function mapConversationRow(row: any, myProfileId: string): Chat {
+  const members: any[] = row.conversation_members || row.members || [];
+  const participantIds = members
+    .map((m: any) => m.profile_id || m.profileId)
+    .filter(Boolean);
+  const other = members.find(
+    (m: any) => (m.profile_id || m.profileId) && (m.profile_id || m.profileId) !== myProfileId
+  );
+  const otherProfile = other?.profiles || other?.profile || null;
+  const isDirect =
+    (row.conversation_type || row.type || "").toLowerCase() === "direct";
+
+  let name = row.name || "";
+  let avatarUrl = row.avatar_url || row.avatarUrl || undefined;
+  if (isDirect && otherProfile) {
+    name =
+      otherProfile.display_name ||
+      otherProfile.full_name ||
+      (otherProfile.username ? `@${otherProfile.username}` : "") ||
+      name;
+    avatarUrl = otherProfile.avatar_url || avatarUrl;
+  }
+  if (!name) {
+    name = isDirect ? "Direct chat" : "Group";
+  }
+
+  const lastAt = row.last_message_at || row.updated_at || row.created_at;
+  return {
+    id: row.id,
+    name,
+    type: isDirect ? "direct" : "group",
+    avatarUrl,
+    participants: participantIds.length ? participantIds : [myProfileId],
+    unreadCount: other?.unread_count || row.unread_count || 0,
+    lastMessage: row.last_message_preview
+      ? {
+          text: row.last_message_preview,
+          timestamp: lastAt,
+          senderId: row.last_message_sender_id || "",
+          deliveryState: "sent",
+        }
+      : undefined,
+    updatedAt: lastAt,
+  } as Chat;
+}
 
 export const apiService = {
   // ---- Phase 1: Stories / Status (live RPCs) ----
@@ -140,98 +196,202 @@ export const apiService = {
 
   likeCommunityPost: async (_communityId: string, _postId: string) => ({ success: true }),
 
-  // ---- Messaging (delegates to messagingCore where possible) ----
-  getChats: async () => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return [];
+  // ---- Messaging (profile-id aware + shapes expected by chatStore) ----
+  getChats: async (): Promise<{ chats: Chat[] }> => {
+    const myProfileId = await resolveMyProfileId();
+    if (!myProfileId) return { chats: [] };
+
+    // Prefer membership-filtered query with nested profiles for DM names
     const { data, error } = await supabase
-      .from("conversations")
-      .select("*, conversation_members!inner(profile_id)")
-      .eq("conversation_members.profile_id", user.id)
-      .order("updated_at", { ascending: false });
-    if (error) throw error;
-    return data || [];
+      .from("conversation_members")
+      .select(`
+        conversation_id,
+        unread_count,
+        role,
+        status,
+        conversations (
+          id,
+          conversation_type,
+          name,
+          avatar_url,
+          last_message_at,
+          last_message_id,
+          updated_at,
+          created_at,
+          created_by
+        )
+      `)
+      .eq("profile_id", myProfileId)
+      .eq("status", "active")
+      .is("left_at", null)
+      .order("conversation_id");
+
+    if (error) {
+      console.error("[apiService.getChats]", error);
+      // Fallback: list conversations via inner join
+      const { data: fallback, error: fbErr } = await supabase
+        .from("conversations")
+        .select("*, conversation_members!inner(profile_id, unread_count, status, left_at)")
+        .eq("conversation_members.profile_id", myProfileId)
+        .order("updated_at", { ascending: false });
+      if (fbErr) throw fbErr;
+      const chats = (fallback || []).map((row: any) => mapConversationRow(row, myProfileId));
+      return { chats };
+    }
+
+    const rows = data || [];
+    // Enrich each conversation with all member profile ids + peer profile for DMs
+    const chats: Chat[] = [];
+    for (const row of rows) {
+      const conv = (row as any).conversations;
+      if (!conv?.id) continue;
+      const { data: members } = await supabase
+        .from("conversation_members")
+        .select("profile_id, unread_count, profiles:profile_id(id, display_name, full_name, username, avatar_url)")
+        .eq("conversation_id", conv.id)
+        .eq("status", "active")
+        .is("left_at", null);
+
+      const mapped = mapConversationRow(
+        {
+          ...conv,
+          conversation_members: members || [],
+          unread_count: row.unread_count,
+        },
+        myProfileId
+      );
+      chats.push(mapped);
+    }
+
+    chats.sort((a, b) => {
+      const ta = new Date(a.updatedAt || 0).getTime();
+      const tb = new Date(b.updatedAt || 0).getTime();
+      return tb - ta;
+    });
+
+    return { chats };
   },
 
-  getMessages: async (conversationId: string) => {
+  getMessages: async (conversationId: string): Promise<{ messages: Message[] }> => {
+    if (!conversationId) return { messages: [] };
+
     const { data, error } = await supabase
       .from("messages")
       .select("*")
       .eq("conversation_id", conversationId)
+      .or("is_deleted.is.null,is_deleted.eq.false")
       .order("created_at", { ascending: true })
-      .limit(100);
-    if (error) throw error;
-    return data || [];
+      .limit(200);
+
+    if (error) {
+      console.error("[apiService.getMessages]", error);
+      throw error;
+    }
+
+    const messages = (data || []).map((m: any) => formatMessageRecord(m));
+    return { messages };
   },
 
-  sendMessage: async (conversationId: string, content: string, opts?: any) => {
-    const { sendConversationMessage } = await import("./messagingCore");
-    return sendConversationMessage({
-      conversationId,
+  sendMessage: async (
+    conversationId: string,
+    content: string,
+    opts?: { type?: string; mediaUrl?: string; replyToId?: string; attachments?: any[] }
+  ) => {
+    // Align with messagingCore signature used by chatStore
+    return coreSendConversationMessage(conversationId, {
       content,
       type: opts?.type || "text",
-      mediaUrl: opts?.mediaUrl,
+      attachments: opts?.attachments || (opts?.mediaUrl ? [{ url: opts.mediaUrl }] : undefined),
       replyToId: opts?.replyToId,
     });
   },
 
   createGroupChat: async (name: string, memberIds: string[]) => {
-    // Prefer RPC if available; fallback insert
     const { data, error } = await supabase.rpc("create_group_conversation", {
       p_name: name,
       p_member_ids: memberIds,
-    }).maybeSingle();
-    if (!error && data) return data;
+    });
+    if (!error && data) return { chat: data };
     throw error || new Error("create_group_conversation not available");
   },
 
   markChatAsRead: async (conversationId: string) => {
-    const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return;
+    const myProfileId = await resolveMyProfileId();
+    if (!myProfileId || !conversationId) return;
     await supabase
       .from("conversation_members")
-      .update({ last_read_at: new Date().toISOString() })
+      .update({
+        last_read_at: new Date().toISOString(),
+        unread_count: 0,
+      })
       .eq("conversation_id", conversationId)
-      .eq("profile_id", user.id);
+      .eq("profile_id", myProfileId);
   },
 
   deleteChat: async (conversationId: string) => {
-    await supabase.from("conversations").delete().eq("id", conversationId);
+    const myProfileId = await resolveMyProfileId();
+    if (!myProfileId) return { success: false };
+    // Soft-leave rather than hard-delete so peer keeps history
+    await supabase
+      .from("conversation_members")
+      .update({ status: "left", left_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("profile_id", myProfileId);
     return { success: true };
   },
 
   deleteMessage: async (messageId: string) => {
-    await supabase.from("messages").update({ deleted_at: new Date().toISOString() }).eq("id", messageId);
+    await supabase
+      .from("messages")
+      .update({ is_deleted: true, deleted_at: new Date().toISOString(), content: null })
+      .eq("id", messageId);
     return { success: true };
   },
 
   editMessage: async (messageId: string, content: string) => {
-    await supabase.from("messages").update({ content, edited_at: new Date().toISOString() }).eq("id", messageId);
+    await supabase
+      .from("messages")
+      .update({ content, is_edited: true, edited_at: new Date().toISOString() })
+      .eq("id", messageId);
     return { success: true };
   },
 
-  reactToMessage: async (messageId: string, emoji: string) => {
-    // Soft support — table may vary
+  reactToMessage: async (_messageId: string, emoji: string) => {
     return { success: true, emoji };
   },
 
   togglePinMessage: async (_messageId: string) => ({ success: true }),
 
-  sendTypingSignal: async (_conversationId: string, _isTyping: boolean) => ({ success: true }),
+  sendTypingSignal: async (_conversationId: string, _isTyping?: boolean) => ({ success: true }),
 
   updateChatInfo: async (conversationId: string, payload: any) => {
-    await supabase.from("conversations").update(payload).eq("id", conversationId);
+    const dbPayload: any = {};
+    if (payload.name !== undefined) dbPayload.name = payload.name;
+    if (payload.description !== undefined) dbPayload.description = payload.description;
+    if (payload.avatarUrl !== undefined) dbPayload.avatar_url = payload.avatarUrl;
+    if (Object.keys(dbPayload).length) {
+      await supabase.from("conversations").update(dbPayload).eq("id", conversationId);
+    }
     return { success: true };
   },
 
   addGroupMembers: async (conversationId: string, memberIds: string[]) => {
-    const rows = memberIds.map((profile_id) => ({ conversation_id: conversationId, profile_id, role: "member" }));
+    const rows = memberIds.map((profile_id) => ({
+      conversation_id: conversationId,
+      profile_id,
+      role: "member",
+      status: "active",
+    }));
     await supabase.from("conversation_members").upsert(rows);
     return { success: true };
   },
 
   removeGroupMember: async (conversationId: string, profileId: string) => {
-    await supabase.from("conversation_members").delete().eq("conversation_id", conversationId).eq("profile_id", profileId);
+    await supabase
+      .from("conversation_members")
+      .update({ status: "left", left_at: new Date().toISOString() })
+      .eq("conversation_id", conversationId)
+      .eq("profile_id", profileId);
     return { success: true };
   },
 
@@ -322,7 +482,7 @@ export const apiService = {
     const { data } = await supabase
       .from("conversations")
       .select("*")
-      .eq("type", "group")
+      .eq("conversation_type", "group")
       .ilike("name", `%${q}%`)
       .limit(20);
     return data || [];
