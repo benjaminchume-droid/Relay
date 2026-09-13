@@ -159,7 +159,11 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
         ...state.posts,
         [communityId]: (state.posts[communityId] || []).map((p) =>
           p.id === postId
-            ? { ...p, isLiked: !p.isLiked, likes: (p.likes || 0) + (p.isLiked ? -1 : 1) }
+            ? {
+                ...p,
+                isLiked: !p.isLiked,
+                likesCount: (p.likesCount || 0) + (p.isLiked ? -1 : 1),
+              }
             : p
         ),
       },
@@ -167,6 +171,7 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
   },
 
   addComment: async (communityId, postId, content) => {
+    const now = new Date().toISOString();
     set((state) => ({
       posts: {
         ...state.posts,
@@ -174,15 +179,16 @@ export const useCommunityStore = create<CommunityState>((set, get) => ({
           p.id === postId
             ? {
                 ...p,
-                commentCount: (p.commentCount || 0) + 1,
+                commentsCount: (p.commentsCount || 0) + 1,
                 comments: [
                   ...(p.comments || []),
                   {
                     id: `local_${Date.now()}`,
+                    postId,
                     authorId: 'me',
                     authorName: 'You',
                     content,
-                    createdAt: new Date().toISOString(),
+                    timestamp: now,
                   },
                 ],
               }
