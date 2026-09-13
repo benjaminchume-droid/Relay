@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import { Chat, Message, UserProfile, Community, CommunityPost, NotificationItem } from '../types';
+import { Chat, Message, UserProfile } from '../types';
 import { apiService } from './apiService';
 
 export interface CacheCategorySize {
@@ -62,14 +62,13 @@ class MemoryCache<T> {
 }
 
 class RelayCacheManager {
-  // In-Memory RAM Caches
   private messageMemoryCache = new MemoryCache<Message[]>(50);
   private profileMemoryCache = new MemoryCache<UserProfile>(100);
   private chatMemoryCache = new MemoryCache<Chat[]>(10);
   private searchMemoryCache = new MemoryCache<any>(30);
 
   private offlineQueue: OfflineQueueItem[] = [];
-  private isOnlineStatus: boolean = navigator.onLine;
+  private isOnlineStatus: boolean = typeof navigator !== 'undefined' ? navigator.onLine : true;
   private syncListeners: Array<(isOnline: boolean) => void> = [];
 
   constructor() {
@@ -84,7 +83,6 @@ class RelayCacheManager {
         this.notifySyncListeners(true);
         this.processOfflineQueue();
       });
-
       window.addEventListener('offline', () => {
         this.isOnlineStatus = false;
         this.notifySyncListeners(false);
@@ -108,13 +106,12 @@ class RelayCacheManager {
     return this.isOnlineStatus;
   }
 
-  // --- MEMORY CACHE OPERATIONS ---
   public getMemoryMessages(chatId: string): Message[] | null {
     return this.messageMemoryCache.get(`msg_${chatId}`);
   }
 
   public setMemoryMessages(chatId: string, messages: Message[]): void {
-    this.messageMemoryCache.set(`msg_${chatId}`, messages, 600000); // 10 mins
+    this.messageMemoryCache.set(`msg_${chatId}`, messages, 600000);
     this.persistToLocalStorage(`messages_${chatId}`, messages);
   }
 
@@ -123,7 +120,7 @@ class RelayCacheManager {
   }
 
   public setMemoryProfile(userId: string, profile: UserProfile): void {
-    this.profileMemoryCache.set(`user_${userId}`, profile, 900000); // 15 mins
+    this.profileMemoryCache.set(`user_${userId}`, profile, 900000);
     this.persistToLocalStorage(`profile_${userId}`, profile);
   }
 
@@ -136,13 +133,9 @@ class RelayCacheManager {
     this.persistToLocalStorage('chats_list', chats);
   }
 
-  // --- DISK & LOCALSTORAGE PERSISTENCE ---
   private persistToLocalStorage(key: string, data: any) {
     try {
-      localStorage.setItem(`${STORAGE_KEY_PREFIX}${key}`, JSON.stringify({
-        data,
-        timestamp: Date.now()
-      }));
+      localStorage.setItem(`${STORAGE_KEY_PREFIX}${key}`, JSON.stringify({ data, timestamp: Date.now() }));
     } catch (e) {
       console.warn('Cache quota exceeded or storage error:', e);
     }
@@ -152,20 +145,17 @@ class RelayCacheManager {
     try {
       const raw = localStorage.getItem(`${STORAGE_KEY_PREFIX}${key}`);
       if (!raw) return null;
-      const parsed = JSON.parse(raw);
-      return parsed.data as T;
+      return JSON.parse(raw).data as T;
     } catch {
       return null;
     }
   }
 
-  // --- DRAFT MESSAGES CACHE ---
   public getDraft(chatId: string): string {
     try {
       const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
       if (!raw) return '';
-      const drafts = JSON.parse(raw);
-      return drafts[chatId] || '';
+      return JSON.parse(raw)[chatId] || '';
     } catch {
       return '';
     }
@@ -175,24 +165,18 @@ class RelayCacheManager {
     try {
       const raw = localStorage.getItem(DRAFT_STORAGE_KEY);
       const drafts = raw ? JSON.parse(raw) : {};
-      if (text.trim()) {
-        drafts[chatId] = text;
-      } else {
-        delete drafts[chatId];
-      }
+      if (text.trim()) drafts[chatId] = text;
+      else delete drafts[chatId];
       localStorage.setItem(DRAFT_STORAGE_KEY, JSON.stringify(drafts));
     } catch (e) {
       console.warn('Draft save failed:', e);
     }
   }
 
-  // --- OFFLINE QUEUE MANAGER ---
   private loadOfflineQueue() {
     try {
       const raw = localStorage.getItem(QUEUE_STORAGE_KEY);
-      if (raw) {
-        this.offlineQueue = JSON.parse(raw);
-      }
+      if (raw) this.offlineQueue = JSON.parse(raw);
     } catch {
       this.offlineQueue = [];
     }
@@ -211,14 +195,11 @@ class RelayCacheManager {
       ...action,
       id: `q_${Date.now()}_${Math.random().toString(36).substring(2, 6)}`,
       timestamp: Date.now(),
-      retryCount: 0
+      retryCount: 0,
     };
     this.offlineQueue.push(item);
     this.saveOfflineQueue();
-
-    if (this.isOnlineStatus) {
-      this.processOfflineQueue();
-    }
+    if (this.isOnlineStatus) this.processOfflineQueue();
     return item;
   }
 
@@ -228,11 +209,9 @@ class RelayCacheManager {
 
   public async processOfflineQueue() {
     if (!this.isOnlineStatus || this.offlineQueue.length === 0) return;
-
     const itemsToProcess = [...this.offlineQueue];
     for (const item of itemsToProcess) {
       try {
-        // Attempt sync request based on action type
         const success = await this.executeAction(item);
         if (success) {
           this.offlineQueue = this.offlineQueue.filter((q) => q.id !== item.id);
@@ -240,33 +219,32 @@ class RelayCacheManager {
         } else {
           item.retryCount += 1;
           if (item.retryCount > 5) {
-            // Drop un-processable action after 5 retries
             this.offlineQueue = this.offlineQueue.filter((q) => q.id !== item.id);
             this.saveOfflineQueue();
           }
         }
       } catch (err) {
         console.warn(`Error processing queued action ${item.type}:`, err);
-        break; // Stop queue processing on network failure
+        break;
       }
     }
   }
 
   private async executeAction(item: OfflineQueueItem): Promise<boolean> {
     try {
-      if (item.type === "send_message") {
+      if (item.type === 'send_message') {
         await apiService.sendMessage(item.payload.chatId, item.payload);
         return true;
-      } else if (item.type === "react_message") {
-        await apiService.reactToMessage(item.payload.chatId, item.payload.messageId, item.payload.emoji);
+      } else if (item.type === 'react_message') {
+        await apiService.reactToMessage(item.payload.messageId, item.payload.emoji);
         return true;
-      } else if (item.type === "edit_message") {
-        await apiService.editMessage(item.payload.chatId, item.payload.messageId, item.payload.content);
+      } else if (item.type === 'edit_message') {
+        await apiService.editMessage(item.payload.messageId, item.payload.content);
         return true;
-      } else if (item.type === "delete_message") {
-        await apiService.deleteMessage(item.payload.chatId, item.payload.messageId);
+      } else if (item.type === 'delete_message') {
+        await apiService.deleteMessage(item.payload.messageId);
         return true;
-      } else if (item.type === "update_profile") {
+      } else if (item.type === 'update_profile') {
         await apiService.updateProfile(item.payload);
         return true;
       }
@@ -276,56 +254,31 @@ class RelayCacheManager {
     }
   }
 
-  // --- STORAGE METRICS & BREAKDOWN ---
   public getStorageBreakdown(): CacheCategorySize[] {
-    let messageBytes = 0;
-    let messageCount = 0;
-
-    let mediaBytes = 0;
-    let mediaCount = 0;
-
-    let profileBytes = 0;
-    let profileCount = 0;
-
-    let communityBytes = 0;
-    let communityCount = 0;
-
-    let searchBytes = 0;
-    let searchCount = 0;
-
+    let messageBytes = 0, messageCount = 0;
+    let mediaBytes = 0, mediaCount = 0;
+    let profileBytes = 0, profileCount = 0;
+    let communityBytes = 0, communityCount = 0;
+    let searchBytes = 0, searchCount = 0;
     try {
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i) || '';
         const value = localStorage.getItem(key) || '';
         const byteLen = key.length + value.length;
-
-        if (key.includes('message')) {
-          messageBytes += byteLen;
-          messageCount += 1;
-        } else if (key.includes('media') || key.includes('avatar') || key.includes('upload') || key.includes('wallpaper')) {
-          mediaBytes += byteLen;
-          mediaCount += 1;
-        } else if (key.includes('profile') || key.includes('user') || key.includes('auth')) {
-          profileBytes += byteLen;
-          profileCount += 1;
-        } else if (key.includes('community') || key.includes('post')) {
-          communityBytes += byteLen;
-          communityCount += 1;
-        } else if (key.includes('search') || key.includes('draft')) {
-          searchBytes += byteLen;
-          searchCount += 1;
-        }
+        if (key.includes('message')) { messageBytes += byteLen; messageCount += 1; }
+        else if (key.includes('media') || key.includes('avatar') || key.includes('upload') || key.includes('wallpaper')) { mediaBytes += byteLen; mediaCount += 1; }
+        else if (key.includes('profile') || key.includes('user') || key.includes('auth')) { profileBytes += byteLen; profileCount += 1; }
+        else if (key.includes('community') || key.includes('post')) { communityBytes += byteLen; communityCount += 1; }
+        else if (key.includes('search') || key.includes('draft')) { searchBytes += byteLen; searchCount += 1; }
       }
     } catch (e) {
       console.warn('Error computing cache metrics:', e);
     }
-
     const formatSize = (b: number) => {
       if (b < 1024) return `${b} B`;
       if (b < 1024 * 1024) return `${(b / 1024).toFixed(1)} KB`;
       return `${(b / (1024 * 1024)).toFixed(2)} MB`;
     };
-
     return [
       { category: 'messages', label: 'Conversations & Messages', bytes: messageBytes, formattedSize: formatSize(messageBytes), itemCount: messageCount },
       { category: 'media', label: 'Cached Media & Avatars', bytes: mediaBytes, formattedSize: formatSize(mediaBytes), itemCount: mediaCount },
@@ -341,18 +294,14 @@ class RelayCacheManager {
       this.profileMemoryCache.clear();
       this.chatMemoryCache.clear();
       this.searchMemoryCache.clear();
-
       const keysToRemove: string[] = [];
       for (let i = 0; i < localStorage.length; i++) {
         const key = localStorage.key(i);
-        if (key && (key.startsWith(STORAGE_KEY_PREFIX) || key === DRAFT_STORAGE_KEY)) {
-          keysToRemove.push(key);
-        }
+        if (key && (key.startsWith(STORAGE_KEY_PREFIX) || key === DRAFT_STORAGE_KEY)) keysToRemove.push(key);
       }
       keysToRemove.forEach((k) => localStorage.removeItem(k));
       return;
     }
-
     if (category === 'messages') {
       this.messageMemoryCache.clear();
       this.chatMemoryCache.clear();
@@ -362,13 +311,10 @@ class RelayCacheManager {
       this.searchMemoryCache.clear();
       localStorage.removeItem(DRAFT_STORAGE_KEY);
     }
-
     const keysToRemove: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const key = localStorage.key(i) || '';
-      if (key.startsWith(STORAGE_KEY_PREFIX) && key.includes(category)) {
-        keysToRemove.push(key);
-      }
+      if (key.startsWith(STORAGE_KEY_PREFIX) && key.includes(category)) keysToRemove.push(key);
     }
     keysToRemove.forEach((k) => localStorage.removeItem(k));
   }
