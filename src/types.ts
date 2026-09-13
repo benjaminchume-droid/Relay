@@ -7,22 +7,22 @@ export type OnlineStatus = 'online' | 'away' | 'offline';
 
 export type DesignLanguage = 'liquid-glass' | 'clay' | 'flat' | 'minimal';
 
-export type AccentColor = 
-  | 'liquid-azure'   // #3B82F6 / #2563EB
-  | 'emerald-frost'  // #10B981 / #059669
-  | 'neon-violet'    // #8B5CF6 / #7C3AED
-  | 'rose-gold'      // #F43F5E / #E11D48
-  | 'midnight'       // #1E293B / #0F172A
-  | 'amber-glow';    // #F59E0B / #D97706
+export type AccentColor =
+  | 'liquid-azure'
+  | 'emerald-frost'
+  | 'neon-violet'
+  | 'rose-gold'
+  | 'midnight'
+  | 'amber-glow';
 
 export type BubbleStyle = 'classic' | 'edge-glow' | 'gradient' | 'minimal';
 
-export type WallpaperStyle = 
-  | 'glass-gradient' 
-  | 'dark-aurora' 
-  | 'neon-mesh' 
-  | 'minimal-grid' 
-  | 'warm-clay' 
+export type WallpaperStyle =
+  | 'glass-gradient'
+  | 'dark-aurora'
+  | 'neon-mesh'
+  | 'minimal-grid'
+  | 'warm-clay'
   | 'pure-slate';
 
 export type UIDensity = 'compact' | 'comfortable' | 'spacious';
@@ -44,20 +44,20 @@ export interface AppearanceCustomization {
   accentColor: AccentColor;
   accentMode?: AccentMode;
   customAccentHex?: string;
-  blurIntensity: number; // 0 to 40px
-  transparency: number; // 0 to 100%
-  cornerRadius: number; // 0 to 32px
-  shadowDepth: number; // 0 to 100%
-  glassDepth: number; // 0 to 100%
-  refraction: number; // 0 to 100%
-  edgeGlow: number; // 0 to 100%
+  blurIntensity: number;
+  transparency: number;
+  cornerRadius: number;
+  shadowDepth: number;
+  glassDepth: number;
+  refraction: number;
+  edgeGlow: number;
   animationSpeed: 'instant' | 'snappy' | 'smooth' | 'cinematic';
   uiDensity: UIDensity;
   chatWallpaper: WallpaperStyle;
   customWallpaperUrl?: string;
   storiesLayout: StoriesLayout;
   bubbleStyle: BubbleStyle;
-  bubbleSpacing: number; // 4 to 20px
+  bubbleSpacing: number;
   fontSize: 'xs' | 'sm' | 'base' | 'lg';
   appIcon: AppIconVariant;
   soundEnabled: boolean;
@@ -71,6 +71,7 @@ export interface UserPrivacySettings {
   whoCanAddGroups: 'everyone' | 'contacts' | 'nobody';
   hideOnline: boolean;
   hideLastSeen: boolean;
+  lastSeen?: boolean;
   readReceipts: boolean;
   offlineMode: boolean;
   profilePhotoVisibility: 'everyone' | 'contacts' | 'nobody';
@@ -115,7 +116,7 @@ export interface UserSettings {
 
 export interface UserProfile {
   id: string;
-  username: string; // @handle (lowercase, unique)
+  username: string;
   name: string;
   email: string;
   avatarUrl?: string;
@@ -126,15 +127,11 @@ export interface UserProfile {
   lastSeen?: string;
   dob?: string;
   country?: string;
-  socialLinks?: {
-    website?: string;
-    github?: string;
-    twitter?: string;
-  };
-  contacts: string[]; // list of contact user IDs
-  blockedUsers: string[]; // list of blocked user IDs
-  sentRequests: string[]; // friend requests sent
-  receivedRequests: string[]; // friend requests received
+  socialLinks?: { website?: string; github?: string; twitter?: string };
+  contacts: string[];
+  blockedUsers: string[];
+  sentRequests: string[];
+  receivedRequests: string[];
   settings: UserSettings;
   createdAt: string;
   supabaseAccessToken?: string;
@@ -142,7 +139,7 @@ export interface UserProfile {
   onboarding_completed?: boolean;
 }
 
-export type MessageType = 'text' | 'voice' | 'image' | 'video' | 'file' | 'location' | 'contact' | 'system';
+export type MessageType = 'text' | 'voice' | 'image' | 'video' | 'file' | 'location' | 'contact' | 'system' | 'sticker' | 'voice_note';
 
 export interface MessageReaction {
   userId: string;
@@ -156,7 +153,7 @@ export interface MessageAttachment {
   url: string;
   fileName?: string;
   fileSize?: string;
-  duration?: number; // for audio
+  duration?: number;
   thumbnailUrl?: string;
   waveformData?: number[];
 }
@@ -201,7 +198,7 @@ export interface Chat {
   name: string;
   type: 'direct' | 'group';
   avatarUrl?: string;
-  participants: string[]; // user IDs
+  participants: string[];
   unreadCount?: number;
   lastMessage?: {
     text: string;
@@ -215,7 +212,7 @@ export interface Chat {
   description?: string;
   pinnedMessageId?: string;
   roles?: Record<string, 'creator' | 'admin' | 'member'>;
-  disappearingMessages?: 'off' | '24h' | '7d' | '90d';
+  disappearingMessages?: 'off' | '24h' | '7d' | '30d' | '90d';
   permissions?: GroupPermissions;
   inviteLink?: string;
   createdAt?: string;
@@ -268,7 +265,7 @@ export interface CommunityPermissions {
 export interface Community {
   id: string;
   name: string;
-  handle: string; // e.g. @glassline
+  handle: string;
   description: string;
   bannerUrl: string;
   avatarUrl: string;
