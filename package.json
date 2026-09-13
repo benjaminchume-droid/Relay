@@ -5,7 +5,9 @@
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",
+    "dev:web": "vite",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
+    "build:web": "vite build",
     "start": "node dist/server.cjs",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
@@ -29,6 +31,7 @@
     "motion": "^12.23.24",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
+    "react-router-dom": "^7.1.1",
     "vite": "^6.2.3",
     "zod": "^4.4.3",
     "zustand": "^5.0.14"
