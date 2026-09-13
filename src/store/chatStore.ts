@@ -10,7 +10,6 @@ import { sendConversationMessage, getOrCreateDirectChat, getCurrentProfile } fro
 import { chatCache } from '../services/chatCache';
 import { useAuthStore } from './authStore';
 
-// In-memory idempotency tracking to prevent duplicate sends from rapid taps
 const activeSendPayloads = new Set<string>();
 
 interface ChatState {
@@ -47,7 +46,7 @@ interface ChatState {
   createDirectChat: (targetUserId: string) => Promise<string>;
   createGroupChat: (name: string, description?: string, participantIds?: string[], isPrivate?: boolean, avatarUrl?: string) => Promise<string>;
   deleteChat: (chatId: string) => Promise<void>;
-  updateGroupInfo: (chatId: string, payload: { name?: string; description?: string; disappearingMessages?: string; permissions?: any; inviteLink?: string }) => Promise<void>;
+  updateGroupInfo: (chatId: string, payload: { name?: string; description?: string; disappearingMessages?: 'off' | '24h' | '7d' | '90d'; permissions?: any; inviteLink?: string }) => Promise<void>;
   addGroupMembers: (chatId: string, memberIds: string[]) => Promise<void>;
   removeGroupMember: (chatId: string, memberId: string) => Promise<void>;
   updateMemberRole: (chatId: string, memberId: string, role: 'admin' | 'member') => Promise<void>;
@@ -127,10 +126,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!chatId) return;
 
     const payloadKey = `${chatId}:${type}:${content || ''}:${attachments?.[0]?.url || ''}`;
-    if (activeSendPayloads.has(payloadKey)) {
-      console.warn('[chatStore] Duplicate send prevented by idempotency lock:', payloadKey);
-      return;
-    }
+    if (activeSendPayloads.has(payloadKey)) return;
     activeSendPayloads.add(payloadKey);
 
     const replyingTo = get().replyingToMessage;
@@ -181,9 +177,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const realChatId = chat.id || message.chatId || chatId;
         const currentMsgs = state.messages[chatId] || state.messages[realChatId] || [];
         const confirmedMsg = { ...message, deliveryState: 'sent' as const };
-        const updatedMsgs = currentMsgs.map((m) =>
-          m.id === tempId ? confirmedMsg : m
-        );
+        const updatedMsgs = currentMsgs.map((m) => m.id === tempId ? confirmedMsg : m);
 
         const existingChatIdx = state.chats.findIndex((c) => c.id === chatId || c.id === realChatId);
         let updatedChats: Chat[];
@@ -224,9 +218,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         }
 
         const newMessagesMap = { ...state.messages };
-        if (realChatId !== chatId) {
-          delete newMessagesMap[chatId];
-        }
+        if (realChatId !== chatId) delete newMessagesMap[chatId];
         newMessagesMap[realChatId] = updatedMsgs;
 
         chatCache.setMessages(newMessagesMap);
@@ -239,7 +231,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
       });
     } catch (err: any) {
-      console.error('[chatStore] Send message error:', err);
       set((state) => ({
         messages: {
           ...state.messages,
@@ -257,7 +248,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
   retryMessage: async (messageId: string) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
-
     const currentMsgs = get().messages[chatId] || [];
     const targetMsg = currentMsgs.find((m) => m.id === messageId);
     if (!targetMsg) return;
@@ -286,7 +276,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const msgs = state.messages[chatId] || state.messages[realChatId] || [];
         const confirmedMsg = { ...message, deliveryState: 'sent' as const };
         const updatedMsgs = msgs.map((m) => (m.id === messageId ? confirmedMsg : m));
-
         const updatedChats = state.chats.map((c) => {
           if (c.id === chatId || c.id === realChatId) {
             return {
@@ -303,16 +292,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           return c;
         });
-
         const newMessagesMap = { ...state.messages };
-        if (realChatId !== chatId) {
-          delete newMessagesMap[chatId];
-        }
+        if (realChatId !== chatId) delete newMessagesMap[chatId];
         newMessagesMap[realChatId] = updatedMsgs;
-
         chatCache.setMessages(newMessagesMap);
         chatCache.setChats(updatedChats);
-
         return {
           messages: newMessagesMap,
           chats: updatedChats,
@@ -320,7 +304,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         };
       });
     } catch (err: any) {
-      console.error('[retryMessage] Resend failed:', err);
       set((state) => ({
         messages: {
           ...state.messages,
@@ -392,9 +375,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sendTypingSignal: async (chatId) => {
     try {
       await apiService.sendTypingSignal(chatId);
-    } catch {
-      // ignore
-    }
+    } catch {}
   },
 
   pollUpdates: async () => {
@@ -428,12 +409,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ isLoading: true });
     try {
       const current = await getCurrentProfile();
-      if (!current) throw new Error("Not authenticated");
+      if (!current) throw new Error('Not authenticated');
       const chatId = await getOrCreateDirectChat(current.profileId, targetUserId);
       const chat = {
         id: chatId,
-        name: "Conversation",
-        type: "direct" as const,
+        name: 'Conversation',
+        type: 'direct' as const,
         participants: [current.profileId, targetUserId],
         unreadCount: 0,
       };
@@ -446,8 +427,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await get().fetchMessages(chat.id);
       return chat.id;
     } catch (err: any) {
-      console.error("[chatStore] createDirectChat error:", err);
-      set({ error: err.message || "Failed to create direct conversation", isLoading: false });
+      set({ error: err.message || 'Failed to create direct conversation', isLoading: false });
       throw err;
     }
   },
@@ -455,10 +435,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   createGroupChat: async (name, description, participantIds, isPrivate, avatarUrl) => {
     set({ isLoading: true });
     try {
-      const res = await apiService.createGroupChat(name, description, participantIds, isPrivate, avatarUrl);
+      const res = await apiService.createGroupChat(name, participantIds || []);
       const chat = res.chat;
+      if (description || isPrivate !== undefined || avatarUrl) {
+        try {
+          await apiService.updateChatInfo(chat.id, {
+            description,
+            avatarUrl,
+            ...(isPrivate !== undefined ? { isPrivate } : {}),
+          });
+        } catch {}
+      }
       set((state) => ({
-        chats: [chat, ...state.chats],
+        chats: [{ ...chat, name: chat.name || name, description }, ...state.chats],
         activeChatId: chat.id,
         isLoading: false
       }));
@@ -485,7 +474,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       await apiService.updateChatInfo(chatId, payload);
       set((state) => ({
-        chats: state.chats.map((c) => (c.id === chatId ? { ...c, ...payload } : c))
+        chats: state.chats.map((c) => {
+          if (c.id !== chatId) return c;
+          return {
+            ...c,
+            ...(payload.name !== undefined ? { name: payload.name } : {}),
+            ...(payload.description !== undefined ? { description: payload.description } : {}),
+            ...(payload.disappearingMessages !== undefined
+              ? { disappearingMessages: payload.disappearingMessages }
+              : {}),
+            ...(payload.permissions !== undefined ? { permissions: payload.permissions } : {}),
+            ...(payload.inviteLink !== undefined ? { inviteLink: payload.inviteLink } : {}),
+          };
+        }),
       }));
     } catch (err: any) {
       set({ error: err.message });
@@ -508,9 +509,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
   },
 
-  updateMemberRole: async () => {
-    // role updates via API when available
-  },
+  updateMemberRole: async () => {},
 
   setSearchQuery: (q) => set({ searchQuery: q }),
   clearError: () => set({ error: null })
