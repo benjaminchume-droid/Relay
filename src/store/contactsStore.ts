@@ -48,7 +48,6 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
       return;
     }
 
-    // Cancel any previous inflight search
     if (activeSearchController) {
       activeSearchController.abort();
     }
@@ -57,28 +56,22 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
 
     const seq = ++currentSearchSeq;
     set({ isLoading: true, searchStatus: 'loading', searchError: null, lastSearchQuery: cleanQuery });
-    console.log("[Relay Search UI] Triggering user search for:", cleanQuery);
 
     try {
-      const res = await apiService.searchUsers(cleanQuery, controller.signal);
-      const users = res?.users || [];
+      // searchUsers returns UserProfile[] (signal not supported by API)
+      const res = await apiService.searchUsers(cleanQuery);
+      const users = Array.isArray(res) ? res : (res as any)?.users || [];
 
       if (seq === currentSearchSeq && !controller.signal.aborted) {
         if (users.length > 0) {
-          console.log("[Relay Search UI] Search success, found:", users.length);
           set({ searchResults: users, searchStatus: 'success', searchError: null, isLoading: false });
         } else {
-          console.log("[Relay Search UI] Search returned 0 users");
           set({ searchResults: [], searchStatus: 'empty', searchError: null, isLoading: false });
         }
       }
     } catch (err: any) {
-      if (err.name === 'AbortError') {
-        console.log("[Relay Search UI] Search cancelled via AbortController");
-        return;
-      }
+      if (err.name === 'AbortError') return;
       if (seq === currentSearchSeq) {
-        console.error("[Relay Search UI] Search API error:", err);
         set({
           searchResults: [],
           searchStatus: 'error',
@@ -109,8 +102,8 @@ export const useContactsStore = create<ContactsState>((set, get) => ({
 
   submitReport: async (payload) => {
     try {
-      const { message } = await apiService.submitReport(payload);
-      set({ reportSuccessMessage: message });
+      await apiService.submitReport(payload);
+      set({ reportSuccessMessage: 'Report submitted. Thank you.' });
       setTimeout(() => {
         get().closeReportModal();
       }, 1800);
