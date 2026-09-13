@@ -187,7 +187,7 @@ export async function registerPushToken(opts: {
 
 /**
  * Best-effort: if Capacitor PushNotifications is present, request permission and register token.
- * No-ops on pure web without a push plugin.
+ * No-ops on pure web without a push plugin. Uses @vite-ignore so web builds do not resolve the package.
  */
 export async function tryRegisterNativePush(profileId: string): Promise<void> {
   try {
@@ -196,7 +196,8 @@ export async function tryRegisterNativePush(profileId: string): Promise<void> {
 
     let PushNotifications: any;
     try {
-      PushNotifications = (await import("@capacitor/push-notifications")).PushNotifications;
+      // @ts-expect-error optional native plugin — not installed in web package.json
+      PushNotifications = (await import(/* @vite-ignore */ "@capacitor/push-notifications")).PushNotifications;
     } catch {
       return;
     }
