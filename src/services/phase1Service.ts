@@ -65,10 +65,10 @@ function mapThreadToPost(t: any): CommunityPost {
     title: t.title || undefined,
     content: t.body || t.content || "",
     imageUrl: t.metadata?.image_url || t.image_url || undefined,
-    likes: t.reaction_count || 0,
+    likesCount: t.reaction_count || 0,
     comments: [],
-    commentCount: t.reply_count || 0,
-    createdAt: t.created_at,
+    commentsCount: t.reply_count || 0,
+    timestamp: t.created_at,
     isLiked: false,
   };
 }
