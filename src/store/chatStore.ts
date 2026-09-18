@@ -8,9 +8,12 @@ import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
 import { sendConversationMessage, getOrCreateDirectChat, getCurrentProfile } from '../services/messagingCore';
 import { chatCache } from '../services/chatCache';
+import { profileCache } from '../services/profileCache';
 import { useAuthStore } from './authStore';
+import { supabase } from '../lib/supabase/client';
 
 const activeSendPayloads = new Set<string>();
+const activeGroupCreates = new Set<string>();
 
 interface ChatState {
   chats: Chat[];
@@ -160,6 +163,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (existingChatIdx !== -1) {
           updatedChats = state.chats.map((c, i) => i === existingChatIdx ? {
             ...c, id: realChatId,
+            name: chat.name && chat.name !== 'Conversation' ? chat.name : c.name,
+            avatarUrl: chat.avatarUrl || c.avatarUrl,
             lastMessage: { text: message.content || 'Attachment', timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' },
             updatedAt: message.timestamp
           } : c);
@@ -292,14 +297,52 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createDirectChat: async (targetUserId) => {
-    set({ isLoading: true });
+    set({ isLoading: true, error: null });
     try {
       const current = await getCurrentProfile();
       if (!current) throw new Error('Not authenticated');
       const chatId = await getOrCreateDirectChat(current.profileId, targetUserId);
-      const chat = { id: chatId, name: 'Conversation', type: 'direct' as const, participants: [current.profileId, targetUserId], unreadCount: 0 };
-      set((state) => ({ chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)], activeChatId: chat.id, isLoading: false, error: null }));
+
+      // Resolve peer display name so list never shows "Conversation" / "Direct chat"
+      let peerName = '';
+      let peerAvatar: string | undefined;
+      const cached = profileCache.get(targetUserId);
+      if (cached) {
+        peerName = cached.name || (cached.username ? `@${cached.username}` : '');
+        peerAvatar = cached.avatarUrl;
+      }
+      if (!peerName) {
+        try {
+          const { data: p } = await supabase
+            .from('profiles')
+            .select('display_name, full_name, username, avatar_url')
+            .or(`id.eq.${targetUserId},auth_user_id.eq.${targetUserId}`)
+            .maybeSingle();
+          if (p) {
+            peerName = p.display_name || p.full_name || (p.username ? `@${p.username}` : '');
+            peerAvatar = p.avatar_url || undefined;
+          }
+        } catch {}
+      }
+      if (!peerName) peerName = 'Chat';
+
+      const chat: Chat = {
+        id: chatId,
+        name: peerName,
+        type: 'direct',
+        avatarUrl: peerAvatar,
+        participants: [current.profileId, targetUserId],
+        unreadCount: 0,
+      };
+      set((state) => ({
+        chats: [chat, ...state.chats.filter((c) => c.id !== chat.id)],
+        activeChatId: chat.id,
+        isLoading: false,
+        error: null,
+      }));
       await get().fetchMessages(chat.id);
+      // Refresh list so server-side name/avatar win if better
+      get().fetchChats();
       return chat.id;
     } catch (err: any) {
       set({ error: err.message || 'Failed to create direct conversation', isLoading: false });
@@ -308,15 +351,30 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   createGroupChat: async (name, description, participantIds) => {
-    set({ isLoading: true });
+    const lockKey = `group:${(name || '').trim().toLowerCase()}:${(participantIds || []).slice().sort().join(',')}`;
+    if (activeGroupCreates.has(lockKey)) {
+      throw new Error('Group creation already in progress');
+    }
+    activeGroupCreates.add(lockKey);
+    set({ isLoading: true, error: null });
     try {
       const res = await apiService.createGroupChat(name, participantIds || []);
       const chat = res.chat;
-      set((state) => ({ chats: [{ ...chat, name: chat.name || name, description }, ...state.chats], activeChatId: chat.id, isLoading: false }));
+      if (!chat?.id) throw new Error('Group created but no id returned');
+      set((state) => ({
+        chats: [{ ...chat, name: chat.name || name, description }, ...state.chats.filter((c) => c.id !== chat.id)],
+        activeChatId: chat.id,
+        isLoading: false,
+        error: null,
+      }));
+      get().fetchChats();
       return chat.id;
     } catch (err: any) {
-      set({ error: err.message, isLoading: false });
+      set({ error: err?.message || 'Failed to create group', isLoading: false });
       throw err;
+    } finally {
+      // Keep lock briefly to absorb double-taps
+      setTimeout(() => activeGroupCreates.delete(lockKey), 1500);
     }
   },
 
