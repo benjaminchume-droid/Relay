@@ -1,31 +1,31 @@
-/** Phase 4: ready-made look packs (Telegram-inspired variety, Relay tokens). */
+/** Simplified appearance packs — Theme + Accent only (no Forest/Sunrise stacks). */
 export const THEME_PRESETS = [
   {
-    id: "relay-glass",
-    name: "Relay Glass",
+    id: "system",
+    name: "System",
     accentColor: "liquid-azure" as const,
     themeMode: "system" as const,
     chatWallpaper: "glass-gradient",
   },
   {
-    id: "midnight",
-    name: "Midnight",
-    accentColor: "neon-violet" as const,
-    themeMode: "dark" as const,
-    chatWallpaper: "glass-gradient",
-  },
-  {
-    id: "sunrise",
-    name: "Sunrise",
-    accentColor: "rose-gold" as const,
+    id: "light",
+    name: "Light",
+    accentColor: "liquid-azure" as const,
     themeMode: "light" as const,
     chatWallpaper: "glass-gradient",
   },
   {
-    id: "forest",
-    name: "Forest",
-    accentColor: "emerald-frost" as const,
-    themeMode: "system" as const,
-    chatWallpaper: "glass-gradient",
+    id: "dark",
+    name: "Dark",
+    accentColor: "liquid-azure" as const,
+    themeMode: "dark" as const,
+    chatWallpaper: "dark-aurora",
+  },
+  {
+    id: "pure-black",
+    name: "Pure Black",
+    accentColor: "midnight" as const,
+    themeMode: "pure-black" as const,
+    chatWallpaper: "pure-slate",
   },
 ] as const;
