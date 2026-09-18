@@ -15,7 +15,7 @@ export function getPublicWebOrigin(): string {
     const origin = window.location.origin;
     if (!origin.includes("localhost") && origin.startsWith("https://")) return origin;
   }
-  return "https://relay-web.vercel.app";
+  return "https://relay-sandy-seven.vercel.app";
 }
 
 export function getAuthRedirectUrl(): string {
@@ -23,4 +23,21 @@ export function getAuthRedirectUrl(): string {
   const Cap = (window as any).Capacitor;
   const isNative = !!Cap?.isNativePlatform?.();
   return `${getPublicWebOrigin()}/login${isNative ? "?native=1" : ""}`;
+}
+
+/** Public invite / share link helpers (must match relay-web routes). */
+export function getGroupInviteUrl(tokenOrId: string): string {
+  return `${getPublicWebOrigin()}/g/${encodeURIComponent(tokenOrId)}`;
+}
+
+export function getCommunityInviteUrl(tokenOrHandle: string): string {
+  return `${getPublicWebOrigin()}/c/${encodeURIComponent(tokenOrHandle)}`;
+}
+
+export function getChannelInviteUrl(tokenOrId: string): string {
+  return `${getPublicWebOrigin()}/channel/${encodeURIComponent(tokenOrId)}`;
+}
+
+export function getGenericInviteUrl(token: string): string {
+  return `${getPublicWebOrigin()}/invite/${encodeURIComponent(token)}`;
 }
