@@ -94,6 +94,16 @@ export async function getOrCreateDirectChat(
 export function formatMessageRecord(m: any): Message {
   if (!m) return {} as Message;
   const sender = m.sender || m.profiles || {};
+  // Only mark "read" when the backend explicitly says so.
+  // Default to "sent" so we never show double blue ticks immediately.
+  const rawStatus = (m.send_status || m.delivery_state || m.status || "").toString().toLowerCase();
+  let deliveryState: Message["deliveryState"] = "sent";
+  if (rawStatus === "read" || rawStatus === "seen") deliveryState = "read";
+  else if (rawStatus === "delivered") deliveryState = "delivered";
+  else if (rawStatus === "sending" || rawStatus === "pending") deliveryState = "sending";
+  else if (rawStatus === "failed" || rawStatus === "error") deliveryState = "failed";
+  else deliveryState = "sent";
+
   return {
     id: m.id,
     chatId: m.conversation_id || m.chat_id || "",
@@ -124,7 +134,7 @@ export function formatMessageRecord(m: any): Message {
         ]
       : m.attachments || undefined,
     timestamp: m.created_at || new Date().toISOString(),
-    deliveryState: m.send_status === "sent" ? "sent" : "read",
+    deliveryState,
     isEdited: m.is_edited || false,
     isDeleted: m.is_deleted || false,
     replyToId: m.reply_to_message_id || undefined,
@@ -176,6 +186,8 @@ export async function sendConversationMessage(
   const realConvId = confirmedMsg.conversation_id || targetConvId;
   const msgFormatted = formatMessageRecord(confirmedMsg);
   msgFormatted.chatId = realConvId;
+  // Freshly sent messages are always "sent", never "read"
+  msgFormatted.deliveryState = "sent";
 
   let targetName = "";
   let targetAvatar: string | undefined;
@@ -184,6 +196,27 @@ export async function sendConversationMessage(
     if (cached) {
       targetName = cached.name || (cached.username ? `@${cached.username}` : "");
       targetAvatar = cached.avatarUrl;
+    }
+    if (!targetName) {
+      try {
+        const { data: p } = await supabase
+          .from("profiles")
+          .select("display_name, full_name, username, avatar_url")
+          .or(`id.eq.${targetUserId},auth_user_id.eq.${targetUserId}`)
+          .maybeSingle();
+        if (p) {
+          targetName = p.display_name || p.full_name || (p.username ? `@${p.username}` : "");
+          targetAvatar = p.avatar_url || undefined;
+          if (p.username || p.display_name) {
+            profileCache.set({
+              id: targetUserId,
+              name: targetName,
+              username: p.username,
+              avatarUrl: targetAvatar,
+            } as any);
+          }
+        }
+      } catch {}
     }
   }
   if (!targetName) {
