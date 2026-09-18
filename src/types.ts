@@ -197,6 +197,8 @@ export interface Chat {
   id: string;
   name: string;
   type: 'direct' | 'group';
+  /** Message-request state for DMs that are not yet accepted contacts */
+  requestStatus?: 'none' | 'pending_outgoing' | 'pending_incoming' | 'accepted';
   avatarUrl?: string;
   participants: string[];
   unreadCount?: number;
