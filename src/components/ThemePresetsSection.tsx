@@ -1,85 +1,56 @@
 /**
- * Phase 5: one-tap look packs from THEME_PRESETS (Telegram-inspired variety).
+ * Appearance packs: Theme mode shortcuts only.
+ * Accent lives in the Accent grid below (not stacked as look packs).
  */
 import React from "react";
-import { Sparkles, Check } from "lucide-react";
+import { Sun, Moon, Monitor, Check } from "lucide-react";
 import { GlassCard } from "./GlassUI";
 import { THEME_PRESETS } from "../data/themePresets";
-import { useThemeStore, ACCENT_COLOR_CONFIG } from "../store/themeStore";
+import { useThemeStore } from "../store/themeStore";
+
+const ICONS: Record<string, React.ReactNode> = {
+  system: <Monitor size={16} />,
+  light: <Sun size={16} />,
+  dark: <Moon size={16} />,
+  "pure-black": <Moon size={16} />,
+};
 
 export const ThemePresetsSection: React.FC = () => {
-  const { customization, updateCustomization, setAccentColor } = useThemeStore();
-
-  const activeId =
-    THEME_PRESETS.find(
-      (p) =>
-        p.accentColor === customization.accentColor &&
-        p.themeMode === customization.themeMode
-    )?.id || null;
+  const { customization, updateCustomization } = useThemeStore();
 
   return (
-    <GlassCard className="p-5 space-y-3">
-      <div className="flex items-center gap-2">
-        <Sparkles size={14} className="text-slate-600 dark:text-slate-300" />
-        <span className="text-xs font-bold text-slate-800 dark:text-white block">
-          Quick Look Packs
-        </span>
-      </div>
+    <GlassCard className="p-4 space-y-3">
+      <span className="text-xs font-bold text-slate-800 dark:text-white block">Theme</span>
       <p className="text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-        Apply a full Relay look in one tap — accent, theme mode, and chat wallpaper.
+        Light is light. Dark is dark. System follows your device.
       </p>
-      <div className="grid grid-cols-2 gap-2.5">
+      <div className="grid grid-cols-2 gap-2">
         {THEME_PRESETS.map((pack) => {
-          const conf = ACCENT_COLOR_CONFIG[pack.accentColor];
-          const isSel = activeId === pack.id;
+          const isSel = customization.themeMode === pack.themeMode;
           return (
             <button
               key={pack.id}
               type="button"
-              onClick={() => {
-                setAccentColor(pack.accentColor);
+              onClick={() =>
                 updateCustomization({
                   themeMode: pack.themeMode as any,
                   chatWallpaper: pack.chatWallpaper as any,
-                  accentColor: pack.accentColor,
-                });
-              }}
-              className={`relative p-3.5 rounded-2xl border text-left transition-all cursor-pointer overflow-hidden ${
+                })
+              }
+              className={`relative flex items-center gap-2.5 p-3 rounded-xl border text-left transition-all cursor-pointer ${
                 isSel
-                  ? "border-transparent shadow-md scale-[1.02]"
-                  : "bg-white/60 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 hover:bg-white dark:hover:bg-slate-800"
+                  ? "border-transparent text-white shadow-md"
+                  : "bg-white/70 dark:bg-slate-800/50 border-slate-200 dark:border-white/10 text-slate-800 dark:text-slate-100 hover:bg-white dark:hover:bg-slate-800"
               }`}
               style={
                 isSel
-                  ? {
-                      background: `linear-gradient(135deg, ${conf?.primary || "#3B82F6"} 0%, ${conf?.hover || "#2563EB"} 100%)`,
-                    }
+                  ? { backgroundColor: "var(--primary-accent, #2563EB)" }
                   : undefined
               }
             >
-              <div className="flex items-center justify-between gap-2">
-                <span
-                  className={`text-xs font-bold ${
-                    isSel ? "text-white" : "text-slate-800 dark:text-slate-100"
-                  }`}
-                >
-                  {pack.name}
-                </span>
-                {isSel && <Check size={14} className="text-white shrink-0" />}
-              </div>
-              <div className="mt-2 flex items-center gap-1.5">
-                <span
-                  className="w-3 h-3 rounded-full border border-white/40 shadow-sm"
-                  style={{ backgroundColor: conf?.primary || "#3B82F6" }}
-                />
-                <span
-                  className={`text-[10px] font-medium capitalize ${
-                    isSel ? "text-white/85" : "text-slate-500 dark:text-slate-400"
-                  }`}
-                >
-                  {pack.themeMode} · {pack.accentColor.replace("-", " ")}
-                </span>
-              </div>
+              <span className={isSel ? "text-white" : "text-slate-500"}>{ICONS[pack.id]}</span>
+              <span className="text-xs font-semibold flex-1">{pack.name}</span>
+              {isSel && <Check size={14} className="text-white shrink-0" />}
             </button>
           );
         })}
