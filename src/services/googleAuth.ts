@@ -29,8 +29,8 @@ export function getPublicWebOrigin(): string {
     const origin = window.location.origin;
     if (!origin.includes('localhost') && origin.startsWith('https://')) return origin;
   }
-  // Fallback — set VITE_RELAY_WEB_URL in production to your Vercel Relay URL
-  return 'https://relay-web.vercel.app';
+  // Production fallback — actual Relay web deployment
+  return 'https://relay-sandy-seven.vercel.app';
 }
 
 export function getAuthRedirectUrl(): string {
