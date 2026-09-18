@@ -1,8 +1,7 @@
 /**
- * Google sign-in via Supabase only (no Firebase).
- * Native: open the public Relay web /login in the system browser (Custom Tabs / Safari)
- * so Google uses the real browser cookie jar — avoids Google 400 in embedded WebViews.
- * Web: standard OAuth redirect to this origin /login.
+ * Google sign-in via Supabase.
+ * Native: open hosted login / OAuth URL in Capacitor Browser (in-app Custom Tab),
+ * then complete via relay://login deep link — stays in-app, no full external Chrome hop.
  */
 
 import { supabase } from '../lib/supabase/client';
@@ -17,7 +16,6 @@ export const GOOGLE_WEB_CLIENT_ID =
     : '') ||
   '';
 
-/** Public HTTPS origin used for OAuth + email redirects (must be in Supabase Auth redirect allow-list). */
 export function getPublicWebOrigin(): string {
   const fromEnv =
     metaEnv.VITE_RELAY_WEB_URL ||
@@ -29,7 +27,6 @@ export function getPublicWebOrigin(): string {
     const origin = window.location.origin;
     if (!origin.includes('localhost') && origin.startsWith('https://')) return origin;
   }
-  // Production fallback — actual Relay web deployment
   return 'https://relay-sandy-seven.vercel.app';
 }
 
@@ -37,36 +34,39 @@ export function getAuthRedirectUrl(): string {
   if (typeof window === 'undefined') return `${getPublicWebOrigin()}/login`;
   const Cap = (window as any).Capacitor;
   const isNative = !!Cap?.isNativePlatform?.();
-  // Always prefer HTTPS web login for OAuth (Google rejects custom-scheme redirect URIs).
   return `${getPublicWebOrigin()}/login${isNative ? '?native=1' : ''}`;
 }
 
 export async function initializeGoogleAuth(): Promise<void> {
-  // No native Firebase plugin — Supabase OAuth + system browser.
+  // Session handoff is handled by nativeBridge + deep link relay://login
 }
 
-async function openSystemBrowser(url: string): Promise<void> {
+/** Open URL inside the app (Custom Tab / SFSafariViewController) — feels in-app. */
+async function openInAppBrowser(url: string): Promise<void> {
   const Cap = typeof window !== 'undefined' ? (window as any).Capacitor : null;
   if (Cap?.isNativePlatform?.()) {
     try {
-      // Optional plugin — not in package.json; resolve only at runtime on device
       const mod: any = await import(/* @vite-ignore */ '@capacitor/browser');
-      await mod.Browser.open({ url, presentationStyle: 'popover' });
+      await mod.Browser.open({
+        url,
+        presentationStyle: 'fullscreen',
+        toolbarColor: '#0f172a',
+      });
       return;
     } catch {
-      /* fall through */
+      /* plugin missing — fall through */
     }
     try {
-      if (Cap.Plugins?.App?.openUrl) {
-        await Cap.Plugins.App.openUrl({ url });
+      if (Cap.Plugins?.Browser?.open) {
+        await Cap.Plugins.Browser.open({ url, presentationStyle: 'fullscreen' });
         return;
       }
     } catch {
       /* fall through */
     }
-    // Last resort: window.open / location
+    // Same-WebView navigation keeps the user inside Relay
     try {
-      window.open(url, '_system');
+      window.location.assign(url);
       return;
     } catch {
       /* fall through */
@@ -77,11 +77,6 @@ async function openSystemBrowser(url: string): Promise<void> {
   }
 }
 
-/**
- * Google Sign-In through Supabase Auth.
- * Native opens the public web login (system browser / Custom Tabs) so Google cookies work.
- * Web uses same-origin OAuth redirect.
- */
 export async function performNativeGoogleSignIn(): Promise<{
   success: boolean;
   error?: string;
@@ -91,11 +86,11 @@ export async function performNativeGoogleSignIn(): Promise<{
     const Cap = typeof window !== 'undefined' ? (window as any).Capacitor : null;
     const isNative = !!Cap?.isNativePlatform?.();
 
-    // On native: send user to the hosted web login page in the *system* browser.
-    // That page runs Google OAuth with a valid HTTPS redirect and posts the session back.
     if (isNative) {
+      // Hosted login page handles Google OAuth with a valid HTTPS redirect,
+      // then posts tokens back via relay://login — all from in-app Browser.
       const webLogin = `${getPublicWebOrigin()}/login?native=1&provider=google`;
-      await openSystemBrowser(webLogin);
+      await openInAppBrowser(webLogin);
       return { success: true };
     }
 
@@ -114,7 +109,7 @@ export async function performNativeGoogleSignIn(): Promise<{
     }
 
     if (data?.url) {
-      await openSystemBrowser(data.url);
+      await openInAppBrowser(data.url);
     }
 
     return { success: true };
