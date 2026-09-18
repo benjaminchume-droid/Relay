@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { MessageSquare, Users, Search, User, ChevronLeft, ChevronRight, LogOut } from 'lucide-react';
 import { RelayLogoEmblem } from './GlassUI';
 import { useAuthStore } from '../store/authStore';
@@ -21,11 +21,30 @@ export const MainNavigation: React.FC<{
   children: React.ReactNode;
 }> = ({ activeTab, onSelectTab, hideBottomNav = false, hideNav = false, children }) => {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
+  const [keyboardOpen, setKeyboardOpen] = useState(false);
   const { currentUser, logout } = useAuthStore();
   const { chats, activeChatId } = useChatStore();
 
+  // Hide floating nav when soft keyboard is up (Android / iOS WebView)
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.visualViewport) return;
+    const vv = window.visualViewport;
+    const check = () => {
+      // Keyboard typically shrinks visual viewport height by >120px
+      const shrink = window.innerHeight - vv.height;
+      setKeyboardOpen(shrink > 120);
+    };
+    check();
+    vv.addEventListener('resize', check);
+    vv.addEventListener('scroll', check);
+    return () => {
+      vv.removeEventListener('resize', check);
+      vv.removeEventListener('scroll', check);
+    };
+  }, []);
+
   const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
-  const shouldHideBottomNav = !!activeChatId || hideBottomNav || hideNav;
+  const shouldHideBottomNav = !!activeChatId || hideBottomNav || hideNav || keyboardOpen;
 
   const tabs: Array<{ id: MainTab; label: string; icon: React.FC<{ size?: number; className?: string }>; badge?: number }> = [
     { id: 'chats', label: 'Chats', icon: MessageSquare, badge: totalUnread },
