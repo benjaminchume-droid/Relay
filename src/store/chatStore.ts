@@ -55,6 +55,7 @@ interface ChatState {
   updateMemberRole: (chatId: string, memberId: string, role: 'admin' | 'member') => Promise<void>;
   setSearchQuery: (q: string) => void;
   clearError: () => void;
+  acceptChatRequest: (chatId: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -76,7 +77,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           const merged = chats.map((c) => {
             const existing = state.chats.find((sc) => sc.id === c.id);
             if (existing) {
-              return { ...existing, ...c, name: c.name || existing.name, avatarUrl: c.avatarUrl || existing.avatarUrl };
+              return { ...existing, ...c, name: c.name || existing.name, avatarUrl: c.avatarUrl || existing.avatarUrl, requestStatus: c.requestStatus || existing.requestStatus };
             }
             return c;
           });
@@ -255,19 +256,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   reactToMessage: async (messageId, emoji) => {
-    try {
-      await apiService.reactToMessage(messageId, emoji);
-    } catch (err: any) {
-      set({ error: err.message });
-    }
+    try { await apiService.reactToMessage(messageId, emoji); } catch (err: any) { set({ error: err.message }); }
   },
 
   togglePinMessage: async (messageId) => {
-    try {
-      await apiService.togglePinMessage(messageId);
-    } catch (err: any) {
-      set({ error: err.message });
-    }
+    try { await apiService.togglePinMessage(messageId); } catch (err: any) { set({ error: err.message }); }
   },
 
   sendTypingSignal: async (chatId) => {
@@ -303,7 +296,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!current) throw new Error('Not authenticated');
       const chatId = await getOrCreateDirectChat(current.profileId, targetUserId);
 
-      // Resolve peer display name so list never shows "Conversation" / "Direct chat"
       let peerName = '';
       let peerAvatar: string | undefined;
       const cached = profileCache.get(targetUserId);
@@ -326,10 +318,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       if (!peerName) peerName = 'Chat';
 
+      const me = useAuthStore.getState().currentUser;
+      const isContact = !!me?.contacts?.includes(targetUserId);
       const chat: Chat = {
         id: chatId,
         name: peerName,
         type: 'direct',
+        requestStatus: isContact ? 'accepted' : 'pending_outgoing',
         avatarUrl: peerAvatar,
         participants: [current.profileId, targetUserId],
         unreadCount: 0,
@@ -341,7 +336,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
         error: null,
       }));
       await get().fetchMessages(chat.id);
-      // Refresh list so server-side name/avatar win if better
       get().fetchChats();
       return chat.id;
     } catch (err: any) {
@@ -373,7 +367,6 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set({ error: err?.message || 'Failed to create group', isLoading: false });
       throw err;
     } finally {
-      // Keep lock briefly to absorb double-taps
       setTimeout(() => activeGroupCreates.delete(lockKey), 1500);
     }
   },
@@ -418,5 +411,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   updateMemberRole: async () => {},
   setSearchQuery: (q) => set({ searchQuery: q }),
-  clearError: () => set({ error: null })
+  clearError: () => set({ error: null }),
+
+  acceptChatRequest: async (chatId) => {
+    set((state) => ({
+      chats: state.chats.map((c) =>
+        c.id === chatId ? { ...c, requestStatus: 'accepted' as const } : c
+      ),
+    }));
+    try {
+      await (apiService as any).updateChatInfo?.(chatId, { request_status: 'accepted' });
+    } catch {}
+  },
 }));
