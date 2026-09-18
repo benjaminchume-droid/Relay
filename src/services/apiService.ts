@@ -286,8 +286,32 @@ export const apiService = {
       p_name: name,
       p_member_ids: memberIds,
     });
-    if (!error && data) return { chat: data };
-    throw error || new Error("create_group_conversation not available");
+    if (error) {
+      console.error("[apiService.createGroupChat]", error);
+      throw new Error(error.message || "Failed to create group. Please check your network connection.");
+    }
+    // RPC may return a plain UUID string OR an object with id/name
+    let chatId: string | null = null;
+    let chatName = name;
+    if (typeof data === "string" && data.length > 0) {
+      chatId = data;
+    } else if (data && typeof data === "object") {
+      chatId = (data as any).id || (data as any).conversation_id || null;
+      chatName = (data as any).name || name;
+    }
+    if (!chatId) {
+      throw new Error("Group was created but no id was returned. Pull to refresh.");
+    }
+    return {
+      chat: {
+        id: chatId,
+        name: chatName,
+        type: "group" as const,
+        participants: memberIds || [],
+        unreadCount: 0,
+        avatarUrl: undefined,
+      },
+    };
   },
 
   markChatAsRead: async (conversationId: string) => {
