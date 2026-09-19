@@ -10,7 +10,7 @@ import {
   NotificationItem, UserSettings
 } from "../types";
 import { supabase } from "../lib/supabase/client";
-import { formatProfileRecord, createDefaultSettings } from "../store/authStore";
+import { formatProfileRecord, createDefaultSettings } from "../lib/profileFormat";
 import { profileCache } from "./profileCache";
 import {
   getCurrentProfile,
@@ -58,20 +58,18 @@ function mapConversationRow(row: any, myProfileId: string): Chat {
       name;
     avatarUrl = otherProfile.avatar_url || avatarUrl;
   }
-  if (isDirect && !name && other) {
+  if (isDirect && other) {
     const oid = other.profile_id || other.profileId;
     const cached = oid ? profileCache.get(oid) : null;
     if (cached) {
-      name = cached.name || (cached.username ? `@${cached.username}` : "");
+      if (!name || name === "Chat" || name === "Direct chat" || name === "Conversation") {
+        name = cached.name || (cached.username ? `@${cached.username}` : name);
+      }
       avatarUrl = avatarUrl || cached.avatarUrl;
     }
   }
-  if (!name) {
+  if (!name || name === "Direct chat" || name === "Conversation") {
     name = isDirect ? "Chat" : (row.name || "Group");
-    if (name === "Direct chat" || name === "Conversation") name = isDirect ? "Chat" : "Group";
-  }
-  if (name === "Direct chat" || name === "Conversation") {
-    name = isDirect ? "Chat" : "Group";
   }
 
   const lastAt = row.last_message_at || row.updated_at || row.created_at;
@@ -182,34 +180,65 @@ export const apiService = {
         },
         myProfileId
       );
-      if (mapped.type === "direct" && (mapped.name === "Chat" || mapped.name === "Direct chat" || mapped.name === "Conversation" || !mapped.name)) {
+      if (mapped.type === "direct") {
         const peerId = mapped.participants.find((p) => p !== myProfileId);
-        if (peerId) {
+        const needsName =
+          !mapped.name ||
+          mapped.name === "Chat" ||
+          mapped.name === "Direct chat" ||
+          mapped.name === "Conversation" ||
+          mapped.name === "Group";
+        const needsAvatar = !mapped.avatarUrl;
+        if (peerId && (needsName || needsAvatar)) {
           try {
-            const { data: p } = await supabase
-              .from("profiles")
-              .select("id, display_name, full_name, username, avatar_url")
-              .or(`id.eq.${peerId},auth_user_id.eq.${peerId}`)
-              .maybeSingle();
-            if (p) {
-              const nm = p.display_name || p.full_name || (p.username ? `@${p.username}` : "Chat");
-              mapped = { ...mapped, name: nm, avatarUrl: p.avatar_url || mapped.avatarUrl };
-              try {
-                profileCache.set({
-                  id: p.id,
-                  username: p.username || "",
-                  name: p.display_name || p.full_name || p.username || "Chat",
-                  email: "",
-                  avatarUrl: p.avatar_url || undefined,
-                  onlineStatus: "offline",
-                  contacts: [],
-                  blockedUsers: [],
-                  sentRequests: [],
-                  receivedRequests: [],
-                  settings: createDefaultSettings(),
-                  createdAt: new Date().toISOString(),
-                } as any);
-              } catch {}
+            const cached = profileCache.get(peerId);
+            if (cached && (cached.name || cached.username)) {
+              mapped = {
+                ...mapped,
+                name: needsName
+                  ? (cached.name || (cached.username ? `@${cached.username}` : mapped.name))
+                  : mapped.name,
+                avatarUrl: mapped.avatarUrl || cached.avatarUrl,
+              };
+            }
+            const stillNeedsName =
+              !mapped.name ||
+              mapped.name === "Chat" ||
+              mapped.name === "Direct chat" ||
+              mapped.name === "Conversation";
+            if (stillNeedsName || needsAvatar) {
+              const { data: p } = await supabase
+                .from("profiles")
+                .select("id, display_name, full_name, username, avatar_url")
+                .or(`id.eq.${peerId},auth_user_id.eq.${peerId}`)
+                .maybeSingle();
+              if (p) {
+                const nm =
+                  p.display_name ||
+                  p.full_name ||
+                  (p.username ? `@${p.username}` : null);
+                mapped = {
+                  ...mapped,
+                  name: nm || mapped.name || "Chat",
+                  avatarUrl: p.avatar_url || mapped.avatarUrl,
+                };
+                try {
+                  profileCache.set({
+                    id: p.id,
+                    username: p.username || "",
+                    name: p.display_name || p.full_name || p.username || "Chat",
+                    email: "",
+                    avatarUrl: p.avatar_url || undefined,
+                    onlineStatus: "offline",
+                    contacts: [],
+                    blockedUsers: [],
+                    sentRequests: [],
+                    receivedRequests: [],
+                    settings: createDefaultSettings(),
+                    createdAt: new Date().toISOString(),
+                  } as any);
+                } catch {}
+              }
             }
           } catch {}
         }
