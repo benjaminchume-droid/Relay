@@ -88,22 +88,43 @@ export async function resolveInvite(kind: InviteKind, tokenOrId: string): Promis
   }
 
   if (kind === 'community') {
-    const handle = token.replace(/^@/, '');
-    const q = looksLikeUuid(token)
-      ? supabase.from('communities').select('id,name,description,avatar_url,member_count,handle').eq('id', token).maybeSingle()
-      : supabase.from('communities').select('id,name,description,avatar_url,member_count,handle').eq('handle', handle).maybeSingle();
-    const { data: c } = await q;
-    if (c) {
-      return {
-        kind: 'community',
-        token,
-        targetId: c.id,
-        name: c.name || c.handle || 'Community',
-        description: c.description || undefined,
-        avatarUrl: c.avatar_url || undefined,
-        memberCount: c.member_count ?? undefined,
-        valid: true,
-      };
+    const handle = token.replace(/^@/, '').toLowerCase();
+    if (looksLikeUuid(token)) {
+      const { data: c } = await supabase
+        .from('communities')
+        .select('id,name,description,avatar_url,member_count,slug')
+        .eq('id', token)
+        .maybeSingle();
+      if (c) {
+        return {
+          kind: 'community',
+          token,
+          targetId: c.id,
+          name: c.name || c.slug || 'Community',
+          description: c.description || undefined,
+          avatarUrl: c.avatar_url || undefined,
+          memberCount: c.member_count ?? undefined,
+          valid: true,
+        };
+      }
+    } else {
+      const { data: c } = await supabase
+        .from('communities')
+        .select('id,name,description,avatar_url,member_count,slug')
+        .eq('slug', handle)
+        .maybeSingle();
+      if (c) {
+        return {
+          kind: 'community',
+          token,
+          targetId: c.id,
+          name: c.name || c.slug || 'Community',
+          description: c.description || undefined,
+          avatarUrl: c.avatar_url || undefined,
+          memberCount: c.member_count ?? undefined,
+          valid: true,
+        };
+      }
     }
   }
 
@@ -148,22 +169,7 @@ export async function joinInvite(preview: InvitePreview): Promise<{ ok: boolean;
       p_conversation_id: preview.targetId,
     });
     if (!error) return { ok: true };
-
-    const { data: profile } = await supabase
-      .from('profiles')
-      .select('id')
-      .eq('auth_user_id', sessionData.session.user.id)
-      .maybeSingle();
-    if (!profile) return { ok: false, error: error?.message || 'No profile' };
-
-    const { error: e2 } = await supabase.from('conversation_members').upsert({
-      conversation_id: preview.targetId,
-      profile_id: profile.id,
-      role: 'member',
-      status: 'active',
-    });
-    if (e2) return { ok: false, error: error?.message || e2.message };
-    return { ok: true };
+    return { ok: false, error: error.message };
   } catch (e: any) {
     return { ok: false, error: e?.message || 'Join failed' };
   }
