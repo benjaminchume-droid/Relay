@@ -65,7 +65,7 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
   };
 
   return (
-    <div className={`flex flex-col gap-1.5 p-2 rounded-xl min-w-[160px] max-w-[240px] ${
+    <div className={`flex flex-col gap-1 p-1.5 rounded-xl min-w-[120px] max-w-[180px] ${
       isMine 
         ? 'bg-gradient-to-r from-blue-600/90 to-indigo-600/90 text-white shadow-md backdrop-blur-md border border-white/20' 
         : 'bg-white/70 dark:bg-slate-900/80 text-slate-900 dark:text-white shadow-sm backdrop-blur-md border border-slate-200/60 dark:border-white/10'
@@ -98,7 +98,7 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
           type="button"
           onClick={(e) => { e.stopPropagation(); togglePlay(); }}
           disabled={uploadStatus === 'uploading' || uploadStatus === 'failed'}
-          className={`p-2 rounded-full shrink-0 transition-all cursor-pointer shadow-xs ${
+          className={`p-1.5 rounded-full shrink-0 transition-all cursor-pointer shadow-xs ${
             isMine
               ? 'bg-white text-blue-600 hover:bg-blue-50 active:scale-95'
               : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
@@ -106,11 +106,11 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
           title={isPlaying ? 'Pause' : 'Play voice note'}
         >
           {isBuffering ? (
-            <Loader2 size={14} className="animate-spin" />
+            <Loader2 size={12} className="animate-spin" />
           ) : isPlaying ? (
-            <Pause size={14} className="fill-current" />
+            <Pause size={12} className="fill-current" />
           ) : (
-            <Play size={14} className="fill-current ml-0.5" />
+            <Play size={12} className="fill-current ml-0.5" />
           )}
         </button>
 
@@ -120,7 +120,7 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
             onClick={handleWaveformClick}
             onMouseEnter={() => setIsHoveringWaveform(true)}
             onMouseLeave={() => setIsHoveringWaveform(false)}
-            className="h-6 flex items-center gap-0.5 cursor-pointer py-0.5 group select-none"
+            className="h-5 flex items-center gap-0.5 cursor-pointer py-0.5 group select-none"
             title="Click to seek"
           >
             {bars.map((heightPercent, index) => {
