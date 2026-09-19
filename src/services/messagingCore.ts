@@ -102,6 +102,26 @@ export function formatMessageRecord(m: any): Message {
   else if (rawStatus === "failed" || rawStatus === "error") deliveryState = "failed";
   else deliveryState = "sent";
 
+  const rawType = (m.message_type || m.type || "text").toString().toLowerCase();
+  const normalizedType =
+    rawType === "voice_note" || rawType === "audio" ? "voice"
+    : rawType === "photo" ? "image"
+    : rawType || "text";
+
+  const mediaUrl = m.media_url || m.attachments?.[0]?.url || null;
+  const attDuration = m.duration_seconds ?? m.attachments?.[0]?.duration ?? m.attachments?.[0]?.duration_seconds;
+
+  let replyToMessage = m.replyToMessage || m.reply_to_message || undefined;
+  if (!replyToMessage && m.reply_to_message_id) {
+    const preview = m.reply_preview || m.reply_to_preview || m.replyToContent || "";
+    const replyName = m.reply_to_sender_name || m.replyToSenderName || "Reply";
+    replyToMessage = {
+      id: m.reply_to_message_id,
+      senderName: replyName,
+      content: preview || "Original message",
+    };
+  }
+
   return {
     id: m.id,
     chatId: m.conversation_id || m.chat_id || "",
@@ -113,21 +133,22 @@ export function formatMessageRecord(m: any): Message {
       sender.username ||
       "User",
     senderAvatar: m.sender_avatar || sender.avatar_url || undefined,
-    type: m.message_type || m.type || "text",
+    type: normalizedType as any,
     content: m.content || "",
-    attachments: m.media_url
+    mediaUrl: mediaUrl || undefined,
+    attachments: mediaUrl
       ? [
           {
             id: "att_" + m.id,
             type:
-              m.message_type === "image"
+              normalizedType === "image"
                 ? "image"
-                : m.message_type === "voice_note" || m.message_type === "voice"
+                : normalizedType === "voice"
                   ? "voice"
                   : "file",
-            url: m.media_url,
-            fileName: m.file_name || "attachment",
-            duration: m.duration_seconds,
+            url: mediaUrl,
+            fileName: m.file_name || m.attachments?.[0]?.fileName || "attachment",
+            duration: attDuration,
           },
         ]
       : m.attachments || undefined,
@@ -136,7 +157,9 @@ export function formatMessageRecord(m: any): Message {
     isEdited: m.is_edited || false,
     isDeleted: m.is_deleted || false,
     replyToId: m.reply_to_message_id || undefined,
-  };
+    replyToMessage,
+    replyPreview: m.reply_preview || m.reply_to_preview || undefined,
+  } as Message;
 }
 
 export async function sendConversationMessage(
