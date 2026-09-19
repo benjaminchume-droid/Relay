@@ -256,15 +256,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   reactToMessage: async (messageId, emoji) => {
-    try { await apiService.reactToMessage(messageId, emoji); } catch (err: any) { set({ error: err.message }); }
+    try { await (apiService as any).reactToMessage?.(messageId, emoji); } catch (err: any) { set({ error: err.message }); }
   },
 
   togglePinMessage: async (messageId) => {
-    try { await apiService.togglePinMessage(messageId); } catch (err: any) { set({ error: err.message }); }
+    try { await (apiService as any).togglePinMessage?.(messageId); } catch (err: any) { set({ error: err.message }); }
   },
 
   sendTypingSignal: async (chatId) => {
-    try { await apiService.sendTypingSignal(chatId); } catch {}
+    try { await (apiService as any).sendTypingSignal?.(chatId); } catch {}
   },
 
   pollUpdates: async () => {
@@ -414,13 +414,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   clearError: () => set({ error: null }),
 
   acceptChatRequest: async (chatId) => {
+    try {
+      const { error } = await supabase.rpc('accept_chat_request', { p_conversation_id: chatId });
+      if (error) throw error;
+    } catch (e) {
+      console.warn('[acceptChatRequest]', e);
+      try {
+        await (apiService as any).updateChatInfo?.(chatId, { request_status: 'accepted' });
+      } catch {}
+    }
     set((state) => ({
       chats: state.chats.map((c) =>
         c.id === chatId ? { ...c, requestStatus: 'accepted' as const } : c
       ),
     }));
-    try {
-      await (apiService as any).updateChatInfo?.(chatId, { request_status: 'accepted' });
-    } catch {}
   },
 }));
