@@ -4,7 +4,7 @@
  */
 import { supabase } from "../lib/supabase/client";
 import { profileCache } from "./profileCache";
-import { formatProfileRecord } from "../store/authStore";
+import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
 
 export function mapUiMessageType(type?: string): string {
@@ -94,8 +94,6 @@ export async function getOrCreateDirectChat(
 export function formatMessageRecord(m: any): Message {
   if (!m) return {} as Message;
   const sender = m.sender || m.profiles || {};
-  // Only mark "read" when the backend explicitly says so.
-  // Default to "sent" so we never show double blue ticks immediately.
   const rawStatus = (m.send_status || m.delivery_state || m.status || "").toString().toLowerCase();
   let deliveryState: Message["deliveryState"] = "sent";
   if (rawStatus === "read" || rawStatus === "seen") deliveryState = "read";
@@ -186,7 +184,6 @@ export async function sendConversationMessage(
   const realConvId = confirmedMsg.conversation_id || targetConvId;
   const msgFormatted = formatMessageRecord(confirmedMsg);
   msgFormatted.chatId = realConvId;
-  // Freshly sent messages are always "sent", never "read"
   msgFormatted.deliveryState = "sent";
 
   let targetName = "";
