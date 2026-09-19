@@ -5,12 +5,11 @@
 
 import { UserProfile } from '../types';
 import { supabase } from '../lib/supabase/client';
-import { formatProfileRecord } from '../store/authStore';
+import { formatProfileRecord } from '../lib/profileFormat';
 
 const CACHE_KEY = 'relay_profile_cache_v1';
 const memoryCache = new Map<string, UserProfile>();
 
-// Helper to load cache from localStorage on startup
 function loadProfileCache(): Map<string, UserProfile> {
   if (memoryCache.size > 0) return memoryCache;
   try {
@@ -66,11 +65,7 @@ export const profileCache = {
 
   async fetchAndCache(profileId: string): Promise<UserProfile | null> {
     if (!profileId) return null;
-
-    // 1. Return from memory/local cache immediately if available
     const cached = this.get(profileId);
-
-    // 2. Query fresh profile from database
     try {
       const { data, error } = await supabase
         .from('profiles')
@@ -86,7 +81,6 @@ export const profileCache = {
     } catch (e) {
       console.warn(`[profileCache] Failed DB fetch for ${profileId}:`, e);
     }
-
     return cached;
   },
 
