@@ -1,16 +1,28 @@
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
+ *
+ * App shell — URL-driven. Every screen has a real address:
+ *   /messaging          chat list
+ *   /chat/:chatId       a conversation
+ *   /communities        communities + channels
+ *   /explore            For you / Stories / People
+ *   /profile            settings & customization
+ *   /notifications      notification center
+ *   /create-community   create community screen
+ *   /create-group       create group screen
+ *   /search             user search
+ * Deep links work after login (the URL survives the auth round-trip).
  */
-
 import React, { useEffect, useState } from 'react';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { useThemeStore, applyThemeVars } from './store/themeStore';
 import { useChatStore } from './store/chatStore';
 import { AmbientLiquidBackground, RelayLogoEmblem, LiquidRefractionDefs } from './components/GlassUI';
 import { AuthFlow } from './components/AuthFlow';
 import { EmailVerificationPendingScreen } from './components/EmailVerificationPendingScreen';
-import { MainNavigation, MainTab } from './components/Navigation';
+import { MainNavigation } from './components/Navigation';
 import { ChatList } from './components/ChatList';
 import { ChatScreen } from './components/ChatScreen';
 import { CommunitiesView } from './components/CommunitiesView';
@@ -31,16 +43,40 @@ function isAuthedStatus(status: string) {
   return status === 'READY' || status === 'AUTHENTICATED';
 }
 
+type SubRoute = 'create-community' | 'create-group' | 'explore-search' | 'notifications' | null;
+
+function parsePath(pathname: string): {
+  tab: 'chats' | 'communities' | 'explore' | 'profile';
+  chatId: string | null;
+  sub: SubRoute;
+} {
+  const p = pathname.replace(/\/+$/, '') || '/';
+  if (p.startsWith('/chat/')) {
+    const id = decodeURIComponent(p.slice('/chat/'.length));
+    return { tab: 'chats', chatId: id || null, sub: null };
+  }
+  if (p === '/messaging' || p === '/chats' || p === '/') return { tab: 'chats', chatId: null, sub: null };
+  if (p === '/communities') return { tab: 'communities', chatId: null, sub: null };
+  if (p === '/explore') return { tab: 'explore', chatId: null, sub: null };
+  if (p === '/profile') return { tab: 'profile', chatId: null, sub: null };
+  if (p === '/notifications') return { tab: 'chats', chatId: null, sub: 'notifications' };
+  if (p === '/create-community') return { tab: 'communities', chatId: null, sub: 'create-community' };
+  if (p === '/create-group') return { tab: 'chats', chatId: null, sub: 'create-group' };
+  if (p === '/search') return { tab: 'explore', chatId: null, sub: 'explore-search' };
+  return { tab: 'chats', chatId: null, sub: null };
+}
+
 export const App: React.FC = () => {
-  const [activeTab, setActiveTab] = useState<MainTab>('chats');
-  const [activeSubRoute, setActiveSubRoute] = useState<'create-community' | 'create-group' | 'explore-search' | 'notifications' | null>(null);
-  const [isCommunityChatOpen, setIsCommunityChatOpen] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
 
+  const location = useLocation();
+  const navigate = useNavigate();
+  const { tab, chatId: activeChatId, sub: activeSubRoute } = parsePath(location.pathname);
+
   const { status, initializeSession, profile, currentUser, isPasswordResetFlow } = useAuthStore();
   const { customization } = useThemeStore();
-  const { activeChatId, setActiveChat } = useChatStore();
+  const { setActiveChat } = useChatStore();
   useRelayRealtime();
 
   useEffect(() => {
@@ -98,6 +134,12 @@ export const App: React.FC = () => {
     presenceService.stop();
   }, [status]);
 
+  // keep the chat store's activeChatId mirroring the URL (back/forward safe)
+  useEffect(() => {
+    setActiveChat(activeChatId);
+  }, [activeChatId]);
+
+  // browser back closes modals (routes handle their own back)
   useEffect(() => {
     const handlePopState = () => {
       if (showNewChatModal) {
@@ -108,25 +150,22 @@ export const App: React.FC = () => {
         setShowCreateCommunityModal(false);
         return;
       }
-      if (activeSubRoute) {
-        setActiveSubRoute(null);
-        return;
-      }
-      if (activeChatId) {
-        setActiveChat(null);
-        return;
-      }
     };
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
-  }, [showNewChatModal, showCreateCommunityModal, activeSubRoute, activeChatId]);
+  }, [showNewChatModal, showCreateCommunityModal]);
 
-  const handleSelectChat = (chatId: string | null) => {
-    if (chatId) {
-      window.history.pushState({ type: 'chat', chatId }, '');
-    }
+  // ---- URL navigation helpers ----
+  const openChat = (chatId: string | null) => {
     setActiveChat(chatId);
+    if (chatId) navigate(`/chat/${encodeURIComponent(chatId)}`);
+    else navigate('/messaging');
   };
+  const selectTab = (t: 'chats' | 'communities' | 'explore' | 'profile') => {
+    navigate(t === 'chats' ? '/messaging' : `/${t}`);
+  };
+  const openSub = (sub: Exclude<SubRoute, null>) => navigate(`/${sub}`);
+  const closeSub = () => navigate(-1);
 
   if ((status === 'BOOTSTRAPPING' || status === 'AUTH_LOADING') && !profile && !currentUser) {
     return (
@@ -193,79 +232,55 @@ export const App: React.FC = () => {
     <div className="min-h-screen w-full relative bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <AmbientLiquidBackground />
       <MainNavigation
-        activeTab={activeTab}
-        hideNav={!!activeChatId || isCommunityChatOpen || !!activeSubRoute}
-        onSelectTab={(tab) => {
-          setActiveTab(tab);
-          if (tab !== 'chats') setActiveChat(null);
-          if (tab !== 'communities') setIsCommunityChatOpen(false);
-        }}
+        activeTab={tab}
+        hideNav={!!activeChatId || !!activeSubRoute}
+        onSelectTab={selectTab}
       >
         {activeSubRoute === 'notifications' ? (
           <NotificationCenterScreen
-            onBack={() => setActiveSubRoute(null)}
+            onBack={closeSub}
             onOpenConversation={(conversationId) => {
-              setActiveSubRoute(null);
-              handleSelectChat(conversationId);
+              openChat(conversationId);
             }}
           />
         ) : activeSubRoute === 'create-community' ? (
           <CreateCommunityScreen
-            onBack={() => setActiveSubRoute(null)}
-            onSuccess={() => setActiveSubRoute(null)}
+            onBack={closeSub}
+            onSuccess={() => navigate('/communities')}
           />
         ) : activeSubRoute === 'create-group' ? (
           <CreateGroupScreen
-            onBack={() => setActiveSubRoute(null)}
+            onBack={closeSub}
             onSuccess={(chatId) => {
-              setActiveSubRoute(null);
-              setActiveTab('chats');
-              handleSelectChat(chatId);
+              openChat(chatId);
             }}
           />
         ) : activeSubRoute === 'explore-search' ? (
           <UserSearchScreen
-            onBack={() => setActiveSubRoute(null)}
+            onBack={closeSub}
             onSelectChat={(chatId) => {
-              setActiveSubRoute(null);
-              setActiveTab('chats');
-              handleSelectChat(chatId);
+              openChat(chatId);
             }}
           />
         ) : activeChatId ? (
           /* channel/DM chats take over the whole shell regardless of tab (WhatsApp behavior) */
-          <ChatScreen chatId={activeChatId} onBack={() => setActiveChat(null)} />
-        ) : activeTab === 'chats' ? (
+          <ChatScreen chatId={activeChatId} onBack={() => openChat(null)} />
+        ) : tab === 'chats' ? (
           <ChatList
-            onSelectChat={(id) => handleSelectChat(id)}
-            onOpenNewChatModal={() => {
-              window.history.pushState({ modal: 'new-chat' }, '');
-              setShowNewChatModal(true);
-            }}
-            onOpenNotifications={() => {
-              window.history.pushState({ route: 'notifications' }, '');
-              setActiveSubRoute('notifications');
-            }}
+            onSelectChat={(id) => openChat(id)}
+            onOpenNewChatModal={() => setShowNewChatModal(true)}
+            onOpenNotifications={() => openSub('notifications')}
           />
-        ) : activeTab === 'communities' ? (
+        ) : tab === 'communities' ? (
           <CommunitiesView
-            onOpenCreateCommunityModal={() => {
-              window.history.pushState({ route: 'create-community' }, '');
-              setActiveSubRoute('create-community');
-            }}
-            onCommunityChatStateChange={(isOpen) => setIsCommunityChatOpen(isOpen)}
-            onOpenChannelChat={(conversationId) => handleSelectChat(conversationId)}
+            onOpenCreateCommunityModal={() => openSub('create-community')}
+            onCommunityChatStateChange={() => {}}
+            onOpenChannelChat={(conversationId) => openChat(conversationId)}
           />
-        ) : activeTab === 'explore' ? (
+        ) : tab === 'explore' ? (
           <ExploreView
-            onSelectChat={(id) => {
-              setActiveTab('chats');
-              handleSelectChat(id);
-            }}
-            onOpenUserSearch={() => {
-              window.history.pushState({ route: 'explore-search' }, '');
-              setActiveSubRoute('explore-search');
-            }}
+            onSelectChat={(id) => openChat(id)}
+            onOpenUserSearch={() => openSub('explore-search')}
           />
         ) : (
           <ProfileView />
@@ -279,14 +294,10 @@ export const App: React.FC = () => {
         onCloseNewChatModal={() => setShowNewChatModal(false)}
         showCreateCommunityModal={showCreateCommunityModal}
         onCloseCreateCommunityModal={() => setShowCreateCommunityModal(false)}
-        onOpenCreateGroup={() => {
-          window.history.pushState({ route: 'create-group' }, '');
-          setActiveSubRoute('create-group');
-        }}
+        onOpenCreateGroup={() => openSub('create-group')}
         onSelectChat={(id) => {
-          setActiveSubRoute(null);
-          setActiveTab('chats');
-          handleSelectChat(id);
+          setShowNewChatModal(false);
+          openChat(id);
         }}
       />
     </div>

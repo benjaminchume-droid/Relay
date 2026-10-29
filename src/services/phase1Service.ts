@@ -24,7 +24,7 @@ export type StoryItem = {
   authorName: string;
   authorUsername?: string;
   authorAvatar?: string;
-  type: "image" | "video" | "text";
+  type: "image" | "video" | "text" | "voice";
   caption?: string;
   mediaUrl?: string;
   backgroundColor?: string;
@@ -32,6 +32,7 @@ export type StoryItem = {
   viewCount: number;
   expiresAt: string;
   createdAt: string;
+  durationMs?: number;
 };
 
 function mapCommunity(c: any, isJoined = false): Community {
@@ -164,6 +165,7 @@ export async function fetchActiveStories(): Promise<StoryItem[]> {
       viewCount: s.view_count || 0,
       expiresAt: s.expires_at,
       createdAt: s.created_at,
+      durationMs: s.media_duration_ms ?? undefined,
     }));
   }
   const list = Array.isArray(data) ? data : [];
@@ -181,16 +183,20 @@ export async function fetchActiveStories(): Promise<StoryItem[]> {
     viewCount: s.view_count || 0,
     expiresAt: s.expires_at,
     createdAt: s.created_at,
+    durationMs: s.media_duration_ms ?? undefined,
   }));
 }
 
 export async function createStory(payload: {
-  type?: "image" | "video" | "text";
+  type?: "image" | "video" | "text" | "voice";
   caption?: string;
   mediaUrl?: string;
   privacy?: string;
   backgroundColor?: string;
   durationHours?: number;
+  durationMs?: number;
+  textColor?: string;
+  fontName?: string;
 }): Promise<StoryItem> {
   const { data, error } = await supabase.rpc("create_story", {
     p_story_type: payload.type || "text",
@@ -199,6 +205,9 @@ export async function createStory(payload: {
     p_privacy: payload.privacy || "everyone",
     p_background_color: payload.backgroundColor || null,
     p_duration_hours: payload.durationHours || 24,
+    p_duration_ms: payload.durationMs ?? null,
+    p_text_color: payload.textColor ?? null,
+    p_font_name: payload.fontName ?? null,
   });
   if (error) throw error;
   const s = data as any;
