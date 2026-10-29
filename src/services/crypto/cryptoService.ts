@@ -211,19 +211,37 @@ export async function decryptFor(
 ): Promise<string> {
   if (!identity || meId !== myProfileId) await ensureIdentity(myProfileId);
   let state = sessionCache.get(conversationId) || (await cryptoStore.getSession(myProfileId, conversationId));
+  const hadExisting = !!state;
   if (!state && env.pre) state = await sessionFromPrekeyMessage(myProfileId, conversationId, env);
   if (!state) throw new Error("No session for conversation");
   try {
     const pt = await ratchetDecrypt(state, conversationId, env);
     await cryptoStore.setSession(myProfileId, conversationId, state);
+    sessionCache.set(conversationId, state);
     return pt;
   } catch (err) {
-    // Prekey (first-contact) message that failed with a rebuilt session: drop the
-    // broken session so a future attempt can rebuild from scratch instead of
-    // being poisoned forever by a half-advanced ratchet state.
-    if (env.pre) {
-      await cryptoStore.deleteSession(myProfileId, conversationId);
-      sessionCache.delete(conversationId);
+    const msg = String((err as any)?.message || '');
+    // Replays of already-decrypted messages must NOT touch the session.
+    if (msg.includes('replay/underflow')) throw err;
+    // A prekey (first-contact) message failing against an EXISTING session means
+    // the peer re-initiated (concurrent X3DH / our identity rotated on their side).
+    // Rebuild from the prekey header and try once; restore the old session if the
+    // rebuild can't decrypt either.
+    if (env.pre && hadExisting) {
+      const backup = state;
+      try {
+        await cryptoStore.deleteSession(myProfileId, conversationId);
+        sessionCache.delete(conversationId);
+        const fresh = await sessionFromPrekeyMessage(myProfileId, conversationId, env);
+        const pt2 = await ratchetDecrypt(fresh, conversationId, env);
+        await cryptoStore.setSession(myProfileId, conversationId, fresh);
+        sessionCache.set(conversationId, fresh);
+        return pt2;
+      } catch (err2) {
+        await cryptoStore.setSession(myProfileId, conversationId, backup);
+        sessionCache.set(conversationId, backup);
+        throw err2;
+      }
     }
     throw err;
   }

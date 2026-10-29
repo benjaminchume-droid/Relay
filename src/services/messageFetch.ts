@@ -28,6 +28,28 @@ export function scheduleMediaDecrypt(msg: Message): void {
     });
 }
 
+// Decrypted-message memo: the double-ratchet chain only moves forward, so the
+// SAME envelope can never be decrypted twice (history refetches, realtime+fetch
+// double delivery). Remember plaintext per message id so refetches stay readable.
+const PT_MEMO_KEY = 'relay_pt_memo_v1';
+
+function ptMemoLoad(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(PT_MEMO_KEY) || '{}'); } catch { return {}; }
+}
+
+function ptMemoRemember(messageId: string, text: string): void {
+  try {
+    if (!messageId || !text) return;
+    const all = ptMemoLoad();
+    const ids = Object.keys(all);
+    if (ids.length > 500) {
+      for (const k of ids.slice(0, ids.length - 500)) delete all[k];
+    }
+    all[messageId] = text;
+    localStorage.setItem(PT_MEMO_KEY, JSON.stringify(all));
+  } catch { /* storage optional */ }
+}
+
 // Sender-side plaintext memory: own outgoing ciphertext can never be decrypted
 // locally (no receiving chain for self), and running the ratchet on self-ciphertext
 // would corrupt the session. Keep the plaintext keyed by message id instead.
@@ -70,11 +92,19 @@ export async function decryptMessages(
       msg.content = remembered ?? 'Encrypted message';
       continue;
     }
+    // Already decrypted before (realtime echo, earlier refetch, earlier session)?
+    // The ratchet chain can't be rewound — use the memo instead.
+    const memoed = ptMemoLoad()[String(msg.id)];
+    if (memoed != null) {
+      msg.content = memoed;
+      continue;
+    }
     try {
       const payload = decodePayload(await decryptFor(myProfileId, conversationId, parseEnvelope(raw)));
       if (!payload) throw new Error("bad payload");
       if (payload.k === "t" || payload.k === "s") {
         msg.content = payload.t;
+        ptMemoRemember(String(msg.id), payload.t);
       } else if (payload.k === "m") {
         msg.content = "";
         (msg as any)._mediaKey = payload.key;
