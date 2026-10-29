@@ -141,11 +141,13 @@ export const App: React.FC = () => {
   const activeProfile = profile || currentUser;
   const setupFlag =
     typeof localStorage !== 'undefined' && localStorage.getItem('relay_setup_completed') === 'true';
+  // Trust the explicit onboarding flag (or the local completion marker) only —
+  // username/display_name are auto-seeded by the signup trigger, so presence
+  // does NOT mean the user finished setup (this used to flash/skip onboarding).
   const isSetupDone =
     setupFlag ||
     activeProfile?.onboarding_completed === true ||
-    activeProfile?.onboardingCompleted === true ||
-    !!(activeProfile?.username && (activeProfile?.name || (activeProfile as any)?.display_name));
+    activeProfile?.onboardingCompleted === true;
 
   if (status === 'UNAUTHENTICATED') {
     return <AuthFlow />;

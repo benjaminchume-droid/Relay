@@ -80,16 +80,20 @@ export const CommunitiesView: React.FC<{
   const handlePostSubmit = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!newPostContent.trim() || !selectedCommunity) return;
-    await createPost(selectedCommunity.id, {
-      title: newPostTitle,
-      content: newPostContent,
-      imageUrl: newPostImage || undefined
-    });
-    setNewPostContent('');
-    setNewPostTitle('');
-    setNewPostImage('');
-    setShowCreateThreadModal(false);
-    triggerToast('Thread published!');
+    try {
+      await createPost(selectedCommunity.id, {
+        title: newPostTitle,
+        content: newPostContent,
+        imageUrl: newPostImage || undefined
+      });
+      setNewPostContent('');
+      setNewPostTitle('');
+      setNewPostImage('');
+      setShowCreateThreadModal(false);
+      triggerToast('Thread published!');
+    } catch (err: any) {
+      triggerToast(err?.message || 'Could not publish the thread');
+    }
   };
 
   const handleThreadImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -108,9 +112,13 @@ export const CommunitiesView: React.FC<{
   const handleCommentSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!commentText.trim() || !activeThreadPost || !selectedCommunity) return;
-    await addComment(selectedCommunity.id, activeThreadPost.id, commentText);
-    setCommentText('');
-    triggerToast('Comment added!');
+    try {
+      await addComment(selectedCommunity.id, activeThreadPost.id, commentText);
+      setCommentText('');
+      triggerToast('Comment added!');
+    } catch (err: any) {
+      triggerToast(err?.message || 'Could not add the comment');
+    }
   };
 
   const filteredCommunities = communities.filter((c) => 

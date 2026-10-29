@@ -280,6 +280,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   sendTypingSignal: async (chatId) => {
     try {
+      // Throttle: one broadcast per 2s window per chat (was firing every keystroke)
+      const now = Date.now();
+      const last = (get() as any)._lastTypingSent?.[chatId] || 0;
+      if (now - last < 2000) return;
+      (set as any)({ _lastTypingSent: { ...((get() as any)._lastTypingSent || {}), [chatId]: now } });
       relayRealtimeService.broadcastManager.sendTypingSignal(chatId, true);
       setTimeout(() => relayRealtimeService.broadcastManager.sendTypingSignal(chatId, false), 2500);
       void (async () => {

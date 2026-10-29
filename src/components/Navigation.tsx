@@ -54,10 +54,10 @@ export const MainNavigation: React.FC<{
   ];
 
   return (
-    <div className="w-full h-screen flex flex-row overflow-hidden relative bg-slate-50 dark:bg-slate-950">
+    <div className="w-full app-h flex flex-row overflow-hidden relative bg-slate-50 dark:bg-slate-950">
       {currentUser && (
         <aside
-          className={`hidden md:flex flex-col justify-between glass-sidebar shrink-0 h-screen transition-all duration-300 z-40 relative select-none ${
+          className={`hidden md:flex flex-col justify-between glass-sidebar shrink-0 app-h transition-all duration-300 z-40 relative select-none ${
             sidebarExpanded ? 'w-64 p-5' : 'w-20 p-4'
           }`}
         >
@@ -138,8 +138,8 @@ export const MainNavigation: React.FC<{
         </aside>
       )}
 
-      <div className="flex-1 h-screen overflow-hidden flex flex-col justify-between relative">
-        <main className="w-full flex-1 overflow-y-auto relative">{children}</main>
+      <div className="flex-1 app-h overflow-hidden flex flex-col relative">
+        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden relative" style={{ overscrollBehavior: 'contain' }}>{children}</main>
 
         {currentUser && !shouldHideBottomNav && (
           <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">

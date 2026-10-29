@@ -209,9 +209,9 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   };
 
   return (
-    <div className="w-full h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
+    <div className="w-full app-h flex flex-col bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
       <AmbientLiquidBackground />
-      <LiquidPanel as="header" className="w-full sticky top-0 z-30 !rounded-none border-b border-slate-200/60 dark:border-white/10 px-3 flex items-center justify-between shrink-0 bg-white/70 dark:bg-slate-900/70" style={{ borderRadius: 0 }}>
+      <LiquidPanel as="header" className="w-full shrink-0 !rounded-none border-b border-slate-200/60 dark:border-white/10 px-3 flex items-center justify-between bg-white/70 dark:bg-slate-900/70" style={{ borderRadius: 0 }}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button onClick={onBack} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800" type="button"><ArrowLeft size={20} /></button>
           <button type="button" onClick={() => setShowProfile(true)} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
@@ -241,7 +241,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         </div>
       </LiquidPanel>
 
-      <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 max-w-4xl w-full mx-auto">
+      <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 space-y-1.5 max-w-4xl w-full mx-auto" style={{ overscrollBehavior: 'contain' }}>
         {chatMsgs.length === 0 ? (
           <div className="flex flex-col items-center justify-center h-full opacity-60 gap-2">
             <MessageSquare size={32} className="text-slate-400" />
@@ -267,7 +267,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                     {!isMine && <img src={getLetterAvatar(msg.senderName || "U")} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-200 shrink-0 mb-0.5" />}
                     <div
                       className={`px-2.5 py-1.5 rounded-2xl text-[13.5px] leading-snug font-medium max-w-[78%] shadow-xs [overflow-wrap:anywhere] ${
-                        isMine ? "text-white rounded-br-sm" : "bg-white/95 dark:bg-slate-800/95 border border-slate-200/90 text-slate-900 dark:text-slate-100 rounded-bl-sm"
+                        isMine ? "text-white rounded-br-sm glass-bubble-mine" : "glass-bubble-other text-slate-900 dark:text-slate-100 rounded-bl-sm"
                       }`}
                       style={isMine ? { backgroundColor: "var(--primary-accent, #2563EB)" } : undefined}
                     >

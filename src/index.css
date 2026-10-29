@@ -1,6 +1,18 @@
 @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap');
 @import "tailwindcss";
 
+/* Tailwind v4: make the `dark:` utility variant follow the app's theme engine
+   (the .dark class set by applyThemeVars) instead of the OS media query.
+   Without this, toggling Light/Dark in Settings has no effect on most screens. */
+@custom-variant dark (&:where(.dark, .dark *));
+
+/* App shell height: use the dynamic viewport so browser chrome never covers
+   the chat header or composer on mobile. */
+@utility app-h {
+  height: 100vh;
+  height: 100dvh;
+}
+
 :root {
   --primary-accent: #2563EB;
   --neutral-button: #F1F5F9;

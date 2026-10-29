@@ -152,14 +152,23 @@ async function loadProfileForUser(sbUser: any): Promise<UserProfile | null> {
     .select('*')
     .or(`id.eq.${sbUser.id},auth_user_id.eq.${sbUser.id}`)
     .maybeSingle();
-  if (!data) return formatProfileRecord({ id: sbUser.id, email: sbUser.email }, sbUser);
+  if (!data) {
+    // No profile row yet (fresh signup) — DO NOT fabricate an onboarded profile
+    // from the email handle, otherwise onboarding is skipped/flashed.
+    const fresh = formatProfileRecord({ id: sbUser.id, email: sbUser.email }, sbUser);
+    (fresh as any).onboardingCompleted = false;
+    (fresh as any).username = '';
+    (fresh as any).name = '';
+    return fresh;
+  }
   return formatProfileRecord(data, sbUser);
 }
 
 function profileIsOnboarded(p: UserProfile | null): boolean {
   if (!p) return false;
-  if ((p as any).onboarding_completed === true || (p as any).onboardingCompleted === true) return true;
-  return !!(p.username && (p.name || (p as any).display_name));
+  // Trust the explicit flag only — username/display_name are auto-seeded by the
+  // signup trigger (email local part), so their presence does NOT mean onboarded.
+  return (p as any).onboarding_completed === true || (p as any).onboardingCompleted === true;
 }
 
 let cooldownTimer: ReturnType<typeof setInterval> | null = null;

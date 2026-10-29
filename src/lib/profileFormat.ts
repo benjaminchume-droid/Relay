@@ -84,6 +84,7 @@ export function formatProfileRecord(p: any, sbUser?: any): UserProfile {
     sentRequests: p.sent_requests || [],
     receivedRequests: p.received_requests || [],
     settings,
+    onboardingCompleted: p.onboarding_completed === true || p.onboardingCompleted === true,
     createdAt: p.created_at || new Date().toISOString()
   };
 }

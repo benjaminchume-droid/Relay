@@ -270,7 +270,8 @@ export const LiquidPanel: React.FC<{
   style?: React.CSSProperties;
   as?: 'div' | 'header' | 'form' | 'aside';
   heavy?: boolean;
-}> = ({ children, className = '', blur, style, as = 'div', heavy = false }) => {
+  onSubmit?: (e: React.FormEvent) => void;
+}> = ({ children, className = '', blur, style, as = 'div', heavy = false, onSubmit }) => {
   const { customization } = useThemeStore();
   const Tag = as as any;
   const blurPx = blur ?? customization.blurIntensity ?? 24;
@@ -279,6 +280,7 @@ export const LiquidPanel: React.FC<{
     : `blur(${Math.max(10, blurPx)}px) saturate(160%)`;
   return (
     <Tag
+      onSubmit={onSubmit}
       className={`liquid-panel ${heavy ? 'liquid-panel-heavy' : ''} ${className}`}
       style={{
         backdropFilter: chain,

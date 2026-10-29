@@ -4,11 +4,53 @@
  */
 
 import React, { useState } from 'react';
-import { ArrowLeft, Upload, Check, Shield, Lock, Globe, QrCode, Sparkles, Image as ImageIcon } from 'lucide-react';
+import { ArrowLeft, Upload, Check, Shield, Lock, Globe, QrCode, Sparkles, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import { GlassCard, GlassButton, GlassInput } from './GlassUI';
 import { useCommunityStore } from '../store/communityStore';
+import { supabase } from '../lib/supabase/client';
 import { formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
+
+/** Downscale an image file in-browser and return a JPEG data URL (keeps RPC payloads small). */
+async function compressImage(file: File, maxDim: number, quality = 0.82): Promise<string> {
+  const dataUrl = await new Promise<string>((resolve, reject) => {
+    const r = new FileReader();
+    r.onload = () => resolve(String(r.result));
+    r.onerror = reject;
+    r.readAsDataURL(file);
+  });
+  const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+    const el = new Image();
+    el.onload = () => resolve(el);
+    el.onerror = reject;
+    el.src = dataUrl;
+  });
+  const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+  const w = Math.max(1, Math.round(img.width * scale));
+  const h = Math.max(1, Math.round(img.height * scale));
+  const canvas = document.createElement('canvas');
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext('2d');
+  if (!ctx) return dataUrl;
+  ctx.drawImage(img, 0, 0, w, h);
+  return canvas.toDataURL('image/jpeg', quality);
+}
+
+/** Upload a compressed image to the public avatars bucket and return a durable URL. */
+async function uploadToStorage(base64: string, uid: string, kind: string): Promise<string> {
+  const binary = atob(base64.includes(',') ? base64.split(',')[1] : base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  const path = `${uid}/${kind}_${Date.now()}.jpg`;
+  const { error } = await supabase.storage.from('avatars').upload(path, bytes, {
+    contentType: 'image/jpeg',
+    upsert: true,
+  });
+  if (error) throw error;
+  const { data: pub } = supabase.storage.from('avatars').getPublicUrl(path);
+  return pub?.publicUrl || '';
+}
 
 export const CreateCommunityScreen: React.FC<{
   onBack: () => void;
@@ -37,29 +79,24 @@ export const CreateCommunityScreen: React.FC<{
   const handleAvatarUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        if (evt.target?.result) setAvatarUrl(evt.target.result as string);
-      };
-      reader.readAsDataURL(file);
+      e.target.value = '';
+      compressImage(file, 512, 0.85).then((d) => setAvatarUrl(d)).catch(() => {});
     }
   };
 
   const handleBannerUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (file) {
-      const reader = new FileReader();
-      reader.onload = (evt) => {
-        if (evt.target?.result) setBannerUrl(evt.target.result as string);
-      };
-      reader.readAsDataURL(file);
+      e.target.value = '';
+      compressImage(file, 1280, 0.8).then((d) => setBannerUrl(d)).catch(() => {});
     }
   };
 
   // Step 3
   const [privacy, setPrivacy] = useState<'public' | 'private' | 'invite'>('public');
 
-  const { createCommunity, isLoading } = useCommunityStore();
+  const { createCommunity, isLoading, error: communityError } = useCommunityStore();
+  const [createError, setCreateError] = useState<string | null>(null);
 
   const handleNextStep = (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,20 +106,36 @@ export const CreateCommunityScreen: React.FC<{
   };
 
   const handleCreate = async () => {
-    if (!name.trim()) return;
+    if (!name.trim() || isLoading) return;
+    setCreateError(null);
     const cleanHandle = handle.trim() ? handle.replace(/^@+/, '') : name.toLowerCase().replace(/\s+/g, '-');
-    const finalAvatar = avatarUrl || getLetterAvatar(name);
-    
-    await createCommunity({
-      name,
-      handle: cleanHandle,
-      description,
-      category,
-      avatarUrl: finalAvatar,
-      bannerUrl: bannerUrl || undefined
-    });
-    
-    onSuccess(cleanHandle);
+    try {
+      // Durable, small URLs instead of megabyte data-URIs (which break the RPC).
+      let finalAvatar = getLetterAvatar(name);
+      if (avatarUrl) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) finalAvatar = await uploadToStorage(avatarUrl, user.id, 'community_avatar');
+        else finalAvatar = avatarUrl;
+      }
+      let finalBanner: string | undefined;
+      if (bannerUrl) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) finalBanner = await uploadToStorage(bannerUrl, user.id, 'community_banner');
+        else finalBanner = bannerUrl;
+      }
+      await createCommunity({
+        name: name.trim(),
+        handle: cleanHandle,
+        description,
+        category,
+        avatarUrl: finalAvatar,
+        bannerUrl: finalBanner,
+        isPrivate: privacy !== 'public',
+      });
+      onSuccess(cleanHandle);
+    } catch (err: any) {
+      setCreateError(err?.message || 'Could not create the community. Please try again.');
+    }
   };
 
   return (
@@ -314,9 +367,16 @@ export const CreateCommunityScreen: React.FC<{
               Back
             </GlassButton>
             <GlassButton onClick={handleCreate} variant="primary" disabled={isLoading} className="py-2.5 px-6 text-xs font-bold">
-              {isLoading ? 'Creating...' : 'Publish & Launch Community'}
+              {isLoading ? 'Creating…' : 'Publish & Launch Community'}
             </GlassButton>
           </div>
+
+          {(createError || communityError) && (
+            <div className="flex items-start gap-2 p-3 rounded-2xl bg-red-500/10 border border-red-400/30 text-red-600 dark:text-red-400 text-xs">
+              <AlertCircle size={15} className="shrink-0 mt-0.5" />
+              <span className="font-medium leading-relaxed">{createError || communityError}</span>
+            </div>
+          )}
         </div>
       )}
     </div>
