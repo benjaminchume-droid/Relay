@@ -9,6 +9,7 @@ import {
   Bell, HardDrive, HelpCircle, AlertTriangle, Trash2, Smartphone, Eye, Sparkles, Sliders, KeyRound
 } from 'lucide-react';
 import { GlassCard, GlassButton, GlassInput, GlassSlider } from './GlassUI';
+import { supabase } from '../lib/supabase/client';
 import { PermissionsView } from './PermissionsView';
 import { useAuthStore } from '../store/authStore';
 import { useThemeStore, ACCENT_COLOR_CONFIG, GLASS_PRESETS } from '../store/themeStore';
@@ -40,19 +41,54 @@ export const ProfileView: React.FC = () => {
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [statusMessage, setStatusMessage] = useState(currentUser?.statusMessage || '');
   const [saveSuccess, setSaveSuccess] = useState(false);
+  const [saveError, setSaveError] = useState<string | null>(null);
+  const [usernameCheck, setUsernameCheck] = useState<{ checking: boolean; available: boolean | null; message: string }>({ checking: false, available: null, message: '' });
+
+  // server-side username availability with debounce (edit-profile hardening)
+  useEffect(() => {
+    const handle = username.trim().toLowerCase().replace(/^@+/, '');
+    if (!handle || handle === (currentUser?.username || '').toLowerCase()) {
+      setUsernameCheck({ checking: false, available: null, message: '' });
+      return;
+    }
+    if (handle.length < 3 || handle.length > 20 || !/^[a-z0-9_]+$/.test(handle)) {
+      setUsernameCheck({ checking: false, available: false, message: '3–20 chars, letters/numbers/underscores only' });
+      return;
+    }
+    setUsernameCheck((s) => ({ ...s, checking: true }));
+    const t = setTimeout(async () => {
+      try {
+        const { data, error } = await supabase.rpc('username_available', { p_username: handle });
+        const available = !error && data === true;
+        setUsernameCheck({ checking: false, available, message: available ? 'Username is available' : 'Username taken' });
+      } catch {
+        setUsernameCheck({ checking: false, available: null, message: '' });
+      }
+    }, 350);
+    return () => clearTimeout(t);
+  }, [username]);
 
   if (!currentUser) return null;
 
   const handleSaveProfile = async (e: React.FormEvent) => {
     e.preventDefault();
-    await updateProfile({
-      name: displayName,
-      username,
-      bio,
-      statusMessage
-    });
-    setSaveSuccess(true);
-    setTimeout(() => setSaveSuccess(false), 2000);
+    setSaveError(null);
+    if (usernameCheck.available === false) {
+      setSaveError(usernameCheck.message || 'Username not available');
+      return;
+    }
+    try {
+      await updateProfile({
+        name: displayName,
+        username,
+        bio,
+        statusMessage
+      });
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2000);
+    } catch (err: any) {
+      setSaveError(err?.message || 'Failed to save profile');
+    }
   };
 
   const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>, isBanner: boolean) => {
@@ -375,6 +411,13 @@ export const ProfileView: React.FC = () => {
               value={username}
               onChange={(e) => setUsername(e.target.value)}
             />
+            {usernameCheck.checking && <p className="-mt-2 px-1 text-[10px] font-semibold text-slate-400">Checking availability…</p>}
+            {!usernameCheck.checking && usernameCheck.available === true && (
+              <p className="-mt-2 px-1 text-[10px] font-bold text-emerald-600">✓ {usernameCheck.message}</p>
+            )}
+            {!usernameCheck.checking && usernameCheck.available === false && (
+              <p className="-mt-2 px-1 text-[10px] font-bold text-red-500">✗ {usernameCheck.message}</p>
+            )}
 
             <GlassInput 
               label="Custom Status Message"
@@ -395,6 +438,11 @@ export const ProfileView: React.FC = () => {
             {saveSuccess && (
               <div className="p-2.5 bg-emerald-50 text-emerald-700 text-xs rounded-xl font-medium">
                 Profile changes saved!
+              </div>
+            )}
+            {saveError && (
+              <div className="p-2.5 bg-red-50 text-red-600 text-xs rounded-xl font-medium">
+                {saveError}
               </div>
             )}
 

@@ -144,12 +144,12 @@ export const CreateCommunityScreen: React.FC<{
       <div className="flex items-center gap-3">
         <button 
           onClick={step > 1 ? () => setStep((step - 1) as any) : onBack}
-          className="p-2 rounded-2xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all"
+          className="p-2 rounded-2xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all dark:bg-slate-900"
         >
           <ArrowLeft size={18} />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Create Community</h1>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Create Community</h1>
           <p className="text-xs text-slate-500 font-medium">Step {step} of 3</p>
         </div>
       </div>
@@ -166,7 +166,7 @@ export const CreateCommunityScreen: React.FC<{
       {step === 1 && (
         <form onSubmit={handleNextStep} className="space-y-4">
           <GlassCard className="p-6 space-y-4">
-            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
               <Sparkles size={16} className="text-blue-500" />
               <span>Community Information</span>
             </h2>
@@ -198,7 +198,7 @@ export const CreateCommunityScreen: React.FC<{
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
                 rows={3}
-                className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none"
+                className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none dark:text-slate-100"
               />
             </div>
 
@@ -207,7 +207,7 @@ export const CreateCommunityScreen: React.FC<{
               <select
                 value={category}
                 onChange={(e) => setCategory(e.target.value)}
-                className="w-full py-2.5 px-3 rounded-2xl glass-input text-xs text-slate-800 font-semibold focus:outline-none bg-white/80"
+                className="w-full py-2.5 px-3 rounded-2xl glass-input text-xs text-slate-800 font-semibold focus:outline-none bg-white/80 dark:bg-slate-900/80"
               >
                 <option value="Technology">Technology & Software</option>
                 <option value="Design">Design & Art</option>
@@ -233,7 +233,7 @@ export const CreateCommunityScreen: React.FC<{
       {step === 2 && (
         <div className="space-y-4">
           <GlassCard className="p-6 space-y-5">
-            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
               <ImageIcon size={16} className="text-purple-500" />
               <span>Avatar & Banner Customization</span>
             </h2>
@@ -241,7 +241,7 @@ export const CreateCommunityScreen: React.FC<{
             {/* Banner Preview & Selection */}
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase px-1 block">Cover Banner (Optional)</label>
-              <div className="h-28 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative bg-slate-100 flex items-center justify-center">
+              <div className="h-28 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative bg-slate-100 flex items-center justify-center dark:bg-slate-800">
                 {bannerUrl ? (
                   <img src={bannerUrl} alt="banner preview" className="w-full h-full object-cover" />
                 ) : (
@@ -265,11 +265,11 @@ export const CreateCommunityScreen: React.FC<{
             {/* Avatar Preview & Selection */}
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase px-1 block">Community Avatar</label>
-              <div className="flex items-center gap-4 p-3 bg-slate-50/80 rounded-2xl border border-slate-200">
+              <div className="flex items-center gap-4 p-3 bg-slate-50/80 rounded-2xl border border-slate-200 dark:bg-black">
                 <img 
                   src={avatarUrl || generateInitialAvatar(name)} 
                   alt="avatar preview" 
-                  className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-md shrink-0" 
+                  className="w-16 h-16 rounded-2xl object-cover border-2 border-white shadow-md shrink-0 dark:border-white/10" 
                 />
                 <div className="space-y-1 text-left">
                   <p className="text-xs font-semibold text-slate-700">Select profile picture from gallery or leave blank for a random color avatar.</p>
@@ -302,7 +302,7 @@ export const CreateCommunityScreen: React.FC<{
       {step === 3 && (
         <div className="space-y-4">
           <GlassCard className="p-6 space-y-5">
-            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
               <Shield size={16} className="text-emerald-500" />
               <span>Access & Privacy Controls</span>
             </h2>
@@ -345,7 +345,7 @@ export const CreateCommunityScreen: React.FC<{
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
-                        <h4 className="text-xs font-bold text-slate-800">{opt.title}</h4>
+                        <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">{opt.title}</h4>
                         {isSelected && <Check size={16} className="text-blue-600 font-bold" />}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5 font-medium leading-relaxed">{opt.desc}</p>
@@ -356,9 +356,9 @@ export const CreateCommunityScreen: React.FC<{
             </div>
 
             {/* Generated Invite Preview */}
-            <div className="p-3 bg-slate-100/80 rounded-2xl border border-slate-200/60 text-xs flex items-center justify-between">
+            <div className="p-3 bg-slate-100/80 rounded-2xl border border-slate-200/60 text-xs flex items-center justify-between dark:bg-slate-800">
               <span className="text-[11px] text-slate-500 font-mono">relay.app/c/{handle || 'community'}</span>
-              <span className="text-[10px] bg-white px-2 py-0.5 rounded-lg border border-slate-200 font-bold text-slate-700">Auto-Generated</span>
+              <span className="text-[10px] bg-white px-2 py-0.5 rounded-lg border border-slate-200 font-bold text-slate-700 dark:bg-slate-900">Auto-Generated</span>
             </div>
           </GlassCard>
 

@@ -45,7 +45,7 @@ export const GroupProfileScreen: React.FC<{
 
   if (!chat) {
     return (
-      <div className="w-full min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center text-slate-700">
+      <div className="w-full min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center text-slate-700 dark:bg-black">
         <p className="text-sm font-semibold mb-3">Group details unavailable</p>
         <button 
           onClick={onBack} 
@@ -140,19 +140,19 @@ export const GroupProfileScreen: React.FC<{
     <div className="w-full h-screen bg-[#F2F5F8] flex flex-col justify-between overflow-y-auto relative select-none">
       
       {/* Top Bar */}
-      <div className="p-3 sticky top-0 z-30 bg-[#F2F5F8]/80 backdrop-blur-xl border-b border-white/60">
+      <div className="p-3 sticky top-0 z-30 bg-[#F2F5F8]/80 backdrop-blur-xl border-b border-white/60 dark:border-white/10">
         <div className="max-w-xl mx-auto flex items-center justify-between">
           <button 
             onClick={onBack}
-            className="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center shadow-xs border border-white hover:scale-105 transition-all cursor-pointer"
+            className="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center shadow-xs border border-white hover:scale-105 transition-all cursor-pointer dark:bg-slate-900"
           >
             <ArrowLeft size={18} />
           </button>
-          <span className="text-sm font-bold text-slate-800">Group Info</span>
+          <span className="text-sm font-bold text-slate-800 dark:text-slate-100">Group Info</span>
           {isAdmin ? (
             <button 
               onClick={() => setShowPermissionsModal(true)}
-              className="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center shadow-xs border border-white hover:scale-105 transition-all cursor-pointer"
+              className="w-9 h-9 rounded-full bg-white text-slate-700 flex items-center justify-center shadow-xs border border-white hover:scale-105 transition-all cursor-pointer dark:bg-slate-900"
               title="Group Permissions & Settings"
             >
               <MoreVertical size={18} />
@@ -171,7 +171,7 @@ export const GroupProfileScreen: React.FC<{
             <img 
               src={chat.avatarUrl || getLetterAvatar(chat.name)} 
               alt={chat.name}
-              className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md"
+              className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md dark:border-white/10"
             />
             <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-blue-600 text-white shadow-md">
               <Users size={12} />
@@ -179,7 +179,7 @@ export const GroupProfileScreen: React.FC<{
           </div>
 
           <div>
-            <h2 className="text-lg font-bold text-slate-900 leading-snug">{chat.name}</h2>
+            <h2 className="text-lg font-bold text-slate-900 leading-snug dark:text-white">{chat.name}</h2>
             <p className="text-xs text-slate-500 font-medium mt-0.5">{chat.description || 'Group Chat'}</p>
           </div>
 
@@ -206,14 +206,14 @@ export const GroupProfileScreen: React.FC<{
                 <Clock size={16} />
               </div>
               <div>
-                <h4 className="text-xs font-bold text-slate-800">Disappearing Messages</h4>
+                <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Disappearing Messages</h4>
                 <p className="text-[10px] text-slate-500">Auto-delete messages after duration</p>
               </div>
             </div>
             <select
               value={chat.disappearingMessages || 'off'}
               onChange={(e) => handleDisappearingChange(e.target.value as any)}
-              className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500"
+              className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
             >
               <option value="off">Off</option>
               <option value="24h">24 Hours</option>
@@ -225,7 +225,7 @@ export const GroupProfileScreen: React.FC<{
           {/* Group Invite Link */}
           <div className="flex items-center justify-between pt-1">
             <div className="min-w-0 flex-1 mr-3">
-              <h4 className="text-xs font-bold text-slate-800">Invite Link</h4>
+              <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">Invite Link</h4>
               <p className="text-[10px] text-slate-400 font-mono truncate">{chat.inviteLink || getGroupInviteUrl(chat.id)}</p>
             </div>
             <button
@@ -276,12 +276,12 @@ export const GroupProfileScreen: React.FC<{
                     <img 
                       src={getLetterAvatar(isMe ? (currentUser?.name || 'You') : `User ${pId.slice(-4)}`)} 
                       alt="User"
-                      className="w-9 h-9 rounded-full object-cover border border-white shadow-xs" 
+                      className="w-9 h-9 rounded-full object-cover border border-white shadow-xs dark:border-white/10" 
                     />
                   </div>
                   <div className="min-w-0">
                     <div className="flex items-center gap-1.5">
-                      <span className="text-xs font-bold text-slate-800 truncate">
+                      <span className="text-xs font-bold text-slate-800 truncate dark:text-slate-100">
                         {isMe ? 'You' : `User ${pId.slice(-4)}`}
                       </span>
                       {role === 'creator' && (
@@ -304,7 +304,7 @@ export const GroupProfileScreen: React.FC<{
                       e.stopPropagation();
                       setSelectedMemberModal({ id: pId, role });
                     }}
-                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer"
+                    className="p-1.5 text-slate-400 hover:text-slate-700 rounded-full hover:bg-slate-100 transition-colors cursor-pointer dark:bg-slate-800"
                     title="Member Options"
                   >
                     <MoreVertical size={16} />
@@ -344,10 +344,10 @@ export const GroupProfileScreen: React.FC<{
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-white space-y-4 text-left"
+              className="bg-white rounded-3xl max-w-sm w-full p-5 shadow-2xl border border-white space-y-4 text-left dark:bg-slate-900"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+                <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
                   <Shield size={16} className="text-blue-600" /> Group Permissions
                 </h3>
                 <button onClick={() => setShowPermissionsModal(false)} className="text-slate-400 hover:text-slate-700">
@@ -355,16 +355,16 @@ export const GroupProfileScreen: React.FC<{
                 </button>
               </div>
               <div className="space-y-3.5 text-xs">
-                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 border border-slate-200 dark:bg-black">
                   <div>
-                    <h5 className="font-bold text-slate-800">Admin Approval</h5>
+                    <h5 className="font-bold text-slate-800 dark:text-slate-100">Admin Approval</h5>
                     <p className="text-[10px] text-slate-500">Require approval to join via link</p>
                   </div>
                   <input type="checkbox" checked={permissions.requiresApproval} onChange={handleToggleApproval} className="w-4 h-4 rounded text-blue-600 cursor-pointer" />
                 </div>
-                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 border border-slate-200">
+                <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 border border-slate-200 dark:bg-black">
                   <div>
-                    <h5 className="font-bold text-slate-800">Public Group</h5>
+                    <h5 className="font-bold text-slate-800 dark:text-slate-100">Public Group</h5>
                     <p className="text-[10px] text-slate-500">Findable in explore & search</p>
                   </div>
                   <input type="checkbox" checked={permissions.privacy === 'public'} onChange={handleTogglePrivacy} className="w-4 h-4 rounded text-blue-600 cursor-pointer" />

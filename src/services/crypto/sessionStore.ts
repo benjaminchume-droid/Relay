@@ -3,7 +3,9 @@
  * SPDX-License-Identifier: Apache-2.0
  *
  * Device-local crypto storage (IndexedDB). Private material never leaves here.
- * Stores: identity key bundle, one ratchet session per conversation.
+ * Stores: identity key bundle, one ratchet session per conversation+peer.
+ * v2 sessions are keyed `${profileId}:${conversationId}:${peerId}`; the legacy
+ * `${profileId}:${conversationId}` key is kept readable for DM continuity.
  */
 import type { LocalIdentity, RatchetState } from "./signalProtocol";
 
@@ -41,15 +43,28 @@ function tx<T>(store: string, mode: IDBTransactionMode, fn: (s: IDBObjectStore) 
   );
 }
 
+function sessionKey(profileId: string, conversationId: string, peerId?: string): string {
+  return peerId ? `${profileId}:${conversationId}:${peerId}` : `${profileId}:${conversationId}`;
+}
+
 export const cryptoStore = {
   getIdentity: (profileId: string): Promise<LocalIdentity | undefined> =>
     tx<LocalIdentity | undefined>(STORE_IDENTITY, "readonly", (s) => s.get(profileId) as IDBRequest<LocalIdentity | undefined>),
   setIdentity: (profileId: string, identity: LocalIdentity): Promise<IDBValidKey> =>
     tx(STORE_IDENTITY, "readwrite", (s) => s.put(identity, profileId)),
-  getSession: (profileId: string, conversationId: string): Promise<RatchetState | undefined> =>
-    tx<RatchetState | undefined>(STORE_SESSIONS, "readonly", (s) => s.get(`${profileId}:${conversationId}`) as IDBRequest<RatchetState | undefined>),
-  setSession: (profileId: string, conversationId: string, state: RatchetState): Promise<IDBValidKey> =>
-    tx(STORE_SESSIONS, "readwrite", (s) => s.put(state, `${profileId}:${conversationId}`)),
-  deleteSession: (profileId: string, conversationId: string): Promise<undefined> =>
-    tx(STORE_SESSIONS, "readwrite", (s) => s.delete(`${profileId}:${conversationId}`) as unknown as IDBRequest<undefined>),
+
+  /** v2 session — one per conversation+peer (fan-out capable). */
+  getSession: (profileId: string, conversationId: string, peerId: string): Promise<RatchetState | undefined> =>
+    tx<RatchetState | undefined>(STORE_SESSIONS, "readonly", (s) =>
+      s.get(sessionKey(profileId, conversationId, peerId)) as IDBRequest<RatchetState | undefined>),
+  setSession: (profileId: string, conversationId: string, peerId: string, state: RatchetState): Promise<IDBValidKey> =>
+    tx(STORE_SESSIONS, "readwrite", (s) => s.put(state, sessionKey(profileId, conversationId, peerId))),
+  deleteSession: (profileId: string, conversationId: string, peerId?: string): Promise<undefined> =>
+    tx(STORE_SESSIONS, "readwrite", (s) =>
+      s.delete(sessionKey(profileId, conversationId, peerId)) as unknown as IDBRequest<undefined>),
+
+  /** Pre-upgrade session stored under the bare conversation key. */
+  getLegacySession: (profileId: string, conversationId: string): Promise<RatchetState | undefined> =>
+    tx<RatchetState | undefined>(STORE_SESSIONS, "readonly", (s) =>
+      s.get(sessionKey(profileId, conversationId)) as IDBRequest<RatchetState | undefined>),
 };

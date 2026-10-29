@@ -78,12 +78,12 @@ export const UserSearchScreen: React.FC<{
       <div className="flex items-center gap-3">
         <button 
           onClick={onBack}
-          className="p-2 rounded-2xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all"
+          className="p-2 rounded-2xl bg-white/80 hover:bg-white text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all dark:bg-slate-900"
         >
           <ArrowLeft size={18} />
         </button>
         <div>
-          <h1 className="text-xl font-bold text-slate-800">Find & Connect Users</h1>
+          <h1 className="text-xl font-bold text-slate-800 dark:text-slate-100">Find & Connect Users</h1>
           <p className="text-xs text-slate-500 font-medium">Search handles, usernames, or bios</p>
         </div>
       </div>
@@ -160,7 +160,7 @@ export const UserSearchScreen: React.FC<{
             {searchResults.map((user) => {
               const status = friendStatuses[user.id] || 'initial';
               return (
-                <GlassCard key={user.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/90 transition-all">
+                <GlassCard key={user.id} className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4 hover:bg-white/90 transition-all dark:bg-slate-900/90">
                   <div className="flex items-center gap-3.5 min-w-0">
                     <img 
                       src={user.avatarUrl || getLetterAvatar(user.name || user.username)} 
@@ -168,11 +168,11 @@ export const UserSearchScreen: React.FC<{
                       onError={(e) => {
                         (e.target as HTMLImageElement).src = getLetterAvatar(user.name || user.username);
                       }}
-                      className="w-12 h-12 rounded-2xl object-cover border border-white shadow-xs shrink-0" 
+                      className="w-12 h-12 rounded-2xl object-cover border border-white shadow-xs shrink-0 dark:border-white/10" 
                     />
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center gap-2">
-                        <h3 className="text-xs font-bold text-slate-800 truncate">{user.name || user.username}</h3>
+                        <h3 className="text-xs font-bold text-slate-800 truncate dark:text-slate-100">{user.name || user.username}</h3>
                         <span className="text-[10px] text-slate-500 font-mono font-semibold">{formatHandle(user.username)}</span>
                       </div>
                       <p className="text-[11px] text-slate-500 line-clamp-1 mt-0.5 font-medium">{user.bio || 'Relay community member'}</p>
@@ -195,7 +195,7 @@ export const UserSearchScreen: React.FC<{
                     {status === 'pending' && (
                       <button 
                         disabled 
-                        className="py-1.5 px-3 text-xs font-semibold bg-slate-100 text-slate-400 rounded-xl border border-slate-200/60 flex items-center gap-1.5 cursor-not-allowed opacity-80"
+                        className="py-1.5 px-3 text-xs font-semibold bg-slate-100 text-slate-400 rounded-xl border border-slate-200/60 flex items-center gap-1.5 cursor-not-allowed opacity-80 dark:bg-slate-800"
                       >
                         <Clock size={13} className="animate-spin" />
                         <span>Pending</span>

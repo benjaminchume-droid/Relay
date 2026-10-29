@@ -4,12 +4,13 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck, MessageSquarePlus } from 'lucide-react';
+import { Search, Plus, Pin, MessageSquare, Users, UserPlus, Check, CheckCheck, MessageSquarePlus, Bell } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import { GlassCard, GlassInput, GlassButton } from './GlassUI';
 import { useChatStore } from '../store/chatStore';
 import { useAuthStore } from '../store/authStore';
 import { useContactsStore } from '../store/contactsStore';
+import { useNotificationStore } from '../services/notificationService';
 import { Chat } from '../types';
 import { formatChatTimestamp, formatHandle, formatRelativeTime } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
@@ -18,7 +19,8 @@ import { fetchPresence, presenceLabel, isPresenceActive, type PresenceRow } from
 export const ChatList: React.FC<{
   onSelectChat: (chatId: string) => void;
   onOpenNewChatModal: () => void;
-}> = ({ onSelectChat, onOpenNewChatModal }) => {
+  onOpenNotifications?: () => void;
+}> = ({ onSelectChat, onOpenNewChatModal, onOpenNotifications }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [subTab, setSubTab] = useState<'all' | 'unread' | 'group' | 'favorites'>('all');
   const [isFabVisible, setIsFabVisible] = useState(true);
@@ -71,6 +73,7 @@ export const ChatList: React.FC<{
     <div className="w-full max-w-4xl mx-auto p-4 md:p-6 space-y-5 pb-28 relative min-h-screen text-left">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-black tracking-tight text-slate-800 dark:text-white">Chats</h1>
+        <NotificationBell onClick={() => onOpenNotifications?.()} />
       </div>
 
       <div className="space-y-3">
@@ -261,5 +264,28 @@ const ChatItem: React.FC<{ chat: Chat; onSelect: () => void }> = ({ chat, onSele
         {chat.isPinned && <Pin size={14} className="rotate-45" style={{ color: 'var(--primary-accent, #2563EB)' }} />}
       </div>
     </GlassCard>
+  );
+};
+
+/** Bell entry into the notification center, with live unread badge. */
+const NotificationBell: React.FC<{ onClick: () => void }> = ({ onClick }) => {
+  const unread = useNotificationStore((s) => s.unread);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className="relative p-2.5 rounded-full bg-white/80 dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-200 hover:border-[var(--primary-accent,#2563EB)]/40 transition-all"
+      aria-label="Notifications"
+    >
+      <Bell size={17} />
+      {unread > 0 && (
+        <span
+          className="absolute -top-1 -right-1 px-1 min-w-[16px] h-4 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-white dark:border-black shadow-sm"
+          style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}
+        >
+          {unread > 99 ? "99+" : unread}
+        </span>
+      )}
+    </button>
   );
 };

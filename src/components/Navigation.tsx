@@ -8,6 +8,7 @@ import { MessageSquare, Users, Search, User, ChevronLeft, ChevronRight, LogOut }
 import { RelayLogoEmblem } from './GlassUI';
 import { useAuthStore } from '../store/authStore';
 import { useChatStore } from '../store/chatStore';
+import { useUiStore } from '../store/uiStore';
 import { getLetterAvatar } from '../lib/avatar';
 
 export type MainTab = 'chats' | 'communities' | 'explore' | 'profile';
@@ -44,7 +45,8 @@ export const MainNavigation: React.FC<{
   }, []);
 
   const totalUnread = chats.reduce((acc, c) => acc + (c.unreadCount || 0), 0);
-  const shouldHideBottomNav = !!activeChatId || hideBottomNav || hideNav || keyboardOpen;
+  const immersiveOpen = useUiStore((s) => s.immersive) > 0;
+  const shouldHideBottomNav = !!activeChatId || hideBottomNav || hideNav || keyboardOpen || immersiveOpen;
 
   const tabs: Array<{ id: MainTab; label: string; icon: React.FC<{ size?: number; className?: string }>; badge?: number }> = [
     { id: 'chats', label: 'Chats', icon: MessageSquare, badge: totalUnread },
@@ -144,7 +146,7 @@ export const MainNavigation: React.FC<{
         {currentUser && !shouldHideBottomNav && (
           <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
             <nav
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[24px] bg-white/85 dark:bg-slate-900/90 backdrop-blur-2xl border border-white/80 dark:border-white/10 shadow-lg shadow-slate-900/5 select-none"
+              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[26px] bg-black/55 dark:bg-black/70 backdrop-blur-2xl border border-white/25 dark:border-white/15 shadow-xl shadow-black/20 select-none"
               style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
               {tabs.map((tab) => {

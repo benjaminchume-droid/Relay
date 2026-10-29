@@ -99,10 +99,10 @@ export const ModalsOverlay: React.FC<{
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white/95 border border-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
+              className="bg-white/95 dark:bg-slate-900/95 border border-white dark:border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-800">New Conversation</h3>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">New Conversation</h3>
                 <button onClick={onCloseNewChatModal} className="text-slate-400 hover:text-slate-700">
                   <X size={16} />
                 </button>
@@ -215,7 +215,7 @@ export const ModalsOverlay: React.FC<{
                           setIsStartingChat(null);
                         }
                       }}
-                      className="p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer transition-colors text-left"
+                      className="p-3 rounded-2xl border border-slate-100 hover:bg-slate-50 flex items-center justify-between gap-3 cursor-pointer transition-colors text-left dark:bg-black"
                     >
                       <div className="flex items-center gap-3 min-w-0">
                         <img 
@@ -224,10 +224,10 @@ export const ModalsOverlay: React.FC<{
                           onError={(e) => {
                             (e.target as HTMLImageElement).src = getLetterAvatar(user.name || user.username);
                           }}
-                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200" 
+                          className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 dark:border-white/10" 
                         />
                         <div className="min-w-0 text-left">
-                          <h4 className="text-xs font-bold text-slate-800 truncate">{user.name || user.username}</h4>
+                          <h4 className="text-xs font-bold text-slate-800 truncate dark:text-slate-100">{user.name || user.username}</h4>
                           <span className="text-[10px] text-blue-600 font-mono block truncate">{formatHandle(user.username)}</span>
                           {user.bio && <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{user.bio}</p>}
                         </div>
@@ -252,16 +252,16 @@ export const ModalsOverlay: React.FC<{
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white/95 border border-white rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-left"
+              className="bg-white/95 dark:bg-slate-900/95 border border-white dark:border-white/10 rounded-3xl max-w-sm w-full p-6 shadow-2xl space-y-4 text-left"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-800">Forward Message</h3>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Forward Message</h3>
                 <button onClick={() => setForwardingMessage(null)} className="text-slate-400 hover:text-slate-700">
                   <X size={16} />
                 </button>
               </div>
 
-              <div className="p-3 bg-slate-100 rounded-2xl text-xs text-slate-700 font-medium italic border-l-2 border-blue-500">
+              <div className="p-3 bg-slate-100 rounded-2xl text-xs text-slate-700 font-medium italic border-l-2 border-blue-500 dark:bg-slate-800">
                 "{forwardingMessage.content}"
               </div>
 
@@ -307,10 +307,10 @@ export const ModalsOverlay: React.FC<{
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white/95 border border-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
+              className="bg-white/95 dark:bg-slate-900/95 border border-white dark:border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
-                <h3 className="text-sm font-bold text-slate-800">Create Community</h3>
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100">Create Community</h3>
                 <button onClick={onCloseCreateCommunityModal} className="text-slate-400 hover:text-slate-700">
                   <X size={16} />
                 </button>
@@ -342,7 +342,7 @@ export const ModalsOverlay: React.FC<{
                     onChange={(e) => setCommDesc(e.target.value)}
                     rows={3}
                     placeholder="Describe your community rules, topics, and channels..."
-                    className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none"
+                    className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none dark:text-slate-100"
                   />
                 </div>
 
@@ -363,7 +363,7 @@ export const ModalsOverlay: React.FC<{
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="bg-white/95 border border-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
+              className="bg-white/95 dark:bg-slate-900/95 border border-white dark:border-white/10 rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 text-left"
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                 <h3 className="text-sm font-bold text-red-600 flex items-center gap-1.5">
@@ -386,7 +386,7 @@ export const ModalsOverlay: React.FC<{
                     <select 
                       value={reportReason}
                       onChange={(e) => setReportReason(e.target.value)}
-                      className="w-full p-2.5 rounded-xl glass-input text-xs text-slate-800 font-semibold"
+                      className="w-full p-2.5 rounded-xl glass-input text-xs text-slate-800 font-semibold dark:text-slate-100"
                     >
                       <option value="spam">Spam or Unsolicited Promotion</option>
                       <option value="harassment">Harassment or Bullying</option>
@@ -402,7 +402,7 @@ export const ModalsOverlay: React.FC<{
                       onChange={(e) => setReportDetails(e.target.value)}
                       rows={3}
                       placeholder="Provide additional details regarding this report..."
-                      className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none"
+                      className="w-full p-3 rounded-2xl glass-input text-xs text-slate-800 font-medium focus:outline-none dark:text-slate-100"
                     />
                   </div>
 

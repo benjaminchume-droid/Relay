@@ -6,7 +6,7 @@ import { supabase } from "../lib/supabase/client";
 import { profileCache } from "./profileCache";
 import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
-import { encryptFor, isEnvelope } from "./crypto/cryptoService";
+import { encryptFor, encryptFanout, isEnvelope } from "./crypto/cryptoService";
 import { ownPlaintextRemember } from "./messageFetch";
 import { encodePayload, type MsgPayload } from "./crypto/mediaDecryptor";
 
@@ -17,21 +17,34 @@ export async function resolveConversationPeer(
   conversationId: string,
   myProfileId: string
 ): Promise<string | null> {
+  const peers = await resolveConversationPeers(conversationId, myProfileId, 1);
+  return peers[0] || null;
+}
+
+/** Resolve ALL other active members of a conversation (groups / channels). */
+export async function resolveConversationPeers(
+  conversationId: string,
+  myProfileId: string,
+  limit = 500
+): Promise<string[]> {
   const cacheKey = `${conversationId}:${myProfileId}`;
-  const hit = peerIdCache.get(cacheKey);
-  if (hit) return hit;
+  if (limit === 1) {
+    const hit = peerIdCache.get(cacheKey);
+    if (hit) return [hit];
+  }
   try {
     const { data } = await supabase
       .from("conversation_members")
       .select("profile_id")
       .eq("conversation_id", conversationId)
       .neq("profile_id", myProfileId)
-      .limit(1);
-    const peer = (data || [])[0]?.profile_id || null;
-    if (peer) peerIdCache.set(cacheKey, peer);
-    return peer;
+      .eq("status", "active")
+      .limit(limit);
+    const peers = (data || []).map((r: any) => r.profile_id).filter(Boolean);
+    if (peers.length === 1) peerIdCache.set(cacheKey, peers[0]);
+    return peers;
   } catch {
-    return null;
+    return [];
   }
 }
 
@@ -217,10 +230,15 @@ export async function sendConversationMessage(
   const fileName = payload.attachments?.[0]?.fileName || null;
 
   // ---- Signal-level E2EE: build plaintext payload, ship ciphertext ----
-  const peerId =
-    targetUserId && UUID_RE.test(targetUserId)
-      ? await resolveExactProfileId(targetUserId)
-      : await resolveConversationPeer(targetConvId, profileId);
+  // Recipients: an explicitly targeted user (dm_ ids / user id chat ids) or every
+  // other active member of the conversation (groups, communities, channels).
+  let peerIds: string[] = [];
+  if (targetUserId && UUID_RE.test(targetUserId)) {
+    peerIds = [await resolveExactProfileId(targetUserId)];
+  } else if (!targetUserId) {
+    peerIds = await resolveConversationPeers(targetConvId, profileId);
+  }
+  const peerId = peerIds[0] || null;
 
   let wireContent: string | null = payload.content || null;
   let envelopePayload: MsgPayload | null = null;
@@ -243,7 +261,14 @@ export async function sendConversationMessage(
 
   if (peerId && envelopePayload) {
     try {
-      wireContent = await encryptFor(profileId, targetConvId, peerId, encodePayload(envelopePayload));
+      if (peerIds.length <= 1) {
+        // DM — single envelope, R1 (compact, unchanged wire format)
+        wireContent = await encryptFor(profileId, targetConvId, peerId, encodePayload(envelopePayload));
+      } else {
+        // Group / community / channel — R2 fan-out: one envelope per recipient so
+        // EVERY member can decrypt (not just one .limit(1) pick).
+        wireContent = await encryptFanout(profileId, targetConvId, peerIds, encodePayload(envelopePayload));
+      }
     } catch (e) {
       console.error("[e2ee] encrypt failed — message NOT sent (refusing plaintext fallback)", e);
       throw new Error("Encryption failed — message was not sent. Try again.");

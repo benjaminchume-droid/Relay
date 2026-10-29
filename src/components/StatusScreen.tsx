@@ -230,7 +230,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
         <img
           src={status.userAvatar || getLetterAvatar(status.userName)}
           alt="avatar"
-          className="w-6 h-6 rounded-full border border-white/80 object-cover"
+          className="w-6 h-6 rounded-full border border-white/80 object-cover dark:border-white/10"
         />
         <div className="min-w-0 flex-1">
           <div className="text-[10px] font-bold truncate">{status.userName}</div>
@@ -264,19 +264,19 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
               <img
                 src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || currentUser?.username || 'Me')}
                 alt="My Avatar"
-                className="w-full h-full rounded-full object-cover border-2 border-white"
+                className="w-full h-full rounded-full object-cover border-2 border-white dark:border-white/10"
               />
             </div>
             <button
               onClick={(e) => { e.stopPropagation(); setIsCreatorOpen(true); }}
-              className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center border-2 border-white shadow-md hover:scale-110 transition-transform cursor-pointer"
+              className="absolute -bottom-0.5 -right-0.5 w-4 h-4 rounded-full bg-blue-600 text-white flex items-center justify-center border-2 border-white shadow-md hover:scale-110 transition-transform cursor-pointer dark:border-white/10"
             >
               <Plus size={10} />
             </button>
           </div>
 
           <div>
-            <div className="text-xs font-bold text-slate-800">My Post</div>
+            <div className="text-xs font-bold text-slate-800 dark:text-slate-100">My Post</div>
             <div className="text-[10px] text-slate-500 font-medium">
               {myStatus ? `${myStatus.viewers.length} views • Tap to view` : 'Tap + to share a new post'}
             </div>
@@ -363,7 +363,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                 )}
                 <div className="absolute inset-0 bg-black/50" />
                 <div className="relative z-10 flex items-center gap-3">
-                  <img src={status.userAvatar || getLetterAvatar(status.userName)} alt="avatar" className="w-9 h-9 rounded-full border border-white/80 object-cover" />
+                  <img src={status.userAvatar || getLetterAvatar(status.userName)} alt="avatar" className="w-9 h-9 rounded-full border border-white/80 object-cover dark:border-white/10" />
                   <div>
                     <div className="text-xs font-bold">{status.userName}</div>
                     <div className="text-[9.5px] text-slate-300 font-mono">{formatChatTimestamp(status.createdAt)}</div>
@@ -416,10 +416,10 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-slate-900 border border-white/20 rounded-3xl p-5 text-white shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto"
+              className="w-full max-w-md bg-slate-900 border border-white/20 rounded-3xl p-5 text-white shadow-2xl space-y-4 max-h-[90vh] overflow-y-auto dark:border-white/10"
             >
               {/* Creator Header */}
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3 dark:border-white/10">
                 <span className="font-extrabold text-sm flex items-center gap-2">
                   <Sparkles size={16} className="text-blue-400" />
                   Create Relay Status
@@ -478,7 +478,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                   placeholder="What's on your mind?..."
                   value={creatorContent}
                   onChange={(e) => setCreatorContent(e.target.value)}
-                  className="w-full bg-white/10 border border-white/20 rounded-2xl p-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium"
+                  className="w-full bg-white/10 border border-white/20 rounded-2xl p-3 text-sm text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 font-medium dark:border-white/10"
                 />
               ) : creatorType === 'image' ? (
                 <div className="space-y-3">
@@ -486,7 +486,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                   <button
                     type="button"
                     onClick={() => fileInputRef.current?.click()}
-                    className="w-full h-32 border-2 border-dashed border-white/30 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-white/5 transition-colors cursor-pointer"
+                    className="w-full h-32 border-2 border-dashed border-white/30 rounded-2xl flex flex-col items-center justify-center gap-2 hover:bg-white/5 transition-colors cursor-pointer dark:border-white/10"
                   >
                     {creatorMediaUrl ? (
                       <img src={creatorMediaUrl} alt="uploaded" className="h-full w-full object-cover rounded-2xl" />
@@ -502,7 +502,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                     placeholder="Add a caption..."
                     value={creatorContent}
                     onChange={(e) => setCreatorContent(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-2.5 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10"
                   />
                 </div>
               ) : creatorType === 'location' ? (
@@ -512,7 +512,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                     placeholder="Enter location name (e.g., Tokyo, Japan)..."
                     value={locationName}
                     onChange={(e) => setLocationName(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-3 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-3 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:border-white/10"
                   />
                 </div>
               ) : (
@@ -522,7 +522,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                     placeholder="Poll Question..."
                     value={creatorContent}
                     onChange={(e) => setCreatorContent(e.target.value)}
-                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-2.5 text-xs text-white font-bold placeholder-slate-400 focus:outline-none"
+                    className="w-full bg-white/10 border border-white/20 rounded-2xl p-2.5 text-xs text-white font-bold placeholder-slate-400 focus:outline-none dark:border-white/10"
                   />
                   {pollQuestions.map((q, idx) => (
                     <input
@@ -535,7 +535,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                         updated[idx] = e.target.value;
                         setPollQuestions(updated);
                       }}
-                      className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-white"
+                      className="w-full bg-white/5 border border-white/10 rounded-xl p-2 text-xs text-white dark:border-white/10"
                     />
                   ))}
                   <button
@@ -548,13 +548,13 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
               )}
 
               {/* Privacy & Duration Settings */}
-              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 text-xs">
+              <div className="grid grid-cols-2 gap-2 pt-2 border-t border-white/10 text-xs dark:border-white/10">
                 <div>
                   <span className="text-[10px] font-bold text-slate-400 block mb-1">Privacy</span>
                   <select
                     value={creatorPrivacy}
                     onChange={(e) => setCreatorPrivacy(e.target.value as any)}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-xs text-white focus:outline-none"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-xs text-white focus:outline-none dark:border-white/10"
                   >
                     <option value="everyone" className="bg-slate-900">Everyone (Public)</option>
                     <option value="contacts" className="bg-slate-900">My Contacts Only</option>
@@ -565,7 +565,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                   <select
                     value={creatorDuration}
                     onChange={(e) => setCreatorDuration(Number(e.target.value))}
-                    className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-xs text-white focus:outline-none"
+                    className="w-full bg-white/10 border border-white/20 rounded-xl p-2 text-xs text-white focus:outline-none dark:border-white/10"
                   >
                     <option value={24} className="bg-slate-900">24 Hours (Default)</option>
                     <option value={12} className="bg-slate-900">12 Hours</option>
@@ -595,7 +595,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
             {/* Top Progress & Header */}
             <div className="p-4 bg-gradient-to-b from-black/80 to-transparent space-y-3 z-20">
               <div className="w-full bg-white/20 h-1 rounded-full overflow-hidden">
-                <div className="bg-white h-full transition-all duration-100" style={{ width: '100%' }} />
+                <div className="bg-white h-full transition-all duration-100 dark:bg-slate-900" style={{ width: '100%' }} />
               </div>
 
               <div className="flex items-center justify-between text-white">
@@ -603,7 +603,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                   <img
                     src={activeViewerStatus.userAvatar || getLetterAvatar(activeViewerStatus.userName)}
                     alt="author"
-                    className="w-9 h-9 rounded-full border border-white/80 object-cover"
+                    className="w-9 h-9 rounded-full border border-white/80 object-cover dark:border-white/10"
                   />
                   <div>
                     <div className="text-xs font-extrabold">{activeViewerStatus.userName}</div>
@@ -634,7 +634,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                 <img
                   src={activeViewerStatus.mediaUrl}
                   alt="status full"
-                  className="max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/10"
+                  className="max-h-[70vh] object-contain rounded-2xl shadow-2xl border border-white/10 dark:border-white/10"
                 />
               ) : (
                 <div className={`w-full max-w-sm p-8 rounded-3xl bg-gradient-to-br ${activeViewerStatus.backgroundGradient || 'from-blue-600 to-purple-800'} text-white text-center shadow-2xl border border-white/20`}>
@@ -677,9 +677,9 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
               initial={{ scale: 0.9, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.9, opacity: 0 }}
-              className="w-full max-w-md bg-slate-900 border border-white/20 rounded-3xl p-5 text-white shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto"
+              className="w-full max-w-md bg-slate-900 border border-white/20 rounded-3xl p-5 text-white shadow-2xl space-y-4 max-h-[85vh] overflow-y-auto dark:border-white/10"
             >
-              <div className="flex items-center justify-between border-b border-white/10 pb-3">
+              <div className="flex items-center justify-between border-b border-white/10 pb-3 dark:border-white/10">
                 <span className="font-extrabold text-sm flex items-center gap-2">
                   <BarChart2 size={16} className="text-blue-400" />
                   Status Analytics & Reach
@@ -706,7 +706,7 @@ export const StatusScreen: React.FC<{ embedded?: boolean }> = ({ embedded = fals
                   <div className="text-xs text-slate-500 py-4 text-center">No views recorded yet</div>
                 ) : (
                   showAnalyticsModal.viewers.map((viewer, idx) => (
-                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/10 text-xs">
+                    <div key={idx} className="flex items-center justify-between p-2 rounded-xl bg-white/5 border border-white/10 text-xs dark:border-white/10">
                       <div className="flex items-center gap-2">
                         <img src={viewer.userAvatar || getLetterAvatar(viewer.userName)} alt="avatar" className="w-7 h-7 rounded-full" />
                         <span className="font-bold">{viewer.userName}</span>

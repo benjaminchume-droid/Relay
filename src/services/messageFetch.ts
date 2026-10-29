@@ -4,7 +4,7 @@
  */
 import { supabase } from "../lib/supabase/client";
 import { formatMessageRecord } from "./messagingCore";
-import { decryptFor, isEnvelope, parseEnvelope } from "./crypto/cryptoService";
+import { decryptFor, isEnvelope, isFanout, parseEnvelope, parseFanout } from "./crypto/cryptoService";
 import { decodePayload, getDecryptedMediaUrl } from "./crypto/mediaDecryptor";
 import type { Message } from "../types";
 
@@ -15,7 +15,7 @@ export function scheduleMediaDecrypt(msg: Message): void {
   const url = anyMsg.mediaUrl || anyMsg.attachments?.[0]?.url;
   if (!key || !url || anyMsg._mediaDecrypting) return;
   anyMsg._mediaDecrypting = true;
-  getDecryptedMediaUrl(String(msg.id), url, key)
+  getDecryptedMediaUrl(String(msg.id), url, key, anyMsg._mime)
     .then((blobUrl) => {
       anyMsg.mediaUrl = blobUrl;
       if (anyMsg.attachments?.[0]) anyMsg.attachments[0].url = blobUrl;
@@ -83,7 +83,7 @@ export async function decryptMessages(
 ): Promise<void> {
   for (const msg of msgs) {
     const raw = (msg as any).content;
-    if (!isEnvelope(raw)) continue;
+    if (!isEnvelope(raw) && !isFanout(raw)) continue;
     (msg as any)._encrypted = true;
     // Own outgoing messages: NEVER run the ratchet on them (no receiving chain for
     // self — it would corrupt the session state). Recall the stored plaintext.
@@ -100,7 +100,16 @@ export async function decryptMessages(
       continue;
     }
     try {
-      const payload = decodePayload(await decryptFor(myProfileId, conversationId, parseEnvelope(raw)));
+      // R2 fan-out: pick the envelope addressed to ME, decrypt against the SENDER.
+      // R1: single envelope (DMs / legacy). Sessions are per conversation+peer.
+      const env = isFanout(raw)
+        ? (parseFanout(raw).to.find((t) => t.p === myProfileId)?.e ?? null)
+        : parseEnvelope(raw);
+      if (!env) {
+        msg.content = "🔒 Encrypted message";
+        continue;
+      }
+      const payload = decodePayload(await decryptFor(myProfileId, conversationId, msg.senderId, env));
       if (!payload) throw new Error("bad payload");
       if (payload.k === "t" || payload.k === "s") {
         msg.content = payload.t;

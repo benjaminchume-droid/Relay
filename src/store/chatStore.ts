@@ -96,8 +96,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             return c;
           });
-          chatCache.setChats(merged);
-          return { chats: merged };
+          // the open conversation can never be unread — server races can't resurrect the badge
+          const active = state.activeChatId;
+          const final = active ? merged.map((c) => (c.id === active ? { ...c, unreadCount: 0 } : c)) : merged;
+          chatCache.setChats(final);
+          return { chats: final };
         });
       }
     } catch (err: any) {
@@ -108,6 +111,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
   setActiveChat: async (chatId) => {
     set({ activeChatId: chatId, replyingToMessage: null });
     if (chatId) {
+      // optimistic clear — badge must vanish the instant the chat opens
+      set((state) => {
+        if (!state.chats.some((c) => c.id === chatId && (c.unreadCount || 0) > 0)) return {};
+        const chats = state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c));
+        chatCache.setChats(chats);
+        return { chats };
+      });
       await get().fetchMessages(chatId);
       await apiService.markChatAsRead(chatId);
       get().fetchChats();

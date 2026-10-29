@@ -64,8 +64,9 @@ function settle() {
   pump();
 }
 
-/** Fetch + decrypt an encrypted attachment into an object URL (cached, concurrency-capped). */
-export function getDecryptedMediaUrl(messageId: string, url: string, keyB64u: string): Promise<string> {
+/** Fetch + decrypt an encrypted attachment into an object URL (cached, concurrency-capped).
+ *  `preferredMime` (from the encrypted payload) wins over byte sniffing. */
+export function getDecryptedMediaUrl(messageId: string, url: string, keyB64u: string, preferredMime?: string): Promise<string> {
   const cacheKey = `${messageId}`;
   const cached = blobUrls.get(cacheKey);
   if (cached) return Promise.resolve(cached);
@@ -81,7 +82,9 @@ export function getDecryptedMediaUrl(messageId: string, url: string, keyB64u: st
         })
         .then((buf) => decryptBytes(keyB64u, buf))
         .then((pt) => {
-          const mime = sniffMime(pt) || "application/octet-stream";
+          const mime = (preferredMime && preferredMime !== "application/octet-stream" ? preferredMime : null)
+            || sniffMime(pt)
+            || "application/octet-stream";
           const objUrl = URL.createObjectURL(new Blob([pt as unknown as BlobPart], { type: mime }));
           blobUrls.set(cacheKey, objUrl);
           resolve(objUrl);
@@ -100,8 +103,14 @@ function sniffMime(b: Uint8Array): string | null {
   if (b.length > 12 && b[0] === 0x89 && b[1] === 0x50) return "image/png";
   if (b.length > 3 && b[0] === 0xff && b[1] === 0xd8) return "image/jpeg";
   if (b.length > 12 && b[8] === 0x66 && b[9] === 0x74 && b[10] === 0x79) return "video/mp4";
-  if (b.length > 4 && b[0] === 0x1a && b[1] === 0x45) return "video/webm";
-  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) return "audio/webm";
+  if (b.length > 4 && b[0] === 0x1a && b[1] === 0x45) return "audio/webm"; // EBML (webm/matroska audio)
+  if (b.length > 12 && b[0] === 0x52 && b[1] === 0x49 && b[2] === 0x46 && b[3] === 0x46) {
+    // RIFF container: WAVE → wav, otherwise generic riff
+    if (b[8] === 0x57 && b[9] === 0x41 && b[10] === 0x56 && b[11] === 0x45) return "audio/wav";
+    return "audio/webm";
+  }
+  if (b.length > 4 && b[0] === 0x4f && b[1] === 0x67 && b[2] === 0x67 && b[3] === 0x53) return "audio/ogg";
+  if (b.length > 4 && b[0] === 0x49 && b[1] === 0x44 && b[2] === 0x33) return "audio/mpeg";
   if (b.length > 2 && b[0] === 0x25 && b[1] === 0x50) return "application/pdf";
   return null;
 }

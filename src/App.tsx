@@ -20,6 +20,8 @@ import { CreateCommunityScreen } from './components/CreateCommunityScreen';
 import { CreateGroupScreen } from './components/CreateGroupScreen';
 import { UserSearchScreen } from './components/UserSearchScreen';
 import { ModalsOverlay } from './components/Modals';
+import { NotificationCenterScreen } from './components/NotificationCenterScreen';
+import { useNotificationStore } from './services/notificationService';
 import { useRelayRealtime } from './services/realtime/useRelayRealtime';
 import { GlobalCallHost } from './components/GlobalCallHost';
 import { registerCurrentDevice, tryRegisterNativePush } from './services/deviceService';
@@ -31,7 +33,7 @@ function isAuthedStatus(status: string) {
 
 export const App: React.FC = () => {
   const [activeTab, setActiveTab] = useState<MainTab>('chats');
-  const [activeSubRoute, setActiveSubRoute] = useState<'create-community' | 'create-group' | 'explore-search' | null>(null);
+  const [activeSubRoute, setActiveSubRoute] = useState<'create-community' | 'create-group' | 'explore-search' | 'notifications' | null>(null);
   const [isCommunityChatOpen, setIsCommunityChatOpen] = useState(false);
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
@@ -83,6 +85,7 @@ export const App: React.FC = () => {
       }
     })();
     useChatStore.getState().startGlobalMessageStream();
+    useNotificationStore.getState().startStream(pid);
     presenceService.start(pid);
     return () => {
       cancelled = true;
@@ -91,6 +94,7 @@ export const App: React.FC = () => {
 
   useEffect(() => {
     if (isAuthedStatus(status)) return;
+    useNotificationStore.getState().reset();
     presenceService.stop();
   }, [status]);
 
@@ -197,7 +201,15 @@ export const App: React.FC = () => {
           if (tab !== 'communities') setIsCommunityChatOpen(false);
         }}
       >
-        {activeSubRoute === 'create-community' ? (
+        {activeSubRoute === 'notifications' ? (
+          <NotificationCenterScreen
+            onBack={() => setActiveSubRoute(null)}
+            onOpenConversation={(conversationId) => {
+              setActiveSubRoute(null);
+              handleSelectChat(conversationId);
+            }}
+          />
+        ) : activeSubRoute === 'create-community' ? (
           <CreateCommunityScreen
             onBack={() => setActiveSubRoute(null)}
             onSuccess={() => setActiveSubRoute(null)}
@@ -220,7 +232,8 @@ export const App: React.FC = () => {
               handleSelectChat(chatId);
             }}
           />
-        ) : activeTab === 'chats' && activeChatId ? (
+        ) : activeChatId ? (
+          /* channel/DM chats take over the whole shell regardless of tab (WhatsApp behavior) */
           <ChatScreen chatId={activeChatId} onBack={() => setActiveChat(null)} />
         ) : activeTab === 'chats' ? (
           <ChatList
@@ -228,6 +241,10 @@ export const App: React.FC = () => {
             onOpenNewChatModal={() => {
               window.history.pushState({ modal: 'new-chat' }, '');
               setShowNewChatModal(true);
+            }}
+            onOpenNotifications={() => {
+              window.history.pushState({ route: 'notifications' }, '');
+              setActiveSubRoute('notifications');
             }}
           />
         ) : activeTab === 'communities' ? (
@@ -237,6 +254,7 @@ export const App: React.FC = () => {
               setActiveSubRoute('create-community');
             }}
             onCommunityChatStateChange={(isOpen) => setIsCommunityChatOpen(isOpen)}
+            onOpenChannelChat={(conversationId) => handleSelectChat(conversationId)}
           />
         ) : activeTab === 'explore' ? (
           <ExploreView

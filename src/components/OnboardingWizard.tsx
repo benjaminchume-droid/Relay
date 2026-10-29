@@ -98,17 +98,17 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
     setIsCheckingUsername(true);
     const timer = setTimeout(async () => {
       try {
-        const { data, error } = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('username', cleanHandle)
-          .maybeSingle();
-
+        // server-side authoritative check (case-insensitive, validates charset too)
+        const { data, error } = await supabase.rpc('username_available', { p_username: cleanHandle });
         if (error) {
           console.warn('[OnboardingWizard] Handle check error:', error);
+          // fall back to a direct profiles lookup
+          const { data: row } = await supabase.from('profiles').select('username').eq('username', cleanHandle).maybeSingle();
+          const isAvailable = row === null;
+          setUsernameStatus({ valid: isAvailable, isAvailable, message: isAvailable ? 'Username is available' : 'Username taken' });
+          return;
         }
-
-        const isAvailable = (data === null);
+        const isAvailable = data === true;
         setUsernameStatus({
           valid: isAvailable,
           isAvailable,

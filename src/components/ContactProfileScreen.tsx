@@ -194,27 +194,27 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
   };
 
   return (
-    <div className="w-full min-h-screen bg-slate-50 text-slate-800 relative flex flex-col pb-28 select-none">
+    <div className="w-full min-h-screen bg-slate-50 text-slate-800 relative flex flex-col pb-28 select-none dark:bg-black">
       
       {/* Top Header Navigation */}
-      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-2xl border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-xs">
+      <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-2xl border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-xs dark:bg-slate-900/80">
         <button 
           type="button"
           onClick={onBack}
-          className="p-2 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold"
+          className="p-2 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all active:scale-95 flex items-center gap-1.5 text-xs font-bold dark:bg-slate-900"
         >
           <ArrowLeft size={16} />
           <span>Back</span>
         </button>
 
-        <h2 className="text-xs font-bold text-slate-800 tracking-wider uppercase">
+        <h2 className="text-xs font-bold text-slate-800 tracking-wider uppercase dark:text-slate-100">
           Contact Info
         </h2>
 
         <button 
           type="button"
           onClick={handleShareContact}
-          className="p-2 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all active:scale-95"
+          className="p-2 rounded-2xl bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 shadow-xs cursor-pointer transition-all active:scale-95 dark:bg-slate-900"
           title="Share Contact"
         >
           <Share2 size={16} />
@@ -224,12 +224,12 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
       <div className="w-full max-w-2xl mx-auto p-4 md:p-6 space-y-5 flex-1">
         
         {/* Profile Hero Card */}
-        <GlassCard heavy className="p-6 text-center space-y-4 relative overflow-hidden bg-white/90 border border-slate-200/80 shadow-sm">
+        <GlassCard heavy className="p-6 text-center space-y-4 relative overflow-hidden bg-white/90 border border-slate-200/80 shadow-sm dark:bg-slate-900/90">
           <div className="relative inline-block mx-auto">
             <img 
               src={targetUser.avatarUrl || getLetterAvatar(targetUser.name || targetUser.username)} 
               alt={targetUser.name} 
-              className="w-28 h-28 rounded-full object-cover border-4 border-white shadow-lg mx-auto"
+              className="w-28 h-28 rounded-full object-cover border-4 border-white shadow-lg mx-auto dark:border-white/10"
             />
             <span className={`absolute bottom-1 right-1 w-5 h-5 rounded-full border-2 border-white ${
               targetUser.onlineStatus === 'online' ? 'bg-emerald-500' : 'bg-slate-300'
@@ -237,7 +237,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
           </div>
 
           <div>
-            <h1 className="text-xl font-bold tracking-tight text-slate-900">{targetUser.name}</h1>
+            <h1 className="text-xl font-bold tracking-tight text-slate-900 dark:text-white">{targetUser.name}</h1>
             {targetUser.username && (
               <span className="text-xs font-mono text-slate-500 font-semibold block mt-0.5">
                 {formatHandle(targetUser.username)}
@@ -259,7 +259,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
                 else onBack();
               }}
               style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
-              className="py-2.5 px-5 rounded-2xl text-white text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer hover:opacity-95 active:scale-95 transition-all border border-white/20"
+              className="py-2.5 px-5 rounded-2xl text-white text-xs font-bold flex items-center gap-2 shadow-md cursor-pointer hover:opacity-95 active:scale-95 transition-all border border-white/20 dark:border-white/10"
             >
               <MessageSquare size={15} />
               <span>Message</span>
@@ -268,7 +268,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
             <button 
               type="button"
               onClick={handleShareContact} 
-              className="py-2.5 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-2 cursor-pointer transition-all border border-slate-200/80"
+              className="py-2.5 px-4 rounded-2xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold flex items-center gap-2 cursor-pointer transition-all border border-slate-200/80 dark:bg-slate-800"
             >
               <Share2 size={15} />
               <span>Share</span>
@@ -277,29 +277,29 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
         </GlassCard>
 
         {/* Status & Info Card */}
-        <GlassCard className="p-4 space-y-3 bg-white/90 border border-slate-200/80 shadow-xs">
+        <GlassCard className="p-4 space-y-3 bg-white/90 border border-slate-200/80 shadow-xs dark:bg-slate-900/90">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
             About & Info
           </span>
 
           <div className="space-y-2 text-xs">
             {targetUser.statusMessage && (
-              <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-0.5">
+              <div className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 space-y-0.5 dark:bg-black">
                 <span className="text-[10px] text-slate-400 font-mono block">Status Message</span>
-                <p className="font-semibold text-slate-800">{targetUser.statusMessage}</p>
+                <p className="font-semibold text-slate-800 dark:text-slate-100">{targetUser.statusMessage}</p>
               </div>
             )}
 
             {/* Disappearing Messages Setting */}
             <div 
               onClick={() => setShowDisappearingModal(true)}
-              className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition-all"
+              className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition-all dark:bg-slate-800"
             >
               <div className="flex items-center gap-3">
                 <Clock size={16} className="text-slate-500 shrink-0" />
                 <div>
                   <span className="text-[10px] text-slate-400 block font-mono">Disappearing Messages</span>
-                  <span className="font-semibold text-slate-800 text-xs capitalize">
+                  <span className="font-semibold text-slate-800 text-xs capitalize dark:text-slate-100">
                     {foundChat?.disappearingMessages ? (foundChat.disappearingMessages === 'off' ? 'Off' : foundChat.disappearingMessages) : 'Off'}
                   </span>
                 </div>
@@ -313,19 +313,19 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
                 setIsMuted(!isMuted);
                 triggerToast(isMuted ? 'Notifications unmuted' : 'Notifications muted');
               }}
-              className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition-all"
+              className="p-3 bg-slate-50/80 rounded-2xl border border-slate-200/60 flex items-center justify-between cursor-pointer hover:bg-slate-100/80 transition-all dark:bg-slate-800"
             >
               <div className="flex items-center gap-3">
                 <Bell size={16} className={isMuted ? 'text-amber-500 shrink-0' : 'text-slate-500 shrink-0'} />
                 <div>
                   <span className="text-[10px] text-slate-400 block font-mono">Notifications</span>
-                  <span className="font-semibold text-slate-800 text-xs">
+                  <span className="font-semibold text-slate-800 text-xs dark:text-slate-100">
                     {isMuted ? 'Muted' : 'Enabled'}
                   </span>
                 </div>
               </div>
               <span className={`w-8 h-4.5 rounded-full transition-colors flex items-center p-0.5 ${isMuted ? 'bg-amber-500 justify-end' : 'bg-slate-300 justify-start'}`}>
-                <span className="w-3.5 h-3.5 rounded-full bg-white shadow-xs" />
+                <span className="w-3.5 h-3.5 rounded-full bg-white shadow-xs dark:bg-slate-900" />
               </span>
             </div>
           </div>
@@ -333,7 +333,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
 
         {/* Shared Media Section */}
         {sharedMedia.length > 0 && (
-          <GlassCard className="p-4 space-y-3 bg-white/90 border border-slate-200/80 shadow-xs">
+          <GlassCard className="p-4 space-y-3 bg-white/90 border border-slate-200/80 shadow-xs dark:bg-slate-900/90">
             <div className="flex items-center justify-between">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
                 Media, Links & Docs ({sharedMedia.length})
@@ -341,7 +341,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
             </div>
             <div className="grid grid-cols-4 gap-2">
               {sharedMedia.map((att) => (
-                <div key={att.id} className="aspect-square rounded-xl bg-slate-100 overflow-hidden border border-slate-200 relative group">
+                <div key={att.id} className="aspect-square rounded-xl bg-slate-100 overflow-hidden border border-slate-200 relative group dark:bg-slate-800">
                   {att.type === 'image' && att.url ? (
                     <img src={att.url} alt={att.fileName} className="w-full h-full object-cover" />
                   ) : (
@@ -406,7 +406,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
           <button
             type="button"
             onClick={() => setShowDeleteModal(true)}
-            className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-red-50 text-slate-700 hover:text-red-600 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200/90 shadow-xs cursor-pointer transition-all active:scale-[0.98]"
+            className="w-full py-3.5 px-4 rounded-2xl bg-white hover:bg-red-50 text-slate-700 hover:text-red-600 font-bold text-xs flex items-center justify-center gap-2 border border-slate-200/90 shadow-xs cursor-pointer transition-all active:scale-[0.98] dark:bg-slate-900"
           >
             <Trash2 size={16} />
             <span>Delete Contact</span>
@@ -424,10 +424,10 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left"
+              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left dark:bg-slate-900"
             >
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
-                <div className="flex items-center gap-2 text-slate-800">
+                <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100">
                   <Clock size={18} className="text-blue-600" />
                   <h3 className="text-sm font-bold">Disappearing Messages</h3>
                 </div>
@@ -477,14 +477,14 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left"
+              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left dark:bg-slate-900"
             >
               <div className="w-12 h-12 rounded-full bg-rose-100 text-rose-600 flex items-center justify-center mx-auto">
                 <ShieldOff size={24} />
               </div>
 
               <div className="text-center space-y-1">
-                <h3 className="text-base font-bold text-slate-900">
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">
                   {isBlocked ? `Unblock ${targetUser.name}?` : `Block ${targetUser.name}?`}
                 </h3>
                 <p className="text-xs text-slate-500 leading-relaxed font-medium">
@@ -498,7 +498,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowBlockModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer dark:bg-black"
                 >
                   Cancel
                 </button>
@@ -523,14 +523,14 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left"
+              className="w-full max-w-sm bg-white rounded-3xl p-5 border border-slate-200 shadow-2xl space-y-4 text-left dark:bg-slate-900"
             >
               <div className="w-12 h-12 rounded-full bg-red-100 text-red-600 flex items-center justify-center mx-auto">
                 <Trash2 size={24} />
               </div>
 
               <div className="text-center space-y-1">
-                <h3 className="text-base font-bold text-slate-900">Delete Contact & Chat?</h3>
+                <h3 className="text-base font-bold text-slate-900 dark:text-white">Delete Contact & Chat?</h3>
                 <p className="text-xs text-slate-500 leading-relaxed font-medium">
                   This will remove {targetUser.name} and clear the conversation from your active chat list.
                 </p>
@@ -540,7 +540,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
                 <button
                   type="button"
                   onClick={() => setShowDeleteModal(false)}
-                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer"
+                  className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-700 font-bold text-xs hover:bg-slate-50 cursor-pointer dark:bg-black"
                 >
                   Cancel
                 </button>
@@ -564,7 +564,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
             initial={{ y: 20, opacity: 0 }}
             animate={{ y: 0, opacity: 1 }}
             exit={{ y: 20, opacity: 0 }}
-            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-slate-900/90 text-white text-xs font-semibold shadow-2xl backdrop-blur-md border border-white/20 flex items-center gap-2 pointer-events-none"
+            className="fixed bottom-20 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full bg-slate-900/90 text-white text-xs font-semibold shadow-2xl backdrop-blur-md border border-white/20 flex items-center gap-2 pointer-events-none dark:border-white/10"
           >
             <Check size={14} className="text-emerald-400" />
             <span>{toast}</span>
