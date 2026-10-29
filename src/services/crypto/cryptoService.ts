@@ -33,30 +33,42 @@ export function sealEnvelope(env: Envelope): string {
   return E2EE_PREFIX + JSON.stringify(env);
 }
 
-/** Ensure this device has a local identity and it is registered server-side. */
+let inflightIdentity: Promise<LocalIdentity> | null = null;
+
+/** Ensure this device has a local identity and it is registered server-side.
+ *  Concurrent callers share ONE generation — two parallel runs would register
+ *  different bundles and desync the device's private keys from the server. */
 export async function ensureIdentity(profileId: string): Promise<LocalIdentity> {
   if (identity && meId === profileId) return identity;
-  meId = profileId;
-  let local = await cryptoStore.getIdentity(profileId);
-  const { data: reg } = await supabase
-    .from("signal_identities")
-    .select("ik_pub, sign_pub, spk_id")
-    .eq("profile_id", profileId)
-    .maybeSingle();
+  if (inflightIdentity) return inflightIdentity;
+  inflightIdentity = (async (): Promise<LocalIdentity> => {
+    meId = profileId;
+    let local = await cryptoStore.getIdentity(profileId);
+    const { data: reg } = await supabase
+      .from("signal_identities")
+      .select("ik_pub, sign_pub, spk_id")
+      .eq("profile_id", profileId)
+      .maybeSingle();
 
-  if (local && reg && reg.ik_pub === b64u.enc(local.ik.publicKey)) {
+    if (local && reg && reg.ik_pub === b64u.enc(local.ik.publicKey)) {
+      identity = local;
+      return local;
+    }
+    // fresh device / lost IDB — new identity, replace server bundle
+    local = generateIdentity();
+    // Persist the PRIVATE identity BEFORE registering, and definitely before any
+    // session use. (Missing persistence used to silently rotate the identity on
+    // every page load, orphaning the server bundle and breaking all decryption.)
+    await cryptoStore.setIdentity(profileId, local);
+    await registerIdentity(profileId, local);
     identity = local;
     return local;
+  })();
+  try {
+    return await inflightIdentity;
+  } finally {
+    inflightIdentity = null;
   }
-  // fresh device / lost IDB — new identity, replace server bundle
-  local = generateIdentity();
-  // Persist the PRIVATE identity BEFORE registering, and definitely before any
-  // session use. (Missing persistence used to silently rotate the identity on
-  // every page load, orphaning the server bundle and breaking all decryption.)
-  await cryptoStore.setIdentity(profileId, local);
-  await registerIdentity(profileId, local);
-  identity = local;
-  return local;
 }
 
 async function registerIdentity(profileId: string, id: LocalIdentity): Promise<void> {
