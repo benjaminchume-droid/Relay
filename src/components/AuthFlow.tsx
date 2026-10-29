@@ -15,7 +15,7 @@ import { useAuthStore, OnboardingStep } from '../store/authStore';
 import { AccentColor, WallpaperStyle, BubbleStyle, ThemeMode } from '../types';
 import { OnboardingWizard } from './OnboardingWizard';
 
-export const AuthFlow: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => {
+export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: boolean }> = ({ onSuccess }) => {
   const { 
     status, currentStep, setStep, signupDraft, unverifiedEmail, logout,
     signUpWithEmail, verifyOtp, resendOtp, signInWithEmail, signInWithGoogle,
@@ -113,7 +113,7 @@ export const AuthFlow: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     const ok = await verifyOtp(code);
     const st = useAuthStore.getState().status;
     if (ok && (st === 'AUTHENTICATED' || st === 'READY')) {
-      onSuccess();
+      onSuccess?.();
     }
   };
 
@@ -178,7 +178,7 @@ export const AuthFlow: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     const ok = await signInWithEmail(loginInput, loginPassword);
     const st = useAuthStore.getState().status;
     if (ok && (st === 'AUTHENTICATED' || st === 'READY')) {
-      onSuccess();
+      onSuccess?.();
     }
   };
 
@@ -197,7 +197,7 @@ export const AuthFlow: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     const ok = await updateNewPassword(newPassword, confirmNewPassword);
     const st = useAuthStore.getState().status;
     if (ok && (st === 'AUTHENTICATED' || st === 'READY')) {
-      onSuccess();
+      onSuccess?.();
     }
   };
 
@@ -225,7 +225,7 @@ export const AuthFlow: React.FC<{ onSuccess: () => void }> = ({ onSuccess }) => 
     });
     const st = useAuthStore.getState().status;
     if (st === 'AUTHENTICATED' || st === 'READY') {
-      onSuccess();
+      onSuccess?.();
     }
   };
 

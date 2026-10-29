@@ -19,6 +19,9 @@ export function WebRouter() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<WebLoginPage />} />
+        <Route path="/signin" element={<WebLoginPage initialMode="signin" />} />
+        <Route path="/signup" element={<WebLoginPage initialMode="signup" />} />
+        <Route path="/register" element={<WebLoginPage initialMode="signup" />} />
         <Route path="/auth" element={<WebLoginPage />} />
         <Route path="/invite/:token" element={<InviteRoute kind="group" />} />
         <Route path="/g/:token" element={<InviteRoute kind="group" />} />

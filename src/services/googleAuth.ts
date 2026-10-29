@@ -27,7 +27,7 @@ export function getPublicWebOrigin(): string {
     const origin = window.location.origin;
     if (!origin.includes('localhost') && origin.startsWith('https://')) return origin;
   }
-  return 'https://relay-sandy-seven.vercel.app';
+  return 'https://relayid.vercel.app';
 }
 
 export function getAuthRedirectUrl(): string {

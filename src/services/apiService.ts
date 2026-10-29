@@ -514,6 +514,80 @@ export const apiService = {
     await supabase.from("user_settings").upsert({ profile_id: cur.profileId, ...payload });
     return { success: true };
   },
+
+  // --- Stories / reactions (best-effort: never throw, degrade silently) ---
+  recordStatusView: async (statusId: string) => {
+    try {
+      const cur = await getCurrentProfile();
+      if (!cur?.profileId || !statusId) return { success: false };
+      await supabase
+        .from("story_views")
+        .upsert(
+          { story_id: statusId, viewer_id: cur.profileId },
+          { onConflict: "story_id,viewer_id", ignoreDuplicates: true },
+        );
+    } catch { /* non-fatal */ }
+    return { success: true };
+  },
+
+  likeStatus: async (statusId: string, reaction: string = "like") => {
+    try {
+      const cur = await getCurrentProfile();
+      if (!cur?.profileId || !statusId) return { success: false, likes: [] as string[] };
+      const { data: existing } = await supabase
+        .from("story_reactions")
+        .select("id")
+        .eq("story_id", statusId)
+        .eq("profile_id", cur.profileId)
+        .maybeSingle();
+      if (existing) {
+        await supabase.from("story_reactions").delete().eq("id", existing.id);
+        return { success: true, liked: false, likes: [] as string[] };
+      }
+      await supabase
+        .from("story_reactions")
+        .insert({ story_id: statusId, profile_id: cur.profileId, reaction });
+      return { success: true, liked: true, likes: [] as string[] };
+    } catch { /* non-fatal */ }
+    return { success: false, likes: [] as string[] };
+  },
+
+  deleteStatus: async (statusId: string) => {
+    try {
+      const cur = await getCurrentProfile();
+      if (!cur?.profileId || !statusId) return { success: false };
+      const { error } = await supabase
+        .from("stories")
+        .delete()
+        .eq("id", statusId)
+        .eq("profile_id", cur.profileId);
+      if (error) return { success: false };
+      return { success: true };
+    } catch { /* non-fatal */ }
+    return { success: false };
+  },
+
+  reactToMessage: async (messageId: string, emoji: string) => {
+    try {
+      const cur = await getCurrentProfile();
+      if (!cur?.profileId || !messageId) return { success: false };
+      const { data: existing } = await supabase
+        .from("message_reactions")
+        .select("id")
+        .eq("message_id", messageId)
+        .eq("profile_id", cur.profileId)
+        .maybeSingle();
+      if (existing) {
+        await supabase.from("message_reactions").delete().eq("id", existing.id);
+        return { success: true, removed: true };
+      }
+      await supabase
+        .from("message_reactions")
+        .insert({ message_id: messageId, profile_id: cur.profileId, reaction: emoji });
+      return { success: true, removed: false };
+    } catch { /* non-fatal */ }
+    return { success: false };
+  },
 };
 
 export default apiService;

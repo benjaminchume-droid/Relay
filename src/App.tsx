@@ -36,7 +36,7 @@ export const App: React.FC = () => {
   const [showNewChatModal, setShowNewChatModal] = useState(false);
   const [showCreateCommunityModal, setShowCreateCommunityModal] = useState(false);
 
-  const { status, initializeSession, profile, currentUser } = useAuthStore();
+  const { status, initializeSession, profile, currentUser, isPasswordResetFlow } = useAuthStore();
   const { customization } = useThemeStore();
   const { activeChatId, setActiveChat } = useChatStore();
   useRelayRealtime();
@@ -153,6 +153,12 @@ export const App: React.FC = () => {
 
   if (status === 'EMAIL_UNVERIFIED') {
     return <EmailVerificationPendingScreen />;
+  }
+
+  // Password-recovery handoff: user arrived via the emailed reset link — show
+  // the "set new password" screen before anything else.
+  if (isPasswordResetFlow && isAuthedStatus(status)) {
+    return <AuthFlow />;
   }
 
   if (

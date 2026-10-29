@@ -279,7 +279,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                       )}
                       {isVoice && mediaUrl ? (
                         <VoiceNoteBubble audioUrl={mediaUrl} duration={(msg as any).attachments?.[0]?.duration} isMine={isMine} />
-                      ) : mediaUrl && (msg.type === "image" || msg.type === "photo") ? (
+                      ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
                         <img src={mediaUrl} alt="" className="rounded-xl max-w-full max-h-56 object-cover mb-1" />
                       ) : (
                         <span>{msg.content}</span>
