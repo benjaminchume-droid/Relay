@@ -50,6 +50,10 @@ export async function ensureIdentity(profileId: string): Promise<LocalIdentity> 
   }
   // fresh device / lost IDB — new identity, replace server bundle
   local = generateIdentity();
+  // Persist the PRIVATE identity BEFORE registering, and definitely before any
+  // session use. (Missing persistence used to silently rotate the identity on
+  // every page load, orphaning the server bundle and breaking all decryption.)
+  await cryptoStore.setIdentity(profileId, local);
   await registerIdentity(profileId, local);
   identity = local;
   return local;
@@ -119,14 +123,33 @@ export async function ensureSession(myProfileId: string, conversationId: string,
   const p = (async (): Promise<RatchetState> => {
     const stored = await cryptoStore.getSession(myProfileId, conversationId);
     if (stored) {
-      sessionCache.set(conversationId, stored);
-      return stored;
+      // Self-heal: if the peer's server-side identity was rotated (fresh install,
+      // lost IDB), sessions built against the old bundle can never decrypt there.
+      // Detect and re-initiate against the CURRENT bundle.
+      try {
+        const { data: reg } = await supabase
+          .from("signal_identities")
+          .select("ik_pub")
+          .eq("profile_id", peerProfileId)
+          .maybeSingle();
+        const currentPeerIk = reg?.ik_pub as string | undefined;
+        if (currentPeerIk && stored.peerIk && stored.peerIk !== currentPeerIk) {
+          await cryptoStore.deleteSession(myProfileId, conversationId);
+        } else {
+          sessionCache.set(conversationId, stored);
+          return stored;
+        }
+      } catch {
+        sessionCache.set(conversationId, stored);
+        return stored;
+      }
     }
     const id = identity!;
     const bundle = await fetchBundle(peerProfileId);
     const init = x3dhInitiate(id.ik, bundle);
     const pre = { ek: b64u.enc(init.ephemeralPub), spkId: bundle.spkId, opkId: init.usedOpkId };
     const state = initRatchetAsInitiator(init.sharedSecret, b64u.dec(bundle.spkPub), pre);
+    state.peerIk = bundle.ikPub;
     await cryptoStore.setSession(myProfileId, conversationId, state);
     sessionCache.set(conversationId, state);
     void topUpPrekeys(myProfileId);
@@ -190,9 +213,20 @@ export async function decryptFor(
   let state = sessionCache.get(conversationId) || (await cryptoStore.getSession(myProfileId, conversationId));
   if (!state && env.pre) state = await sessionFromPrekeyMessage(myProfileId, conversationId, env);
   if (!state) throw new Error("No session for conversation");
-  const pt = await ratchetDecrypt(state, conversationId, env);
-  await cryptoStore.setSession(myProfileId, conversationId, state);
-  return pt;
+  try {
+    const pt = await ratchetDecrypt(state, conversationId, env);
+    await cryptoStore.setSession(myProfileId, conversationId, state);
+    return pt;
+  } catch (err) {
+    // Prekey (first-contact) message that failed with a rebuilt session: drop the
+    // broken session so a future attempt can rebuild from scratch instead of
+    // being poisoned forever by a half-advanced ratchet state.
+    if (env.pre) {
+      await cryptoStore.deleteSession(myProfileId, conversationId);
+      sessionCache.delete(conversationId);
+    }
+    throw err;
+  }
 }
 
 export function resetForTests() {

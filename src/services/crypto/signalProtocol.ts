@@ -203,6 +203,8 @@ export type RatchetState = {
   prevSendingCount: number;
   skipped: Record<string, string>; // `${dh}:${n}` -> messageKey b64u
   pendingPre?: Envelope["pre"];
+  /** Peer identity key (b64u) this session was established against — used to detect peer key rotation. */
+  peerIk?: string;
 };
 
 export function initRatchetAsInitiator(

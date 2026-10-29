@@ -7,6 +7,7 @@ import { profileCache } from "./profileCache";
 import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
 import { encryptFor, isEnvelope } from "./crypto/cryptoService";
+import { ownPlaintextRemember } from "./messageFetch";
 import { encodePayload, type MsgPayload } from "./crypto/mediaDecryptor";
 
 const peerIdCache = new Map<string, string>();
@@ -274,6 +275,8 @@ export async function sendConversationMessage(
     (msgFormatted as any)._encrypted = true;
     msgFormatted.content = plaintextPreview;
   }
+  // remember our own plaintext so history refetches stay readable on this device
+  if (msgFormatted.id) ownPlaintextRemember(String(msgFormatted.id), plaintextPreview || '');
   if (envelopePayload?.k === "m") {
     (msgFormatted as any)._mediaKey = envelopePayload.key;
     const atts = (msgFormatted.attachments || []) as any[];

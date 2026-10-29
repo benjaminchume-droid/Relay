@@ -28,6 +28,31 @@ export function scheduleMediaDecrypt(msg: Message): void {
     });
 }
 
+// Sender-side plaintext memory: own outgoing ciphertext can never be decrypted
+// locally (no receiving chain for self), and running the ratchet on self-ciphertext
+// would corrupt the session. Keep the plaintext keyed by message id instead.
+const OWN_PT_KEY = 'relay_own_plaintext_v1';
+
+function ownPlaintextLoad(): Record<string, string> {
+  try { return JSON.parse(localStorage.getItem(OWN_PT_KEY) || '{}'); } catch { return {}; }
+}
+
+export function ownPlaintextRemember(messageId: string, text: string): void {
+  try {
+    const all = ownPlaintextLoad();
+    const ids = Object.keys(all);
+    if (ids.length > 300) {
+      for (const k of ids.slice(0, ids.length - 300)) delete all[k];
+    }
+    all[messageId] = text;
+    localStorage.setItem(OWN_PT_KEY, JSON.stringify(all));
+  } catch { /* storage optional */ }
+}
+
+function ownPlaintextRecall(messageId: string): string | null {
+  try { return ownPlaintextLoad()[messageId] ?? null; } catch { return null; }
+}
+
 /** Decrypt every envelope in a page of messages (mutates in place). */
 export async function decryptMessages(
   myProfileId: string,
@@ -38,6 +63,13 @@ export async function decryptMessages(
     const raw = (msg as any).content;
     if (!isEnvelope(raw)) continue;
     (msg as any)._encrypted = true;
+    // Own outgoing messages: NEVER run the ratchet on them (no receiving chain for
+    // self — it would corrupt the session state). Recall the stored plaintext.
+    if (msg.senderId && msg.senderId === myProfileId) {
+      const remembered = ownPlaintextRecall(String(msg.id));
+      msg.content = remembered ?? 'Encrypted message';
+      continue;
+    }
     try {
       const payload = decodePayload(await decryptFor(myProfileId, conversationId, parseEnvelope(raw)));
       if (!payload) throw new Error("bad payload");
