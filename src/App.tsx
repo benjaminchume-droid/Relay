@@ -7,7 +7,7 @@ import React, { useEffect, useState } from 'react';
 import { useAuthStore } from './store/authStore';
 import { useThemeStore, applyThemeVars } from './store/themeStore';
 import { useChatStore } from './store/chatStore';
-import { AmbientLiquidBackground, RelayLogoEmblem } from './components/GlassUI';
+import { AmbientLiquidBackground, RelayLogoEmblem, LiquidRefractionDefs } from './components/GlassUI';
 import { AuthFlow } from './components/AuthFlow';
 import { EmailVerificationPendingScreen } from './components/EmailVerificationPendingScreen';
 import { MainNavigation, MainTab } from './components/Navigation';
@@ -23,6 +23,7 @@ import { ModalsOverlay } from './components/Modals';
 import { useRelayRealtime } from './services/realtime/useRelayRealtime';
 import { GlobalCallHost } from './components/GlobalCallHost';
 import { registerCurrentDevice, tryRegisterNativePush } from './services/deviceService';
+import { presenceService } from './services/presenceService';
 
 function isAuthedStatus(status: string) {
   return status === 'READY' || status === 'AUTHENTICATED';
@@ -72,10 +73,26 @@ export const App: React.FC = () => {
         await tryRegisterNativePush(pid);
       }
     })();
+    // Signal-level identity (local keys + server prekey bundle) + realtime streams
+    void (async () => {
+      try {
+        const { ensureIdentity } = await import('./services/crypto/cryptoService');
+        await ensureIdentity(pid);
+      } catch (e) {
+        console.warn('[e2ee] identity init failed', e);
+      }
+    })();
+    useChatStore.getState().startGlobalMessageStream();
+    presenceService.start(pid);
     return () => {
       cancelled = true;
     };
   }, [status, profile, currentUser]);
+
+  useEffect(() => {
+    if (isAuthedStatus(status)) return;
+    presenceService.stop();
+  }, [status]);
 
   useEffect(() => {
     const handlePopState = () => {

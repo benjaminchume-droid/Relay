@@ -1,6 +1,7 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
 import { WebRouter } from './WebRouter.tsx';
+import { LiquidRefractionDefs } from './components/GlassUI.tsx';
 import './index.css';
 import './theme-dark.css';
 
@@ -16,6 +17,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <LiquidRefractionDefs />
     <WebRouter />
   </StrictMode>,
 );

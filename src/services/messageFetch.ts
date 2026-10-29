@@ -1,11 +1,67 @@
 /**
  * Message list with sender identity (name + avatar) + reply previews.
+ * E2EE: decrypts ratchet envelopes in place; text synchronously, media lazily.
  */
 import { supabase } from "../lib/supabase/client";
 import { formatMessageRecord } from "./messagingCore";
+import { decryptFor, isEnvelope, parseEnvelope } from "./crypto/cryptoService";
+import { decodePayload, getDecryptedMediaUrl } from "./crypto/mediaDecryptor";
 import type { Message } from "../types";
 
-export async function fetchConversationMessages(conversationId: string): Promise<Message[]> {
+/** Kick off lazy media decryption; resolves to a blob URL when ready. */
+export function scheduleMediaDecrypt(msg: Message): void {
+  const anyMsg = msg as any;
+  const key = anyMsg._mediaKey;
+  const url = anyMsg.mediaUrl || anyMsg.attachments?.[0]?.url;
+  if (!key || !url || anyMsg._mediaDecrypting) return;
+  anyMsg._mediaDecrypting = true;
+  getDecryptedMediaUrl(String(msg.id), url, key)
+    .then((blobUrl) => {
+      anyMsg.mediaUrl = blobUrl;
+      if (anyMsg.attachments?.[0]) anyMsg.attachments[0].url = blobUrl;
+      anyMsg._mediaReady = true;
+      window.dispatchEvent(new CustomEvent("relay:media-ready", { detail: { messageId: msg.id, chatId: msg.chatId } }));
+    })
+    .catch((e) => {
+      console.warn("[media decrypt]", e);
+      anyMsg._mediaDecrypting = false;
+    });
+}
+
+/** Decrypt every envelope in a page of messages (mutates in place). */
+export async function decryptMessages(
+  myProfileId: string,
+  conversationId: string,
+  msgs: Message[]
+): Promise<void> {
+  for (const msg of msgs) {
+    const raw = (msg as any).content;
+    if (!isEnvelope(raw)) continue;
+    (msg as any)._encrypted = true;
+    try {
+      const payload = decodePayload(await decryptFor(myProfileId, conversationId, parseEnvelope(raw)));
+      if (!payload) throw new Error("bad payload");
+      if (payload.k === "t" || payload.k === "s") {
+        msg.content = payload.t;
+      } else if (payload.k === "m") {
+        msg.content = "";
+        (msg as any)._mediaKey = payload.key;
+        if (payload.mime) (msg as any)._mime = payload.mime;
+        if (payload.dur != null) {
+          (msg as any)._duration = payload.dur;
+          const atts = (msg.attachments || []) as any[];
+          if (atts[0] && atts[0].duration == null) atts[0].duration = payload.dur;
+        }
+        scheduleMediaDecrypt(msg);
+      }
+    } catch (e) {
+      console.warn("[e2ee] decrypt failed for message", msg.id, e);
+      msg.content = "🔒 Encrypted message (cannot decrypt on this device)";
+    }
+  }
+}
+
+export async function fetchConversationMessages(conversationId: string, myProfileId?: string): Promise<Message[]> {
   if (!conversationId) return [];
 
   let rows: any[] = [];
@@ -44,7 +100,7 @@ export async function fetchConversationMessages(conversationId: string): Promise
     if (m?.id) byId.set(String(m.id), m);
   }
 
-  return rows.map((m: any) => {
+  const formatted = rows.map((m: any) => {
     const replyId = m.reply_to_message_id || m.replyToId;
     if (replyId && byId.has(String(replyId))) {
       const parent = byId.get(String(replyId));
@@ -55,13 +111,15 @@ export async function fetchConversationMessages(conversationId: string): Promise
         parent.profiles?.username ||
         parent.senderName ||
         "Reply";
-      const parentContent =
-        parent.content ||
-        (parent.message_type === "voice_note" || parent.message_type === "voice"
-          ? "Voice note"
-          : parent.message_type === "image"
-            ? "Photo"
-            : "Message");
+      const parentEncrypted = isEnvelope(parent.content);
+      const parentContent = parentEncrypted
+        ? "Message"
+        : parent.content ||
+          (parent.message_type === "voice_note" || parent.message_type === "voice"
+            ? "Voice note"
+            : parent.message_type === "image"
+              ? "Photo"
+              : "Message");
       m = {
         ...m,
         reply_to_sender_name: parentSender,
@@ -75,4 +133,15 @@ export async function fetchConversationMessages(conversationId: string): Promise
     }
     return formatMessageRecord(m);
   });
+
+  if (myProfileId) {
+    await decryptMessages(myProfileId, conversationId, formatted);
+    // fire-and-forget delivery receipt for everything not from me
+    void supabase.rpc("mark_messages_status", {
+      p_conversation_id: conversationId,
+      p_status: "delivered",
+    });
+  }
+
+  return formatted;
 }

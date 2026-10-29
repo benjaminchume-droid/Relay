@@ -227,3 +227,67 @@ export const AmbientLiquidBackground: React.FC = () => {
     </div>
   );
 };
+
+// ---------------------------------------------------------------------------
+// Liquid Glass with real refraction — an SVG displacement map bends whatever
+// renders behind the panel (Chromium), with graceful blur-only fallback.
+// ---------------------------------------------------------------------------
+const REFRACT_FILTER_ID = 'relay-refract';
+
+export const LiquidRefractionDefs: React.FC = () => {
+  const { customization } = useThemeStore();
+  const scale = Math.max(0, Math.min(100, customization.refraction ?? 30)) * 0.6;
+  return (
+    <svg aria-hidden className="fixed w-0 h-0 pointer-events-none" style={{ width: 0, height: 0 }}>
+      <defs>
+        <filter id={REFRACT_FILTER_ID} x="-20%" y="-20%" width="140%" height="140%" colorInterpolationFilters="sRGB">
+          <feTurbulence type="fractalNoise" baseFrequency="0.008 0.012" numOctaves={2} seed={7} result="noise" />
+          <feGaussianBlur in="noise" stdDeviation="2" result="softNoise" />
+          <feDisplacementMap in="SourceGraphic" in2="softNoise" scale={scale} xChannelSelector="R" yChannelSelector="G" />
+        </filter>
+      </defs>
+    </svg>
+  );
+};
+
+let refractSupport: boolean | null = null;
+function supportsBackdropRefraction(): boolean {
+  if (refractSupport !== null) return refractSupport;
+  try {
+    refractSupport =
+      typeof CSS !== 'undefined' &&
+      (CSS.supports('backdrop-filter', 'url(#relay-refract)') || CSS.supports('-webkit-backdrop-filter', 'url(#relay-refract)'));
+  } catch {
+    refractSupport = false;
+  }
+  return refractSupport;
+}
+
+export const LiquidPanel: React.FC<{
+  children: React.ReactNode;
+  className?: string;
+  blur?: number;
+  style?: React.CSSProperties;
+  as?: 'div' | 'header' | 'form' | 'aside';
+  heavy?: boolean;
+}> = ({ children, className = '', blur, style, as = 'div', heavy = false }) => {
+  const { customization } = useThemeStore();
+  const Tag = as as any;
+  const blurPx = blur ?? customization.blurIntensity ?? 24;
+  const chain = supportsBackdropRefraction()
+    ? `blur(${blurPx}px) saturate(165%) url(#${REFRACT_FILTER_ID})`
+    : `blur(${Math.max(10, blurPx)}px) saturate(160%)`;
+  return (
+    <Tag
+      className={`liquid-panel ${heavy ? 'liquid-panel-heavy' : ''} ${className}`}
+      style={{
+        backdropFilter: chain,
+        WebkitBackdropFilter: chain,
+        borderRadius: `${customization.cornerRadius}px`,
+        ...style,
+      }}
+    >
+      {children}
+    </Tag>
+  );
+};

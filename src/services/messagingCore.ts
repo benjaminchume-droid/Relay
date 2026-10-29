@@ -6,6 +6,33 @@ import { supabase } from "../lib/supabase/client";
 import { profileCache } from "./profileCache";
 import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
+import { encryptFor, isEnvelope } from "./crypto/cryptoService";
+import { encodePayload, type MsgPayload } from "./crypto/mediaDecryptor";
+
+const peerIdCache = new Map<string, string>();
+
+/** Resolve the other participant of a conversation (direct chats). */
+export async function resolveConversationPeer(
+  conversationId: string,
+  myProfileId: string
+): Promise<string | null> {
+  const cacheKey = `${conversationId}:${myProfileId}`;
+  const hit = peerIdCache.get(cacheKey);
+  if (hit) return hit;
+  try {
+    const { data } = await supabase
+      .from("conversation_members")
+      .select("profile_id")
+      .eq("conversation_id", conversationId)
+      .neq("profile_id", myProfileId)
+      .limit(1);
+    const peer = (data || [])[0]?.profile_id || null;
+    if (peer) peerIdCache.set(cacheKey, peer);
+    return peer;
+  } catch {
+    return null;
+  }
+}
 
 export function mapUiMessageType(type?: string): string {
   const t = (type || "text").toLowerCase();
@@ -188,10 +215,44 @@ export async function sendConversationMessage(
   const mediaUrl = payload.attachments?.[0]?.url || null;
   const fileName = payload.attachments?.[0]?.fileName || null;
 
+  // ---- Signal-level E2EE: build plaintext payload, ship ciphertext ----
+  const peerId =
+    targetUserId && UUID_RE.test(targetUserId)
+      ? await resolveExactProfileId(targetUserId)
+      : await resolveConversationPeer(targetConvId, profileId);
+
+  let wireContent: string | null = payload.content || null;
+  let envelopePayload: MsgPayload | null = null;
+  let plaintextPreview = payload.content || "";
+
+  if (peerId && mediaUrl) {
+    const att: any = payload.attachments?.[0] || {};
+    envelopePayload = {
+      k: "m",
+      u: mediaUrl,
+      key: att.mediaKey || "",
+      mime: att.mimeType || "application/octet-stream",
+      name: fileName || att.name || "attachment",
+      dur: att.duration ?? undefined,
+    };
+    plaintextPreview = mappedType === "image" ? "Photo" : mappedType === "voice_note" ? "Voice note" : "Attachment";
+  } else if (peerId && payload.content != null) {
+    envelopePayload = { k: "t", t: payload.content };
+  }
+
+  if (peerId && envelopePayload) {
+    try {
+      wireContent = await encryptFor(profileId, targetConvId, peerId, encodePayload(envelopePayload));
+    } catch (e) {
+      console.error("[e2ee] encrypt failed — message NOT sent (refusing plaintext fallback)", e);
+      throw new Error("Encryption failed — message was not sent. Try again.");
+    }
+  }
+
   const { data, error } = await supabase.rpc("send_conversation_message", {
     p_conversation_id: UUID_RE.test(targetConvId) ? targetConvId : null,
     p_recipient_profile_id: targetUserId,
-    p_content: payload.content || null,
+    p_content: wireContent,
     p_message_type: mappedType,
     p_reply_to_message_id: payload.replyToId || null,
     p_media_url: mediaUrl,
@@ -208,6 +269,16 @@ export async function sendConversationMessage(
   const msgFormatted = formatMessageRecord(confirmedMsg);
   msgFormatted.chatId = realConvId;
   msgFormatted.deliveryState = "sent";
+  // sender sees their own plaintext/preview immediately (ciphertext stays in DB)
+  if (isEnvelope(msgFormatted.content as any)) {
+    (msgFormatted as any)._encrypted = true;
+    msgFormatted.content = plaintextPreview;
+  }
+  if (envelopePayload?.k === "m") {
+    (msgFormatted as any)._mediaKey = envelopePayload.key;
+    const atts = (msgFormatted.attachments || []) as any[];
+    for (const a of atts) a.mediaKey = envelopePayload.key;
+  }
 
   let targetName = "";
   let targetAvatar: string | undefined;

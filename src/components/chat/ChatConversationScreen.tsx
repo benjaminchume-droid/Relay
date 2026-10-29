@@ -16,8 +16,9 @@ import { supabase } from "../../lib/supabase/client";
 import { formatChatTimestamp } from "../../lib/utils";
 import { getLetterAvatar } from "../../lib/avatar";
 import { useCallStore } from "../../store/callStore";
-import { AmbientLiquidBackground } from "../GlassUI";
+import { AmbientLiquidBackground, LiquidPanel } from "../GlassUI";
 import { useRelayRealtime } from "../../services/realtime/useRelayRealtime";
+import { fetchPresence, presenceLabel, type PresenceRow } from "../../services/presenceService";
 import { QuotedReplyBubble } from "../QuotedReplyBubble";
 import { ReplyPreviewComposer } from "../ReplyPreviewComposer";
 import { ContactProfileScreen } from "../ContactProfileScreen";
@@ -37,7 +38,8 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const [showVoice, setShowVoice] = useState(false);
   const [recipientProfile, setRecipientProfile] = useState<any>(null);
   const [accepting, setAccepting] = useState(false);
-  const [callUnavailable, setCallUnavailable] = useState(false);
+  const [peerPresence, setPeerPresence] = useState<PresenceRow | null>(null);
+  const [, forceTick] = useState(0);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
 
@@ -69,8 +71,32 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   }, [chatId]);
 
   useEffect(() => {
-    const interval = setInterval(() => pollUpdates(), 8000);
+    const interval = setInterval(() => pollUpdates(), 30000);
     return () => clearInterval(interval);
+  }, [chatId]);
+
+  // live presence for the peer (user_presence is in the realtime publication)
+  useEffect(() => {
+    const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
+    if (!targetUserId || chat.type === "group") return;
+    void fetchPresence([targetUserId]).then((m) => setPeerPresence(m[targetUserId] || null));
+    const ch = supabase
+      .channel(`presence:watch:${targetUserId}`)
+      .on("postgres_changes", { event: "*", schema: "public", table: "user_presence", filter: `profile_id=eq.${targetUserId}` }, (payload) => {
+        if (payload.new) setPeerPresence(payload.new as PresenceRow);
+      })
+      .subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [chatId, chat.participants, chat.type, myProfileId, currentUser?.id]);
+
+  // re-render when an encrypted attachment finishes decrypting to a blob URL
+  useEffect(() => {
+    const onReady = (e: Event) => {
+      const d = (e as CustomEvent).detail;
+      if (d?.chatId === chatId) forceTick((t) => t + 1);
+    };
+    window.addEventListener("relay:media-ready", onReady);
+    return () => window.removeEventListener("relay:media-ready", onReady);
   }, [chatId]);
 
   useEffect(() => {
@@ -96,7 +122,8 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
 
   const headerDisplayName = recipientProfile?.display_name || recipientProfile?.full_name || (recipientProfile?.username ? `@${recipientProfile.username}` : (chat.name && chat.name !== "Chat" && chat.name !== "Conversation" ? chat.name : "User"));
   const headerAvatar = recipientProfile?.avatar_url || chat.avatarUrl || getLetterAvatar(headerDisplayName);
-  const subtitle = activeTypingUsers.length > 0 ? "Typing..." : (isPendingIncoming || isPendingOutgoing) ? "Message request" : chat.type === "group" ? `${chat.participants?.length || 1} members` : "";
+  const presenceText = chat.type === "group" ? `${chat.participants?.length || 1} members` : presenceLabel(peerPresence);
+  const subtitle = activeTypingUsers.length > 0 ? "Typing..." : (isPendingIncoming || isPendingOutgoing) ? "Message request" : presenceText;
 
   const handleSend = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -134,13 +161,14 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         r.onerror = reject;
         r.readAsDataURL(file);
       });
-      const uploaded = await apiService.uploadFile(base64, file.name, file.type || "application/octet-stream");
       const isImage = (file.type || "").startsWith("image/");
       const isVideo = (file.type || "").startsWith("video/");
+      // encrypted upload — bucket only ever sees ciphertext
+      const uploaded = await apiService.uploadEncryptedFile(base64, file.name, file.type || "application/octet-stream");
       await sendMessage({
         content: file.name,
         type: isImage ? "image" : isVideo ? "video" : "file",
-        attachments: [{ url: uploaded.url, name: file.name, mimeType: file.type, size: file.size } as any],
+        attachments: [{ url: uploaded.url, name: file.name, mimeType: file.type, size: file.size, mediaKey: uploaded.mediaKey } as any],
       });
     } catch (err: any) { setSendError(err?.message || "Upload failed"); }
     finally { setIsSending(false); }
@@ -151,6 +179,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     setIsSending(true); setSendError(null);
     try {
       let url = voiceNote.audioUrl;
+      let mediaKey: string | undefined;
       if (voiceNote.blob) {
         const base64 = await new Promise<string>((resolve, reject) => {
           const r = new FileReader();
@@ -158,13 +187,14 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           r.onerror = reject;
           r.readAsDataURL(voiceNote.blob!);
         });
-        const uploaded = await apiService.uploadFile(base64, voiceNote.fileName || "voice.webm", voiceNote.mimeType || "audio/webm");
+        const uploaded = await apiService.uploadEncryptedFile(base64, voiceNote.fileName || "voice.webm", voiceNote.mimeType || "audio/webm");
         url = uploaded.url;
+        mediaKey = uploaded.mediaKey;
       }
       await sendMessage({
         content: "Voice note",
         type: "voice",
-        attachments: [{ url, name: voiceNote.fileName || "voice.webm", mimeType: voiceNote.mimeType || "audio/webm", duration: voiceNote.duration } as any],
+        attachments: [{ url, name: voiceNote.fileName || "voice.webm", mimeType: voiceNote.mimeType || "audio/webm", duration: voiceNote.duration, mediaKey } as any],
       });
     } catch (err: any) { setSendError(err?.message || "Voice send failed"); }
     finally { setIsSending(false); }
@@ -181,7 +211,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   return (
     <div className="w-full h-screen flex flex-col justify-between bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
       <AmbientLiquidBackground />
-      <header className="w-full sticky top-0 z-30 h-[56px] bg-white/95 dark:bg-slate-900/95 backdrop-blur-xl border-b border-slate-200/80 dark:border-white/10 px-3 flex items-center justify-between shrink-0">
+      <LiquidPanel as="header" className="w-full sticky top-0 z-30 !rounded-none border-b border-slate-200/60 dark:border-white/10 px-3 flex items-center justify-between shrink-0 bg-white/70 dark:bg-slate-900/70" style={{ borderRadius: 0 }}>
         <div className="flex items-center gap-2.5 min-w-0 flex-1">
           <button onClick={onBack} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800" type="button"><ArrowLeft size={20} /></button>
           <button type="button" onClick={() => setShowProfile(true)} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
@@ -195,13 +225,21 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         <div className="flex items-center gap-1 shrink-0">
           {chat.type !== "group" && !isPendingIncoming && (
             <>
-              <button type="button" onClick={() => setCallUnavailable(true)} className="p-2 rounded-full text-emerald-600/80 hover:bg-slate-100 dark:hover:bg-slate-800"><Phone size={18} /></button>
-              <button type="button" onClick={() => setCallUnavailable(true)} className="p-2 rounded-full text-blue-600/80 hover:bg-slate-100 dark:hover:bg-slate-800"><Video size={18} /></button>
+              <button type="button" disabled={callPhase !== "idle"} onClick={() => {
+                const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
+                setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+                void placeCall(chatId, "voice", myProfileId);
+              }} className="p-2 rounded-full text-emerald-600/80 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><Phone size={18} /></button>
+              <button type="button" disabled={callPhase !== "idle"} onClick={() => {
+                const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
+                setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+                void placeCall(chatId, "video", myProfileId);
+              }} className="p-2 rounded-full text-blue-600/80 hover:bg-slate-100 dark:hover:bg-slate-800 disabled:opacity-40"><Video size={18} /></button>
             </>
           )}
           <button type="button" onClick={() => setShowProfile(true)} className="p-2 rounded-full"><MoreVertical size={18} /></button>
         </div>
-      </header>
+      </LiquidPanel>
 
       <div className="flex-1 overflow-y-auto px-3 py-3 space-y-1.5 max-w-4xl w-full mx-auto">
         {chatMsgs.length === 0 ? (
@@ -265,17 +303,6 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
       )}
       {replyingToMessage && <ReplyPreviewComposer message={replyingToMessage} onCancel={() => setReplyingToMessage(null)} />}
 
-      {callUnavailable && (
-        <div className="fixed inset-0 z-[80] flex items-center justify-center bg-black/40 p-6" onClick={() => setCallUnavailable(false)}>
-          <div className="relative w-full max-w-xs rounded-2xl bg-white dark:bg-slate-900 p-5 shadow-xl border border-slate-200 dark:border-white/10" onClick={(e) => e.stopPropagation()}>
-            <button type="button" onClick={() => setCallUnavailable(false)} className="absolute top-3 right-3 p-1 rounded-full hover:bg-slate-100 dark:hover:bg-slate-800 text-slate-500"><X size={16} /></button>
-            <h3 className="text-sm font-bold text-slate-900 dark:text-white mb-1.5">Calls unavailable</h3>
-            <p className="text-xs text-slate-600 dark:text-slate-300 leading-relaxed">Voice and video calls are not available in this version. The team is actively working on them.</p>
-            <button type="button" onClick={() => setCallUnavailable(false)} className="mt-4 w-full py-2 rounded-xl text-xs font-bold text-white" style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}>Got it</button>
-          </div>
-        </div>
-      )}
-
       {isPendingIncoming ? (
         <div className="shrink-0 border-t border-slate-200/80 dark:border-white/10 bg-white/95 dark:bg-slate-900/95 px-4 py-3 flex flex-col gap-2 max-w-4xl w-full mx-auto">
           <p className="text-[12px] text-slate-600 dark:text-slate-300 text-center font-medium">Accept invite and start chatting</p>
@@ -290,7 +317,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           <VoiceRecorderUI onSendVoiceNote={handleVoiceSend} onCancel={() => setShowVoice(false)} />
         </div>
       ) : (
-        <form onSubmit={handleSend} className="shrink-0 px-3 py-2 bg-white/95 dark:bg-slate-900/95 border-t border-slate-200/80 flex items-center gap-2 max-w-4xl w-full mx-auto">
+        <LiquidPanel as="form" onSubmit={handleSend} className="shrink-0 px-3 py-2 border-t border-slate-200/60 dark:border-white/10 flex items-center gap-2 max-w-4xl w-full mx-auto bg-white/70 dark:bg-slate-900/70" style={{ borderRadius: 0 }}>
           <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" className="hidden" onChange={handleFilePick} />
           <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800" aria-label="Attach"><Paperclip size={18} /></button>
           <input
@@ -304,7 +331,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           ) : (
             <button type="button" onClick={() => setShowVoice(true)} className="p-2.5 rounded-full text-slate-500 hover:bg-slate-100 dark:hover:bg-slate-800"><Mic size={18} /></button>
           )}
-        </form>
+        </LiquidPanel>
       )}
     </div>
   );

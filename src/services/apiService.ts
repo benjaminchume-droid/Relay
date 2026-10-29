@@ -19,6 +19,14 @@ import {
 
 const TOKEN_STORAGE_KEY = "relay_v2_auth_token";
 
+function base64ToBytes(base64: string): Uint8Array {
+  const clean = base64.includes(",") ? base64.split(",")[1] : base64;
+  const bin = atob(clean);
+  const out = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+  return out;
+}
+
 export const getAuthToken = (): string | null => {
   try { return localStorage.getItem(TOKEN_STORAGE_KEY); } catch { return null; }
 };
@@ -269,7 +277,8 @@ export const apiService = {
   getMessages: async (conversationId: string): Promise<{ messages: Message[] }> => {
     const { fetchConversationMessages } = await import("./messageFetch");
     try {
-      const messages = await fetchConversationMessages(conversationId);
+      const myProfileId = await resolveMyProfileId();
+      const messages = await fetchConversationMessages(conversationId, myProfileId || undefined);
       return { messages };
     } catch (error: any) {
       console.error("[apiService.getMessages]", error);
@@ -326,21 +335,12 @@ export const apiService = {
   markChatAsRead: async (conversationId: string) => {
     const myProfileId = await resolveMyProfileId();
     if (!myProfileId || !conversationId) return;
-    const { data: lastMsg } = await supabase
-      .from("messages")
-      .select("id")
-      .eq("conversation_id", conversationId)
-      .order("created_at", { ascending: false })
-      .limit(1)
-      .maybeSingle();
-    await supabase
-      .from("conversation_members")
-      .update({
-        unread_count: 0,
-        last_read_message_id: lastMsg?.id || null,
-      })
-      .eq("conversation_id", conversationId)
-      .eq("profile_id", myProfileId);
+    // read receipts: flips peers' messages to 'read' + clears my unread counter
+    const { error } = await supabase.rpc("mark_messages_status", {
+      p_conversation_id: conversationId,
+      p_status: "read",
+    });
+    if (error) console.warn("[markChatAsRead]", error.message);
   },
 
   deleteChat: async (conversationId: string) => {
@@ -381,6 +381,25 @@ export const apiService = {
     if (error) throw error;
     const { data: signed } = await supabase.storage.from("chat-media").createSignedUrl(path, 60 * 60 * 24 * 7);
     return { path, url: signed?.signedUrl || path };
+  },
+
+  /** Client-side encrypted upload: storage bucket receives AES-GCM ciphertext. */
+  uploadEncryptedFile: async (base64: string, fileName: string, mimeType: string) => {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user) throw new Error("Not authenticated");
+    const { encryptBytes } = await import("./crypto/mediaDecryptor");
+    const bytes = base64ToBytes(base64);
+    const { ct, key } = await encryptBytes(bytes);
+    const path = `${user.id}/${Date.now()}_${fileName}.enc`;
+    const { error } = await supabase.storage.from("chat-media").upload(path, ct as unknown as BlobPart, { contentType: "application/octet-stream", upsert: false });
+    if (error) throw error;
+    const { data: signed } = await supabase.storage.from("chat-media").createSignedUrl(path, 60 * 60 * 24 * 7);
+    return {
+      path,
+      url: signed?.signedUrl || path,
+      mediaKey: (await import("./crypto/signalProtocol")).b64u.enc(key),
+      size: bytes.length,
+    };
   },
 
   getNotifications: async () => {

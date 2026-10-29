@@ -13,6 +13,7 @@ import { useContactsStore } from '../store/contactsStore';
 import { Chat } from '../types';
 import { formatChatTimestamp, formatHandle, formatRelativeTime } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
+import { fetchPresence, presenceLabel, isPresenceActive, type PresenceRow } from '../services/presenceService';
 
 export const ChatList: React.FC<{
   onSelectChat: (chatId: string) => void;
@@ -190,17 +191,35 @@ export const ChatList: React.FC<{
 };
 
 const ChatItem: React.FC<{ chat: Chat; onSelect: () => void }> = ({ chat, onSelect }) => {
-  const { currentUser } = useAuthStore();
+  const { currentUser, profile } = useAuthStore();
+  const [peerPresence, setPeerPresence] = useState<PresenceRow | null>(null);
+  const myProfileId = profile?.id || currentUser?.id || '';
+  const peerId = chat.type === 'direct' ? chat.participants?.find((p) => p && p !== myProfileId) : undefined;
+
+  useEffect(() => {
+    if (!peerId) return;
+    let alive = true;
+    void fetchPresence([peerId]).then((m) => { if (alive) setPeerPresence(m[peerId] || null); });
+    const t = setInterval(() => {
+      void fetchPresence([peerId]).then((m) => { if (alive) setPeerPresence(m[peerId] || null); });
+    }, 60000);
+    return () => { alive = false; clearInterval(t); };
+  }, [peerId]);
+
   const hasLastMessage = !!(chat.lastMessage && chat.lastMessage.text);
   const deliveryState = chat.lastMessage?.deliveryState || 'sent';
   const isOutgoing = chat.lastMessage?.senderId === currentUser?.id;
   const isRequest = chat.requestStatus === 'pending_incoming' || chat.requestStatus === 'pending_outgoing';
+  const activePeer = isPresenceActive(peerPresence);
 
   return (
     <GlassCard onClick={onSelect} className="p-3 flex items-center justify-between gap-3 border-white/80 hover:bg-white/90 transition-all group cursor-pointer">
       <div className="flex items-center gap-3 min-w-0 flex-1">
         <div className="relative shrink-0">
           <img src={chat.avatarUrl || getLetterAvatar(chat.name)} alt={chat.name} className="w-12 h-12 rounded-full object-cover border border-white shadow-2xs" />
+          {activePeer && (
+            <span className="absolute -bottom-0.5 -right-0.5 w-3.5 h-3.5 rounded-full bg-emerald-500 border-2 border-white dark:border-slate-900" title="Active now" />
+          )}
           {chat.type === 'group' && (
             <div className="absolute -bottom-1 -right-1 text-white p-1 rounded-full border border-white shadow-2xs" style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}>
               <Users size={10} />
@@ -229,7 +248,7 @@ const ChatItem: React.FC<{ chat: Chat; onSelect: () => void }> = ({ chat, onSele
                 <Check size={14} className="text-slate-400 shrink-0" />
               )
             )}
-            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">{hasLastMessage ? chat.lastMessage!.text : (isRequest ? 'Message request' : 'No messages yet')}</span>
+            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">{hasLastMessage ? chat.lastMessage!.text : (isRequest ? 'Message request' : chat.type === 'direct' ? presenceLabel(peerPresence) : 'No messages yet')}</span>
           </div>
         </div>
       </div>

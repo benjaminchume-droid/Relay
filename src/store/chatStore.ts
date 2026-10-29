@@ -11,9 +11,22 @@ import { chatCache } from '../services/chatCache';
 import { profileCache } from '../services/profileCache';
 import { useAuthStore } from './authStore';
 import { supabase } from '../lib/supabase/client';
+import { decryptMessages, scheduleMediaDecrypt } from '../services/messageFetch';
+import { isEnvelope } from '../services/crypto/cryptoService';
+import { relayRealtimeService } from '../services/realtime/RelayRealtimeService';
+
+function previewOf(msg: Message): string {
+  if ((msg as any).isDeleted) return 'Message deleted';
+  if (msg.type === 'image') return 'Photo';
+  if (msg.type === 'voice') return 'Voice note';
+  if (msg.type === 'video') return 'Video';
+  if (msg.attachments?.length) return 'Attachment';
+  return msg.content || 'Message';
+}
 
 const activeSendPayloads = new Set<string>();
 const activeGroupCreates = new Set<string>();
+let globalStreamStarted = false;
 
 interface ChatState {
   chats: Chat[];
@@ -56,6 +69,8 @@ interface ChatState {
   setSearchQuery: (q: string) => void;
   clearError: () => void;
   acceptChatRequest: (chatId: string) => Promise<void>;
+  startGlobalMessageStream: () => void;
+  receiveIncomingMessage: (row: any) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -264,7 +279,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   sendTypingSignal: async (chatId) => {
-    try { await (apiService as any).sendTypingSignal?.(chatId); } catch {}
+    try {
+      relayRealtimeService.broadcastManager.sendTypingSignal(chatId, true);
+      setTimeout(() => relayRealtimeService.broadcastManager.sendTypingSignal(chatId, false), 2500);
+      void (async () => {
+        const myId = useAuthStore.getState().profile?.id;
+        if (!myId) return;
+        await supabase.from('typing_indicators').upsert({
+          conversation_id: chatId,
+          user_id: myId,
+          is_typing: true,
+          updated_at: new Date().toISOString(),
+        }, { onConflict: 'conversation_id,user_id' });
+        setTimeout(() => {
+          void supabase.from('typing_indicators').update({ is_typing: false, updated_at: new Date().toISOString() })
+            .eq('conversation_id', chatId).eq('user_id', myId);
+        }, 3000);
+      })();
+    } catch {}
   },
 
   pollUpdates: async () => {
@@ -412,6 +444,68 @@ export const useChatStore = create<ChatState>((set, get) => ({
   updateMemberRole: async () => {},
   setSearchQuery: (q) => set({ searchQuery: q }),
   clearError: () => set({ error: null }),
+
+  /** Realtime: global INSERT stream on messages (RLS-filtered per user). */
+  startGlobalMessageStream: () => {
+    if (globalStreamStarted) return;
+    globalStreamStarted = true;
+    supabase
+      .channel('messages:global-stream')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'messages' }, (payload) => {
+        const row = payload.new as any;
+        if (!row?.id || !row?.conversation_id) return;
+        void useChatStore.getState().receiveIncomingMessage(row);
+      })
+      .subscribe();
+  },
+
+  receiveIncomingMessage: async (row: any) => {
+    const myProfileId = useAuthStore.getState().profile?.id;
+    if (!myProfileId) return;
+    const convId = row.conversation_id as string;
+    const isMine = row.sender_id === myProfileId;
+
+    const msg = await (async () => {
+      const { formatMessageRecord } = await import('../services/messagingCore');
+      const m = formatMessageRecord(row);
+      if (!isMine) {
+        await decryptMessages(myProfileId, convId, [m]);
+        void supabase.rpc('mark_messages_status', { p_conversation_id: convId, p_status: 'delivered' });
+      } else if (isEnvelope(m.content as any)) {
+        // echo of my own send — show my plaintext preview (fetch flow already handles open chats)
+        const existing = (useChatStore.getState().messages[convId] || []).find((x) => x.id === m.id);
+        if (existing) m.content = existing.content;
+        else m.content = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice note' : 'Attachment';
+      }
+      return m;
+    })();
+
+    set((state) => {
+      const existingMsgs = state.messages[convId] || [];
+      if (existingMsgs.some((m) => m.id === msg.id)) return {};
+      const messages = { ...state.messages, [convId]: [...existingMsgs, msg] };
+      chatCache.setMessages(messages);
+
+      let chats = state.chats;
+      const idx = chats.findIndex((c) => c.id === convId);
+      if (idx !== -1) {
+        chats = chats.map((c, i) =>
+          i === idx
+            ? {
+                ...c,
+                lastMessage: { text: previewOf(msg), timestamp: (msg as any).timestamp, senderId: (msg as any).senderId, deliveryState: (msg as any).deliveryState || 'sent' },
+                updatedAt: (msg as any).timestamp,
+                unreadCount: isMine || state.activeChatId === convId ? c.unreadCount : (c.unreadCount || 0) + 1,
+              }
+            : c
+        );
+      } else {
+        void get().fetchChats();
+      }
+      chatCache.setChats(chats);
+      return { messages, chats };
+    });
+  },
 
   acceptChatRequest: async (chatId) => {
     try {
