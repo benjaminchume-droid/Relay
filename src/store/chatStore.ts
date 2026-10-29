@@ -456,6 +456,21 @@ export const useChatStore = create<ChatState>((set, get) => ({
         if (!row?.id || !row?.conversation_id) return;
         void useChatStore.getState().receiveIncomingMessage(row);
       })
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
+        const row = payload.new as any;
+        if (!row?.id || !row?.conversation_id || !row?.send_status) return;
+        // live tick updates for my outgoing messages (delivered / read)
+        set((state) => {
+          const msgs = state.messages[row.conversation_id];
+          if (!msgs) return {};
+          const idx = msgs.findIndex((m) => m.id === row.id);
+          if (idx === -1 || !msgs[idx] || msgs[idx].deliveryState === row.send_status) return {};
+          const next = msgs.map((m) => (m.id === row.id ? { ...m, deliveryState: row.send_status as any } : m));
+          const messages = { ...state.messages, [row.conversation_id]: next };
+          chatCache.setMessages(messages);
+          return { messages };
+        });
+      })
       .subscribe();
   },
 
