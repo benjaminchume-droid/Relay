@@ -24,8 +24,8 @@ android {
         applicationId = "com.glassline.relay"
         minSdk = 26
         targetSdk = 34
-        versionCode = 523
-        versionName = "0.5.3.0"
+        versionCode = 524
+        versionName = "0.5.3.1"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables {
