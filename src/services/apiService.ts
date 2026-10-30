@@ -99,6 +99,7 @@ function mapConversationRow(row: any, myProfileId: string): Chat {
     requestStatus: (reqStatus as any) || "accepted",
     lastMessage: row.last_message_preview
       ? {
+          id: row.last_message_id || "",
           text: row.last_message_preview,
           timestamp: lastAt,
           senderId: row.last_message_sender_id || "",

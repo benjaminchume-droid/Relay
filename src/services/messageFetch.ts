@@ -177,7 +177,7 @@ export async function decryptMessages(
       }
     } catch (e) {
       console.warn("[e2ee] decrypt failed for message", msg.id, e);
-      msg.content = "🔒 Encrypted message (cannot decrypt on this device)";
+      msg.content = CIPHER_PLACEHOLDER;
     }
   }
   // loop-level guard: a row must never leave this function as ciphertext

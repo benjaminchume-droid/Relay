@@ -24,6 +24,72 @@ function previewOf(msg: Message): string {
   return msg.content || 'Message';
 }
 
+/** The server can't decrypt, so its preview for E2EE rows is a static
+ *  placeholder. Replace it with the REAL last message text by running the
+ *  row through the same decryption pipeline the chat uses. */
+async function decryptChatPreviews(chats: Chat[]): Promise<Chat[]> {
+  const myProfileId = useAuthStore.getState().profile?.id;
+  if (!myProfileId || !chats?.length) return chats;
+  const targets = chats.filter((c: any) => {
+    const t = c.lastMessage?.text;
+    const id = c.lastMessage?.id;
+    return !!id && typeof t === 'string' && (looksLikeEnvelope(t) || t.startsWith('🔐') || t === CIPHER_PLACEHOLDER);
+  });
+  if (!targets.length) return chats;
+  const byChatId = new Map<string, any>();
+  const rowIds: string[] = [];
+  for (const c of targets) {
+    byChatId.set(c.id, c);
+    rowIds.push(c.lastMessage.id);
+  }
+  try {
+    const { data: rows } = await supabase
+      .from('messages')
+      .select('id, conversation_id, sender_id, message_type, content, mime_type')
+      .in('id', rowIds.slice(0, 40));
+    if (!rows?.length) return chats;
+    const pseudo = rows.map((r: any) => ({
+      id: r.id,
+      chatId: r.conversation_id,
+      senderId: r.sender_id,
+      type: r.message_type === 'voice_note' ? 'voice' : r.message_type,
+      content: r.content || '',
+      timestamp: '',
+      deliveryState: 'sent',
+      _mime: r.mime_type,
+    } as any));
+    const { decryptMessages } = await import('../services/messageFetch');
+    // sessions are per (conversation, peer) — decrypt each conversation's
+    // previews as their own batch
+    const byConv = new Map<string, any[]>();
+    for (const m of pseudo) {
+      const list = byConv.get(m.chatId) || [];
+      list.push(m);
+      byConv.set(m.chatId, list);
+    }
+    for (const [convId, group] of byConv) {
+      try { await decryptMessages(myProfileId, convId, group); } catch { /* keep placeholder */ }
+    }
+    const textById = new Map<string, string>();
+    for (const m of pseudo) {
+      let label = m.content;
+      if (!label || looksLikeEnvelope(label)) {
+        label = m.type === 'image' ? 'Photo'
+          : m.type === 'voice' ? 'Voice note'
+          : m.type === 'video' ? 'Video'
+          : 'New message';
+      }
+      textById.set(String(m.id), label);
+    }
+    return chats.map((c: any) => {
+      const t = textById.get(String(c.lastMessage?.id));
+      return t ? { ...c, lastMessage: { ...c.lastMessage, text: t } } : c;
+    });
+  } catch {
+    return chats;
+  }
+}
+
 const activeSendPayloads = new Set<string>();
 const activeGroupCreates = new Set<string>();
 let globalStreamStarted = false;
@@ -128,8 +194,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const { chats } = await apiService.getChats();
       if (chats) {
+        // E2EE previews: swap the server's static placeholder for the real
+        // decrypted last message (best-effort)
+        const chats2 = await decryptChatPreviews(chats);
         set((state) => {
-          const merged = chats.map((c) => {
+          const merged = chats2.map((c) => {
             const existing = state.chats.find((sc) => sc.id === c.id);
             if (existing) {
               return { ...existing, ...c, name: c.name || existing.name, avatarUrl: c.avatarUrl || existing.avatarUrl, requestStatus: c.requestStatus || existing.requestStatus };
