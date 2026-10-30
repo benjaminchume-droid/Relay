@@ -38,6 +38,7 @@ import { useNotificationStore } from './services/notificationService';
 import { useRelayRealtime } from './services/realtime/useRelayRealtime';
 import { GlobalCallHost } from './components/GlobalCallHost';
 import { registerCurrentDevice, tryRegisterNativePush } from './services/deviceService';
+import { ensureCacheScope } from './services/cacheScope';
 import { presenceService } from './services/presenceService';
 
 function isAuthedStatus(status: string) {
@@ -113,6 +114,12 @@ export const App: React.FC = () => {
   useEffect(() => {
     const pid = (profile as any)?.id || (currentUser as any)?.id || (profile as any)?.profile_id;
     if (!isAuthedStatus(status) || !pid) return;
+    // Account-scoped caches: if another account used this browser, wipe its
+    // locally cached messages/watermarks before anything reads them.
+    const scope = ensureCacheScope(pid);
+    if (scope.cleared) {
+      useChatStore.setState({ messages: {}, chats: [], activeChatId: null });
+    }
     let cancelled = false;
     (async () => {
       const res = await registerCurrentDevice(pid);

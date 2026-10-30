@@ -707,6 +707,12 @@ export const useAuthStore = create<AuthState>((set, get) => {
         localStorage.removeItem('relay_setup_completed');
         localStorage.removeItem('relay_cached_user_profile');
       } catch { /* ignore */ }
+      // wipe THIS account's cached conversations — the next sign-in (possibly
+      // a different account on a shared device) must start clean
+      try {
+        const { clearCacheScope } = await import('../services/cacheScope');
+        clearCacheScope();
+      } catch { /* ignore */ }
       set({
         status: 'UNAUTHENTICATED',
         isAuthenticated: false,

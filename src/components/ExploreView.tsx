@@ -892,8 +892,16 @@ function StoryViewer({
         </button>
       </div>
 
-      {/* tap zones + fit-to-screen content */}
-      <div className="absolute inset-0 flex">
+      {/* tap zones + fit-to-screen content — background paints the FULL
+          viewer (text/voice), not just the middle column */}
+      <div
+        className="absolute inset-0 flex"
+        style={{
+          background: story.type === "text" || story.type === "voice"
+            ? (story.backgroundColor || (story.type === "voice" ? STORY_GRADIENTS[5] : STORY_GRADIENTS[0]))
+            : undefined,
+        }}
+      >
         <button type="button" aria-label="Previous" className="w-[22%] h-full z-10" onClick={(e) => { e.stopPropagation(); prev(); }} />
         <div
           className="flex-1 h-full flex items-center justify-center overflow-hidden"
