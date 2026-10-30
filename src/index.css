@@ -74,6 +74,18 @@ html.dark .liquid-glass-card,
     0 12px 36px rgba(0, 0, 0, 0.35) !important;
 }
 
+/* heavy panels were left light in dark mode — the profile header card bug */
+html.dark .glass-panel-heavy,
+[data-theme-mode="dark"] .glass-panel-heavy,
+[data-theme-mode="pure-black"] .glass-panel-heavy {
+  background: rgba(15, 23, 42, 0.82) !important;
+  border-color: rgba(255, 255, 255, 0.12) !important;
+  color: var(--relay-text) !important;
+  box-shadow:
+    inset 0 1.5px 2px rgba(255, 255, 255, 0.07),
+    0 24px 64px rgba(0, 0, 0, 0.45) !important;
+}
+
 html.dark .glass-input,
 [data-theme-mode="dark"] .glass-input {
   background: rgba(30, 41, 59, 0.85) !important;
