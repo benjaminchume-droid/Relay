@@ -36,6 +36,7 @@ import {
   fetchActiveStories,
   fetchContactStories,
   fetchMyContacts,
+  fetchMessagingRoster,
   createStory,
   recordStoryView,
   fetchStoryReplies,
@@ -44,6 +45,7 @@ import {
   type PostComment,
   type StoryItem,
   type StoryReply,
+  type RosterPerson,
 } from "../services/phase1Service";
 
 const STORY_GRADIENTS = [
@@ -63,7 +65,7 @@ const ACCENT = "var(--primary-accent, #2563EB)";
 export const ExploreView: React.FC<{
   onSelectChat: (chatId: string) => void;
   onOpenUserSearch?: () => void;
-}> = ({ onSelectChat, onOpenUserSearch }) => {
+}> = ({ onSelectChat }) => {
   const [tab, setTab] = useState<ExploreTab>("foryou");
   const [feed, setFeed] = useState<FeedPost[]>([]);
   const [stories, setStories] = useState<StoryItem[]>([]);
@@ -181,28 +183,49 @@ export const ExploreView: React.FC<{
     closeViewer();
   };
 
-  // Browser back must ALWAYS restore the nav bar — even when a fullscreen
-  // overlay unmounts without going through its close handler. Guarded by a
-  // released flag so double-exit can never drive the counter negative.
+  // ---- immersive overlay lifecycle ----
+  // ONE enterImmersive per opened overlay, ONE history entry, ONE exit per
+  // close — the old per-index effects double-counted and could wedge the nav
+  // bar in its hidden state after returning from a story.
   const overlayReleaseRef = useRef<(() => void) | null>(null);
+  const overlayOpen = viewerIndex !== null || showStoryComposer;
+
   useEffect(() => {
-    overlayReleaseRef.current = viewerIndex !== null || showStoryComposer ? () => {} : null;
-    if (viewerIndex !== null || showStoryComposer) {
-      window.history.pushState({ relayOverlay: true }, "");
+    if (overlayOpen) {
+      overlayReleaseRef.current = () => {};
+      // only push a guard state if we don't already sit on one
+      if (!(window.history.state && (window.history.state as any).relayOverlay)) {
+        window.history.pushState({ relayOverlay: true }, "");
+      }
+      return () => {};
     }
-  }, [viewerIndex, showStoryComposer]);
+    // overlay fully closed → release the guard entry if it's still on top
+    overlayReleaseRef.current = null;
+    if (window.history.state && (window.history.state as any).relayOverlay) {
+      try { window.history.back(); } catch { /* noop */ }
+    }
+    return () => {};
+  }, [overlayOpen]);
+
+  // browser back closes the overlay (and only the overlay)
   useEffect(() => {
-    const onPop = () => {
-      if (viewerIndex !== null) { setViewerIndex(null); exitImmersive(); }
-      else if (showStoryComposer) { setShowStoryComposer(false); exitImmersive(); }
+    const onPop = (e: PopStateEvent) => {
+      if (e.state && (e.state as any).relayOverlay) return; // our own guard bouncing
+      if (viewerIndex !== null) setViewerIndex(null);
+      else if (showStoryComposer) setShowStoryComposer(false);
+      // nav restoration happens through the store exit below
+      exitImmersive();
     };
     window.addEventListener("popstate", onPop);
-    return () => {
-      window.removeEventListener("popstate", onPop);
-      // unmount cleanup — the "back button ate the nav bar" fix
-      if (viewerIndex !== null || showStoryComposer) exitImmersive();
-    };
+    return () => window.removeEventListener("popstate", onPop);
   }, [viewerIndex, showStoryComposer, exitImmersive]);
+
+  // unmount with an overlay open → restore the nav bar (page leave, tab switch)
+  useEffect(() => {
+    return () => {
+      if (useUiStore.getState().immersive > 0) exitImmersive();
+    };
+  }, [exitImmersive]);
 
   const visibleFeed = feed.slice(0, visibleCount);
 
@@ -248,6 +271,10 @@ export const ExploreView: React.FC<{
         {/* ---------------- FOR YOU — X replica ---------------- */}
         {tab === "foryou" && (
           <div className="space-y-0.5">
+            {/* people search — restricted to your chats + shared groups */}
+            <div className="pb-1">
+              <PeopleSearchPanel onSelectChat={onSelectChat} />
+            </div>
             <div className="flex items-start gap-2.5 px-3.5 py-3 border-b border-slate-200/70 dark:border-white/10">
               <img src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || "You")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
               <div className="min-w-0 flex-1">
@@ -369,13 +396,8 @@ export const ExploreView: React.FC<{
         {/* ---------------- PEOPLE — your contacts ---------------- */}
         {tab === "people" && (
           <div className="space-y-2">
-            <button
-              type="button"
-              onClick={onOpenUserSearch}
-              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/15 text-slate-500 dark:text-slate-300 text-[12px] font-bold"
-            >
-              <Search size={15} /> Find people to follow
-            </button>
+            {/* restricted search — only people you chat with / share groups with */}
+            <PeopleSearchPanel onSelectChat={onSelectChat} placeholder="Find someone you chat with…" />
             {contacts.map((u) => (
               <div key={u.id} className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
                 <img src={u.avatarUrl || getLetterAvatar(u.name || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
@@ -418,6 +440,102 @@ export const ExploreView: React.FC<{
     </div>
   );
 };
+
+// ================= restricted people search =================
+// Only people you are actively chatting with or share a group with — nothing
+// and nobody else is searchable here.
+
+function PeopleSearchPanel({
+  onSelectChat, placeholder = "Search your chats & groups…",
+}: {
+  onSelectChat: (chatId: string) => void;
+  placeholder?: string;
+}) {
+  const [roster, setRoster] = useState<RosterPerson[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [query, setQuery] = useState("");
+  const [starting, setStarting] = useState<string | null>(null);
+  const { createDirectChat } = useChatStore();
+
+  useEffect(() => {
+    let alive = true;
+    fetchMessagingRoster()
+      .then((r) => { if (alive) setRoster(r); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, []);
+
+  const ql = query.trim().toLowerCase();
+  const results = ql
+    ? roster
+        .filter((p) => p.name.toLowerCase().includes(ql) || (p.username || "").toLowerCase().includes(ql))
+        .slice(0, 20)
+    : [];
+
+  const start = async (userId: string) => {
+    if (starting) return;
+    setStarting(userId);
+    try {
+      const chatId = await createDirectChat(userId);
+      if (chatId) onSelectChat(chatId);
+    } catch { /* error surfaces via createDirectChat's store error */ }
+    finally { setStarting(null); }
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center gap-2.5 px-3.5 py-2.5 rounded-full bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+        <Search size={15} className="text-slate-400 shrink-0" />
+        <input
+          value={query}
+          onChange={(e) => setQuery(e.target.value)}
+          placeholder={placeholder}
+          className="flex-1 bg-transparent text-[12.5px] font-medium text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none"
+        />
+        {query && !loading && (
+          <span className="text-[10px] font-bold text-slate-400 shrink-0">{results.length} found</span>
+        )}
+      </div>
+
+      {query.trim() && (
+        <div className="rounded-2xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 overflow-hidden">
+          {loading ? (
+            <div className="py-4 flex justify-center text-slate-400"><Loader2 size={16} className="animate-spin" /></div>
+          ) : results.length === 0 ? (
+            <p className="py-4 text-center text-[11px] text-slate-400 px-3">
+              {roster.length === 0
+                ? "People you chat with or share groups with will appear here."
+                : `No one you chat with matches “${query.trim()}”.`}
+            </p>
+          ) : (
+            results.map((p) => (
+              <div key={p.id} className="flex items-center gap-3 px-3 py-2.5 border-b border-slate-100 dark:border-white/5 last:border-0">
+                <img src={p.avatarUrl || getLetterAvatar(p.name || "U")} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="text-[12.5px] font-bold text-slate-900 dark:text-white truncate">{p.name}</p>
+                  <p className="text-[10.5px] text-slate-400 truncate">
+                    {p.username ? formatHandle(p.username) : ""}
+                    {p.username ? " · " : ""}{p.via === "group" ? "In a group with you" : "You're chatting"}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => start(p.id)}
+                  disabled={starting === p.id}
+                  className="px-3 py-1.5 rounded-full text-[10.5px] font-bold text-white flex items-center gap-1 shrink-0 disabled:opacity-50"
+                  style={{ backgroundColor: ACCENT }}
+                >
+                  <Send size={11} /> {starting === p.id ? "…" : "Chat"}
+                </button>
+              </div>
+            ))
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
 
 // ================= For You post card (X replica) =================
 
@@ -512,6 +630,7 @@ function CommentSheet({
   const [loading, setLoading] = useState(true);
   const [text, setText] = useState("");
   const [sending, setSending] = useState(false);
+  const [err, setErr] = useState<string | null>(null);
   const { currentUser } = useAuthStore();
 
   useEffect(() => {
@@ -526,12 +645,15 @@ function CommentSheet({
   const send = async () => {
     if (!text.trim() || sending) return;
     setSending(true);
+    setErr(null);
     try {
       const c = await createPostComment(postId, text.trim());
-      setComments((prev) => [...prev, c]);
+      setComments((prev) => (prev.some((x) => x.id === c.id) ? prev : [...prev, c]));
       setText("");
       onPosted();
-    } catch { /* keep text */ }
+    } catch {
+      setErr("Couldn't post your reply — try again.");
+    }
     finally { setSending(false); }
   };
 
@@ -557,6 +679,9 @@ function CommentSheet({
           </div>
         ))}
       </div>
+      {err && (
+        <p className="px-3 py-1.5 text-[10.5px] font-semibold text-rose-500">{err}</p>
+      )}
       <div className="flex items-center gap-2 px-2.5 py-2 border-t border-slate-200/70 dark:border-white/10">
         <img src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || "You")} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
         <input
@@ -630,18 +755,35 @@ function StoryViewer({
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
+  const repliesScrollRef = useRef<HTMLDivElement>(null);
+
+  // keep the newest comment visible (stacked-pills overlay)
+  useEffect(() => {
+    const el = repliesScrollRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [replies]);
 
   const duration = (STORY_SECONDS[story.type] || 6) * 1000;
 
-  // load replies (story comments) per story
+  // load replies (story comments) per story — and expose a manual refresh so a
+  // freshly posted reply is ALWAYS re-fetched from the server (optimistic
+  // append alone used to race the DB and the comment never appeared)
+  const fetchRepliesRef = useRef<() => void>(() => {});
   useEffect(() => {
     let alive = true;
+    const load = () => {
+      fetchStoryReplies(story.id)
+        .then((r) => { if (alive) setReplies(r); })
+        .catch(() => {});
+    };
+    fetchRepliesRef.current = load;
     setReplies([]);
     recordStoryView(story.id).catch(() => {});
-    fetchStoryReplies(story.id)
-      .then((r) => { if (alive) setReplies(r); })
-      .catch(() => {});
-    return () => { alive = false; };
+    load();
+    // retry once shortly after mount — a reply written a moment ago is often
+    // still landing when the viewer opens
+    const t = setTimeout(load, 2000);
+    return () => { alive = false; clearTimeout(t); };
   }, [story.id]);
 
   // progress engine — video/voice are driven by their real media, others by timer
@@ -689,8 +831,10 @@ function StoryViewer({
     setReplySending(true);
     try {
       const r = await createStoryReply(story.id, replyText.trim());
-      setReplies((p) => [...p, r]);
+      setReplies((p) => (p.some((x) => x.id === r.id) ? p : [...p, r]));
       setReplyText("");
+      // authoritative refresh — never trust the optimistic append alone
+      fetchRepliesRef.current?.();
     } catch { /* keep text */ }
     finally { setReplySending(false); }
   };
@@ -770,16 +914,18 @@ function StoryViewer({
         </div>
       )}
 
-      {/* comment bar — pinned bottom (comments ONLY, no likes in stories) */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-5 pt-3 bg-gradient-to-t from-black/80 via-black/45 to-transparent" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+      {/* comment bar — pinned bottom (comments ONLY, no likes in stories).
+          Comments render as stacked translucent pills above the input, newest
+          at the bottom — matching the reference recording. */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pt-3 bg-gradient-to-t from-black/85 via-black/45 to-transparent" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
         {replies.length > 0 && (
-          <div className="mb-2 max-h-32 overflow-y-auto space-y-1.5 px-1">
-            {replies.slice(-8).map((r) => (
-              <div key={r.id} className="flex items-start gap-2">
-                <img src={r.authorAvatar || getLetterAvatar(r.authorName || "U")} alt="" className="w-5 h-5 rounded-full object-cover mt-0.5 shrink-0" />
-                <p className="text-[11.5px] text-white/90 leading-snug">
+          <div ref={repliesScrollRef} className="mb-2.5 max-h-40 overflow-y-auto space-y-2 px-0.5 no-scrollbar">
+            {replies.slice(-6).map((r) => (
+              <div key={r.id} className="flex items-start gap-2 w-fit max-w-[92%] px-2.5 py-1.5 rounded-2xl rounded-bl-md bg-white/12 backdrop-blur-md border border-white/10">
+                <img src={r.authorAvatar || getLetterAvatar(r.authorName || "U")} alt="" className="w-6 h-6 rounded-full object-cover mt-0.5 shrink-0 border border-white/20" />
+                <p className="text-[12px] text-white leading-snug">
                   <span className="font-bold mr-1.5">{r.authorName}</span>
-                  <span className="text-white/80 [overflow-wrap:anywhere]">{r.content}</span>
+                  <span className="text-white/85 [overflow-wrap:anywhere]">{r.content}</span>
                 </p>
               </div>
             ))}
@@ -878,13 +1024,13 @@ function StoryBody({
           if (el.duration && isFinite(el.duration)) onTime(el.currentTime / el.duration);
         }}
         onEnded={onEnded}
-        className="w-full h-full object-contain bg-black"
+        className="w-full h-full object-cover"
       />
     );
   }
-  // image — fit to screen, edge to edge like TikTok
+  // image — FULL BLEED like the reference (TikTok fills the screen)
   return story.mediaUrl ? (
-    <img src={story.mediaUrl} alt="" className="w-full h-full object-contain" />
+    <img src={story.mediaUrl} alt="" className="w-full h-full object-cover" />
   ) : (
     <div className="text-white/50 text-xs">Media unavailable</div>
   );

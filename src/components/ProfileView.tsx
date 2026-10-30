@@ -210,14 +210,14 @@ export const ProfileView: React.FC = () => {
 
           <ThemePresetsSection />
 
-          {/* Chat Style — Classic (WhatsApp) | Retro (Snapchat layout, our UI) */}
+          {/* Chat Style — Classic (bubbles) | Retro (plain rows) */}
           <GlassCard className="p-5 space-y-3">
             <span className="text-xs font-bold text-slate-800 block">Chat Style</span>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Classic bubbles — WhatsApp style. Retro — Snapchat layout, no bubbles, on our colors.</p>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Classic — rounded message bubbles. Retro — plain rows with sender labels, no bubbles.</p>
             <div className="grid grid-cols-2 gap-2.5">
               {([
-                { id: 'classic', label: 'Classic', hint: 'WhatsApp replica' },
-                { id: 'retro', label: 'Retro', hint: 'Snapchat layout' },
+                { id: 'classic', label: 'Classic', hint: 'Message bubbles' },
+                { id: 'retro', label: 'Retro', hint: 'Plain rows' },
               ] as const).map((opt) => {
                 const isSel = (customization.chatStyle || 'classic') === opt.id;
                 return (

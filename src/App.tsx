@@ -19,6 +19,7 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { useAuthStore } from './store/authStore';
 import { useThemeStore, applyThemeVars } from './store/themeStore';
 import { useChatStore } from './store/chatStore';
+import { useUiStore } from './store/uiStore';
 import { AmbientLiquidBackground, RelayLogoEmblem, LiquidRefractionDefs } from './components/GlassUI';
 import { AuthFlow } from './components/AuthFlow';
 import { EmailVerificationPendingScreen } from './components/EmailVerificationPendingScreen';
@@ -78,6 +79,14 @@ export const App: React.FC = () => {
   const { customization } = useThemeStore();
   const { setActiveChat } = useChatStore();
   useRelayRealtime();
+
+  // Route changes kill every overlay that lives inside a screen — reset the
+  // immersive counter so the bottom nav can never stay hidden after leaving a
+  // story/composer via navigation (the "nav bar vanished" bug).
+  const resetImmersive = useUiStore((s) => s.resetImmersive);
+  useEffect(() => {
+    resetImmersive();
+  }, [location.pathname, resetImmersive]);
 
   useEffect(() => {
     initializeSession();

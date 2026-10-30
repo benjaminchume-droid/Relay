@@ -8,6 +8,25 @@ import { decryptFor, isEnvelope, isFanout, parseEnvelope, parseFanout } from "./
 import { decodePayload, getDecryptedMediaUrl } from "./crypto/mediaDecryptor";
 import type { Message } from "../types";
 
+/**
+ * Belt-and-braces guard: does this string LOOK like wire ciphertext?
+ * Catches R1 envelopes, R2 fan-outs, the legacy e2ee:v1 scheme, and raw
+ * prekey JSON that lost its prefix. Anything matching this must NEVER be
+ * rendered — UI layers call this before displaying message content.
+ */
+export function looksLikeEnvelope(s: unknown): boolean {
+  if (typeof s !== "string") return false;
+  const t = s.trimStart();
+  if (t.startsWith("R1:") || t.startsWith("R2:")) return true;
+  if (t.startsWith("e2ee:v1:")) return true;
+  // envelope JSON that somehow lost its prefix — check the Signal header shape
+  if (t.startsWith("{") && /"(v|dh|ct|iv|pre|ek|spkId|opkId)"\s*:/.test(t.slice(0, 400))) return true;
+  return false;
+}
+
+/** Sanitized placeholder for content that must never render as ciphertext. */
+export const CIPHER_PLACEHOLDER = "🔒 Encrypted message";
+
 /** Kick off lazy media decryption; resolves to a blob URL when ready. */
 export function scheduleMediaDecrypt(msg: Message): void {
   const anyMsg = msg as any;
@@ -113,7 +132,7 @@ export async function decryptMessages(
     // self — it would corrupt the session state). Recall the stored plaintext.
     if (msg.senderId && msg.senderId === myProfileId) {
       const remembered = ownPlaintextRecall(String(msg.id));
-      msg.content = remembered ?? 'Encrypted message';
+      msg.content = remembered ?? CIPHER_PLACEHOLDER;
       // media we sent (voice notes, photos): decrypt via the local (url,key,mime) memo
       const ownMedia = ownMediaLookup(String(msg.id));
       if (ownMedia) {
@@ -137,7 +156,7 @@ export async function decryptMessages(
         ? (parseFanout(raw).to.find((t) => t.p === myProfileId)?.e ?? null)
         : parseEnvelope(raw);
       if (!env) {
-        msg.content = "🔒 Encrypted message";
+        msg.content = CIPHER_PLACEHOLDER;
         continue;
       }
       const payload = decodePayload(await decryptFor(myProfileId, conversationId, msg.senderId, env));
@@ -161,10 +180,23 @@ export async function decryptMessages(
       msg.content = "🔒 Encrypted message (cannot decrypt on this device)";
     }
   }
+  // loop-level guard: a row must never leave this function as ciphertext
+  for (const msg of msgs) {
+    if (looksLikeEnvelope(msg.content)) {
+      msg.content = CIPHER_PLACEHOLDER;
+    }
+  }
 }
 
 export async function fetchConversationMessages(conversationId: string, myProfileId?: string): Promise<Message[]> {
   if (!conversationId) return [];
+  // HARD GATE: without MY profile id no envelope can ever be decrypted, so
+  // returning rows here would ship raw ciphertext to the UI (this exact race
+  // used to render R1/R2 JSON as chat bubbles). Fail loudly instead — callers
+  // keep showing the previous decrypted state.
+  if (!myProfileId) {
+    throw new Error("decryption-gate: profile id unavailable, refusing to serve undecrypted messages");
+  }
 
   let rows: any[] = [];
 
@@ -243,6 +275,15 @@ export async function fetchConversationMessages(conversationId: string, myProfil
       p_conversation_id: conversationId,
       p_status: "delivered",
     });
+  }
+
+  // Final belt-and-braces: NOTHING leaves this function as ciphertext.
+  for (const m of formatted) {
+    if (looksLikeEnvelope(m.content)) {
+      console.warn("[messageFetch] ciphertext survived the gate — sanitizing", m.id);
+      m.content = CIPHER_PLACEHOLDER;
+      (m as any)._encrypted = true;
+    }
   }
 
   return formatted;

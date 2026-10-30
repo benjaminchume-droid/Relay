@@ -47,6 +47,7 @@ import { SwipeableMessageItem } from "../SwipeableMessageItem";
 import { useVoiceRecorder } from "../../modules/voice/useVoiceRecorder";
 import { useVoicePlayer } from "../../modules/voice/useVoicePlayer";
 import { apiService } from "../../services/apiService";
+import { looksLikeEnvelope } from "../../services/messageFetch";
 import type { VoiceNoteData } from "../../modules/voice/types";
 import { formatDayDivider, isSameDay, DeliveryTicks } from "./chatHelpers";
 
@@ -156,6 +157,25 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [chatMsgs, activeTypingUsers]);
+
+  // Session catch-up sweep: messages that failed to decrypt earlier (prekey /
+  // session wasn't ready yet) get a silent second pass when the chat opens,
+  // when the tab regains focus, and shortly after identity bootstrap.
+  const redecryptRef = useRef<() => void>(() => {});
+  redecryptRef.current = () => { void useChatStore.getState().redecryptChat(chatId); };
+  useEffect(() => {
+    const kick = () => redecryptRef.current();
+    kick();
+    const t1 = setTimeout(kick, 2500);
+    const t2 = setTimeout(kick, 8000);
+    window.addEventListener("focus", kick);
+    document.addEventListener("visibilitychange", kick);
+    return () => {
+      clearTimeout(t1); clearTimeout(t2);
+      window.removeEventListener("focus", kick);
+      document.removeEventListener("visibilitychange", kick);
+    };
+  }, [chatId]);
 
   useEffect(() => {
     const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
@@ -311,6 +331,31 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     return false;
   };
 
+  // ---- grouping pass (WhatsApp rhythm): consecutive same-sender messages
+  // within 5 minutes form a bubble group — tails on the LAST bubble only,
+  // sender avatar/name on the FIRST, tight spacing inside a group.
+  const groupedMsgs = useMemo(() => {
+    const rows: Array<{
+      msg: any; idx: number; mine: boolean; msgTs: string;
+      showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean;
+    }> = chatMsgs.map((msg, idx) => {
+      const mine = isMineMsg(msg);
+      const msgTs = (msg as any).timestamp || (msg as any).createdAt;
+      const prev = idx > 0 ? chatMsgs[idx - 1] : null;
+      const prevTs = prev ? ((prev as any).timestamp || (prev as any).createdAt) : null;
+      const showDay = !prevTs || !isSameDay(msgTs, prevTs);
+      const sameSender = !!prev && isMineMsg(prev) === mine;
+      const gapSmall = !!(prevTs && msgTs && (new Date(msgTs).getTime() - new Date(prevTs).getTime()) < 5 * 60 * 1000);
+      return { msg, idx, mine, msgTs, showDay, firstOfGroup: showDay || !sameSender || !gapSmall, lastOfGroup: true };
+    });
+    rows.forEach((r, i) => {
+      const next = rows[i + 1];
+      r.lastOfGroup = !next || next.showDay || next.firstOfGroup;
+    });
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMsgs, myProfileId, currentUser?.id]);
+
   const recordingActive = recStatus === "recording" || recStatus === "paused" || recStatus === "locked";
   const fmtSecs = (s: number) => `${Math.floor(s / 60) < 10 ? "0" : ""}${Math.floor(s / 60)}:${s % 60 < 10 ? "0" : ""}${s % 60}`;
 
@@ -320,40 +365,61 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     <div className="w-full h-full flex flex-col bg-slate-50 dark:bg-black text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
       <AmbientLiquidBackground />
 
-      {/* ---------- pinned header (never scrolls away, never under browser chrome) ---------- */}
-      <LiquidPanel
-        as="header"
-        className="w-full shrink-0 z-20 !rounded-none border-b border-slate-200/60 dark:border-white/10 px-3 flex items-center justify-between bg-white/70 dark:bg-black/60 backdrop-blur-xl"
-        style={{ borderRadius: 0 }}
+      {/* ---------- floating glass header — same liquid treatment as the bottom bar ---------- */}
+      <div
+        className="shrink-0 z-20 w-full max-w-4xl mx-auto px-2.5 pt-2.5"
+        style={{ paddingTop: "max(0.625rem, env(safe-area-inset-top))" }}
       >
-        <div className="flex items-center gap-2.5 min-w-0 flex-1">
-          <button onClick={onBack} className="p-1.5 rounded-full hover:bg-slate-100 dark:hover:bg-white/10" type="button"><ArrowLeft size={20} /></button>
-          <button type="button" onClick={openProfile} className="flex items-center gap-2.5 min-w-0 flex-1 text-left">
-            <img src={headerAvatar} alt="" className="w-9 h-9 rounded-full object-cover border border-slate-200 dark:border-white/10 shrink-0" />
-            <div className="min-w-0">
-              <h2 className="text-[15px] font-bold text-slate-900 dark:text-white truncate leading-tight">{headerDisplayName}</h2>
-              {subtitle ? <span className={`text-[11px] font-semibold ${activeTypingUsers.length ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>{subtitle}</span> : null}
-            </div>
+        <nav className="liquid-glass-nav flex items-center gap-1.5 px-2 py-1.5 rounded-[24px]">
+          <button
+            onClick={onBack}
+            type="button"
+            className="p-2 rounded-full text-slate-700 dark:text-slate-200 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all shrink-0"
+            aria-label="Back"
+          >
+            <ArrowLeft size={19} />
           </button>
-        </div>
-        <div className="flex items-center gap-0.5 shrink-0">
-          {!isGroup && !isPendingIncoming && (
-            <>
-              <button type="button" disabled={callPhase !== "idle"} onClick={() => {
-                const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
-                setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
-                void placeCall(chatId, "voice", myProfileId);
-              }} className="p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-40"><Phone size={18} /></button>
-              <button type="button" disabled={callPhase !== "idle"} onClick={() => {
-                const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
-                setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
-                void placeCall(chatId, "video", myProfileId);
-              }} className="p-2 rounded-full text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 disabled:opacity-40"><Video size={18} /></button>
-            </>
-          )}
-          <button type="button" onClick={openProfile} className="p-2 rounded-full text-slate-600 dark:text-slate-300"><MoreVertical size={18} /></button>
-        </div>
-      </LiquidPanel>
+
+          {/* avatar + name + presence — one pill */}
+          <button
+            type="button"
+            onClick={openProfile}
+            className="flex items-center gap-2.5 min-w-0 flex-1 text-left rounded-full hover:bg-white/40 dark:hover:bg-white/10 pl-1 pr-2 py-1 transition-colors"
+          >
+            <img
+              src={headerAvatar}
+              alt=""
+              className="w-[34px] h-[34px] rounded-full object-cover ring-2 ring-white/70 dark:ring-white/15 shrink-0"
+            />
+            <span className="min-w-0">
+              <span className="block text-[13.5px] font-bold text-slate-900 dark:text-white truncate leading-tight">{headerDisplayName}</span>
+              {subtitle ? (
+                <span className={`block text-[10.5px] font-semibold truncate leading-tight ${activeTypingUsers.length ? "text-emerald-600 dark:text-emerald-400" : "text-slate-500 dark:text-slate-400"}`}>
+                  {subtitle}
+                </span>
+              ) : null}
+            </span>
+          </button>
+
+          <div className="flex items-center shrink-0">
+            {!isGroup && !isPendingIncoming && (
+              <>
+                <button type="button" disabled={callPhase !== "idle"} onClick={() => {
+                  const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
+                  setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+                  void placeCall(chatId, "voice", myProfileId);
+                }} className="p-2 rounded-full text-slate-700 dark:text-slate-200 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all disabled:opacity-40" aria-label="Voice call"><Phone size={17} /></button>
+                <button type="button" disabled={callPhase !== "idle"} onClick={() => {
+                  const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId;
+                  setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+                  void placeCall(chatId, "video", myProfileId);
+                }} className="p-2 rounded-full text-slate-700 dark:text-slate-200 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all disabled:opacity-40" aria-label="Video call"><Video size={17} /></button>
+              </>
+            )}
+            <button type="button" onClick={openProfile} className="p-2 rounded-full text-slate-700 dark:text-slate-200 hover:bg-white/40 dark:hover:bg-white/10 active:scale-95 transition-all" aria-label="More"><MoreVertical size={17} /></button>
+          </div>
+        </nav>
+      </div>
 
       {/* ---------- message list ---------- */}
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-3 max-w-4xl w-full mx-auto" style={{ overscrollBehavior: "contain" }}>
@@ -370,15 +436,17 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             onSwipeReply={(m) => setReplyingToMessage(m)}
           />
         ) : (
-          chatMsgs.map((msg, idx) => {
-            const isMine = isMineMsg(msg);
-            const msgTs = (msg as any).timestamp || (msg as any).createdAt;
-            const prevTs = idx > 0 ? ((chatMsgs[idx - 1] as any).timestamp || (chatMsgs[idx - 1] as any).createdAt) : null;
-            const showDay = !prevTs || !isSameDay(msgTs, prevTs);
+          groupedMsgs.map(({ msg, idx, mine, msgTs, showDay, firstOfGroup, lastOfGroup }) => {
             const mediaUrl = (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
             const isVoice = msg.type === "voice" || (msg as any).attachments?.[0]?.mimeType?.startsWith?.("audio");
             const mime = (msg as any)._mime || (msg as any).attachments?.[0]?.mimeType;
             const decryptFailed = (msg as any)._encrypted && !mediaUrl;
+            // ABSOLUTE UI GATE — raw ciphertext can never be rendered, even if a
+            // future code path forgets to decrypt. The store sweep repairs it.
+            const bodyText = looksLikeEnvelope(msg.content) ? "🔒 Encrypted message" : String(msg.content ?? "");
+            const bubbleRadius = mine
+              ? (lastOfGroup ? "14px 14px 4px 14px" : "14px 14px 14px 14px")
+              : (lastOfGroup ? "14px 14px 14px 4px" : "14px 14px 14px 14px");
             return (
               <React.Fragment key={msg.id || idx}>
                 {showDay && msgTs && (
@@ -387,22 +455,30 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                   </div>
                 )}
                 <SwipeableMessageItem messageId={String(msg.id || idx)} onSwipeToReply={() => setReplyingToMessage(msg)}>
-                  <div className={`flex ${isMine ? "justify-end" : "justify-start"} items-end gap-1.5`}>
-                    {!isMine && isGroup && <img src={getLetterAvatar(msg.senderName || "U")} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-white/10 shrink-0 mb-0.5" />}
+                  <div
+                    className={`flex ${mine ? "justify-end" : "justify-start"} ${isGroup && !mine ? "items-end gap-1.5" : "items-end"}`}
+                    style={{ marginTop: firstOfGroup ? 6 : 2 }}
+                  >
+                    {!mine && isGroup && (
+                      <span className="w-6 shrink-0">
+                        {firstOfGroup && <img src={getLetterAvatar(msg.senderName || "U")} alt="" className="w-6 h-6 rounded-full object-cover border border-slate-200 dark:border-white/10" />}
+                      </span>
+                    )}
                     <div
-                      className={`px-2 py-1.5 text-[13.5px] leading-snug font-medium max-w-[78%] [overflow-wrap:anywhere] ${isMine ? "wa-bubble-mine rounded-br-md" : "wa-bubble-other rounded-bl-md"}`}
+                      className={`px-2 py-1.5 text-[13.5px] leading-snug font-medium max-w-[80%] [overflow-wrap:anywhere] text-left ${mine ? "wa-bubble-mine" : "wa-bubble-other"}`}
+                      style={{ borderRadius: bubbleRadius }}
                     >
                       {(msg.replyToId || msg.replyToMessage) && (
-                        <div className={`mb-1 rounded-lg px-2 py-1.5 ${isMine ? "wa-quote-mine" : "wa-quote-other"}`}>
-                          <span className={`block text-[11px] font-bold ${isMine ? "text-white" : ""}`} style={!isMine ? { color: ACCENT } : {}}>
-                            {isMine ? "You" : (msg.replyToMessage?.senderName || "User")}
+                        <div className={`mb-1 rounded-lg px-2 py-1.5 ${mine ? "wa-quote-mine" : "wa-quote-other"}`}>
+                          <span className={`block text-[11px] font-bold ${mine ? "text-white" : ""}`} style={!mine ? { color: ACCENT } : {}}>
+                            {mine ? "You" : (msg.replyToMessage?.senderName || "User")}
                           </span>
-                          <span className={`block text-[11.5px] truncate ${isMine ? "text-white/85" : "text-slate-500 dark:text-slate-300"}`}>
+                          <span className={`block text-[11.5px] truncate ${mine ? "text-white/85" : "text-slate-500 dark:text-slate-300"}`}>
                             {msg.replyToMessage?.content || (msg as any).replyPreview || "Message"}
                           </span>
                         </div>
                       )}
-                      {!isMine && isGroup && (
+                      {!mine && isGroup && firstOfGroup && (
                         <span className="block text-[11px] font-bold mb-0.5" style={{ color: ACCENT }}>{msg.senderName || "User"}</span>
                       )}
                       {isVoice && (mediaUrl || decryptFailed) ? (
@@ -410,7 +486,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                           messageId={String(msg.id || idx)}
                           audioUrl={mediaUrl}
                           duration={(msg as any).attachments?.[0]?.duration ?? (msg as any)._duration}
-                          isMine={isMine}
+                          isMine={mine}
                           failed={decryptFailed}
                           timestamp={msgTs ? formatChatTimestamp(msgTs) : ""}
                           state={(msg as any).deliveryState}
@@ -418,12 +494,12 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                       ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
                         <div className="pb-3.5">
                           <img src={mediaUrl} alt="" className="rounded-lg max-w-full max-h-64 object-cover" />
-                          <MetaRow isMine={isMine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} overlay />
+                          <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} overlay />
                         </div>
                       ) : (
                         <>
-                          <span className="whitespace-pre-wrap">{msg.content}</span>
-                          <MetaRow isMine={isMine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} inline />
+                          <span className="whitespace-pre-wrap">{bodyText}</span>
+                          <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} inline />
                         </>
                       )}
                     </div>
@@ -477,7 +553,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           }
         />
       ) : (
-        <div className="relative shrink-0 max-w-4xl w-full mx-auto">
+        <div className="relative shrink-0 max-w-4xl w-full mx-auto" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
           <LiquidPanel as="form" onSubmit={handleSend} className="px-2.5 py-2 border-t border-slate-200/60 dark:border-white/10 flex items-center gap-1.5 bg-white/70 dark:bg-black/60 backdrop-blur-xl" style={{ borderRadius: 0 }}>
             <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" className="hidden" onChange={handleFilePick} />
             <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10" aria-label="Attach"><Paperclip size={19} /></button>
@@ -685,17 +761,29 @@ function RetroMessageList({
   isGroup: boolean;
   onSwipeReply: (m: any) => void;
 }) {
+  // grouping — same rhythm as Classic: runs of same-sender messages
+  const rows: Array<{ msg: any; idx: number; mine: boolean; msgTs: string; showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean }> = chatMsgs.map((msg, idx) => {
+    const mine = isMineMsg(msg);
+    const msgTs = (msg as any).timestamp || (msg as any).createdAt;
+    const prev = idx > 0 ? chatMsgs[idx - 1] : null;
+    const prevTs = prev ? ((prev as any).timestamp || (prev as any).createdAt) : null;
+    const showDay = !prevTs || !isSameDay(msgTs, prevTs);
+    const sameSender = !!prev && isMineMsg(prev) === mine;
+    const gapSmall = !!(prevTs && msgTs && (new Date(msgTs).getTime() - new Date(prevTs).getTime()) < 5 * 60 * 1000);
+    return { msg, idx, mine, msgTs, showDay, firstOfGroup: showDay || !sameSender || !gapSmall, lastOfGroup: true };
+  });
+  rows.forEach((r, i) => {
+    const next = rows[i + 1];
+    r.lastOfGroup = !next || next.showDay || next.firstOfGroup;
+  });
+
   return (
     <div className="space-y-0.5">
-      {chatMsgs.map((msg, idx) => {
-        const isMine = isMineMsg(msg);
-        const msgTs = (msg as any).timestamp || (msg as any).createdAt;
-        const prevTs = idx > 0 ? ((chatMsgs[idx - 1] as any).timestamp || (chatMsgs[idx - 1] as any).createdAt) : null;
-        const showDay = !prevTs || !isSameDay(msgTs, prevTs);
-        const prevSameSender = idx > 0 && isMineMsg(chatMsgs[idx - 1]) === isMine && !showDay;
+      {rows.map(({ msg, idx, mine, msgTs, showDay, firstOfGroup }) => {
         const mediaUrl = (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
         const isVoice = msg.type === "voice" || (msg as any).attachments?.[0]?.mimeType?.startsWith?.("audio");
         const decryptFailed = (msg as any)._encrypted && !mediaUrl;
+        const bodyText = looksLikeEnvelope(msg.content) ? "🔒 Encrypted message" : String(msg.content ?? "");
         return (
           <React.Fragment key={msg.id || idx}>
             {showDay && msgTs && (
@@ -706,22 +794,22 @@ function RetroMessageList({
               </div>
             )}
             <SwipeableMessageItem messageId={String(msg.id || idx)} onSwipeToReply={() => onSwipeReply(msg)}>
-              <div className={`relative pl-4 pr-2 py-0.5 ${prevSameSender ? "" : "mt-1.5"}`}>
+              <div className={`relative pl-4 pr-2 py-0.5 ${firstOfGroup ? "mt-1.5" : ""}`}>
                 {/* group bar on the edge */}
                 <span
                   className="absolute left-0 top-0 bottom-0 w-[3px] rounded-full"
-                  style={{ backgroundColor: isMine ? ACCENT : "color-mix(in srgb, " + ACCENT + " 45%, transparent)" }}
+                  style={{ backgroundColor: mine ? ACCENT : "color-mix(in srgb, " + ACCENT + " 45%, transparent)" }}
                 />
-                {!prevSameSender && (
-                  <p className="text-[10.5px] font-black tracking-wider uppercase mb-0.5" style={{ color: isMine ? ACCENT : "color-mix(in srgb, " + ACCENT + " 70%, #64748b)" }}>
-                    {isMine ? "Me" : (msg.senderName || "User")}
+                {firstOfGroup && (
+                  <p className="text-[10.5px] font-black tracking-wider uppercase mb-0.5" style={{ color: mine ? ACCENT : "color-mix(in srgb, " + ACCENT + " 70%, #64748b)" }}>
+                    {mine ? "Me" : (msg.senderName || "User")}
                   </p>
                 )}
                 {(msg.replyToId || msg.replyToMessage) && (
                   <div className="mb-1 rounded-xl bg-slate-100 dark:bg-white/5 px-3 py-1.5 max-w-[85%]">
                     <div className="flex items-center gap-1.5">
                       <span className="text-[10.5px] font-black uppercase tracking-wide" style={{ color: ACCENT }}>
-                        {isMine ? "You" : (msg.replyToMessage?.senderName || "User")}
+                        {mine ? "You" : (msg.replyToMessage?.senderName || "User")}
                       </span>
                       <span className="text-[9.5px] text-slate-400">{msgTs ? formatChatTimestamp(msgTs) : ""}</span>
                     </div>
@@ -736,7 +824,7 @@ function RetroMessageList({
                       messageId={String(msg.id || idx)}
                       audioUrl={mediaUrl}
                       duration={(msg as any).attachments?.[0]?.duration ?? (msg as any)._duration}
-                      isMine={isMine}
+                      isMine={mine}
                       failed={decryptFailed}
                       timestamp={msgTs ? formatChatTimestamp(msgTs) : ""}
                       state={(msg as any).deliveryState}
@@ -745,14 +833,13 @@ function RetroMessageList({
                 ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
                   <img src={mediaUrl} alt="" className="rounded-2xl max-w-[75%] max-h-64 object-cover border border-slate-200 dark:border-white/10" />
                 ) : (
-                  <p className="text-[14px] font-medium text-slate-800 dark:text-slate-100 whitespace-pre-wrap [overflow-wrap:anywhere] pr-8">
-                    {msg.content}
+                  <p className="text-[14px] font-medium text-slate-800 dark:text-slate-100 whitespace-pre-wrap [overflow-wrap:anywhere] pr-8 text-left">
+                    {bodyText}
                     <span className="float-right ml-2 mt-1 text-[9px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
-                      {msgTs ? formatChatTimestamp(msgTs) : ""} {isMine && <DeliveryTicks state={(msg as any).deliveryState} />}
+                      {msgTs ? formatChatTimestamp(msgTs) : ""} {mine && <DeliveryTicks state={(msg as any).deliveryState} />}
                     </span>
                   </p>
                 )}
-                {isGroup && !isMine && !prevSameSender && null}
               </div>
             </SwipeableMessageItem>
           </React.Fragment>
@@ -779,7 +866,7 @@ function RetroComposer({
       as="form"
       onSubmit={(e: React.FormEvent) => { e.preventDefault(); onSend(); }}
       className="shrink-0 w-full max-w-4xl mx-auto px-3 py-2.5 border-t border-slate-200/60 dark:border-white/10 flex items-center gap-2 bg-white/70 dark:bg-black/60 backdrop-blur-xl"
-      style={{ borderRadius: 0 }}
+      style={{ borderRadius: 0, paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
     >
       <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" className="hidden" onChange={onFilePick} />
       <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10" aria-label="Attach"><Paperclip size={18} /></button>

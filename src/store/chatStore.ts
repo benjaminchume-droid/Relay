@@ -11,7 +11,7 @@ import { chatCache } from '../services/chatCache';
 import { profileCache } from '../services/profileCache';
 import { useAuthStore } from './authStore';
 import { supabase } from '../lib/supabase/client';
-import { decryptMessages, scheduleMediaDecrypt } from '../services/messageFetch';
+import { decryptMessages, scheduleMediaDecrypt, looksLikeEnvelope, CIPHER_PLACEHOLDER } from '../services/messageFetch';
 import { isEnvelope } from '../services/crypto/cryptoService';
 import { relayRealtimeService } from '../services/realtime/RelayRealtimeService';
 
@@ -27,6 +27,22 @@ function previewOf(msg: Message): string {
 const activeSendPayloads = new Set<string>();
 const activeGroupCreates = new Set<string>();
 let globalStreamStarted = false;
+
+/** Boot-time cache hygiene: a message cached by an older build may hold raw
+ *  wire ciphertext — it must never re-enter the store, let alone the UI. */
+function sanitizeCachedMessages(map: Record<string, Message[]>): Record<string, Message[]> {
+  let dirty = false;
+  const out: Record<string, Message[]> = {};
+  for (const [chatId, msgs] of Object.entries(map || {})) {
+    out[chatId] = (msgs || []).map((m) => {
+      if (!looksLikeEnvelope(m.content)) return m;
+      dirty = true;
+      return { ...m, content: CIPHER_PLACEHOLDER, _encrypted: true } as Message;
+    });
+  }
+  if (dirty) console.warn('[chatCache] sanitized ciphertext found in cached messages');
+  return out;
+}
 
 interface ChatState {
   chats: Chat[];
@@ -71,6 +87,9 @@ interface ChatState {
   acceptChatRequest: (chatId: string) => Promise<void>;
   startGlobalMessageStream: () => void;
   receiveIncomingMessage: (row: any) => Promise<void>;
+  applyMessageDeliveryUpdate: (row: any) => void;
+  removeMessageLocally: (messageId: string) => void;
+  redecryptChat: (chatId: string) => Promise<void>;
 }
 
 // per-chat "read up to" watermark (epoch ms) — cleared badges can't be
@@ -83,7 +102,7 @@ function readWatermarks(): Record<string, number> {
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: chatCache.getChats(),
   activeChatId: null,
-  messages: chatCache.getMessages(),
+  messages: sanitizeCachedMessages(chatCache.getMessages()),
   activeTyping: {},
   replyingToMessage: null,
   forwardingMessage: null,
@@ -160,6 +179,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
         chatCache.setMessages(newMap);
         return { messages: newMap };
       });
+      // Anything the fetch pipeline could not decrypt gets a silent background
+      // retry — sessions/prekeys often arrive a beat after the rows do.
+      const stillCiphered = (get().messages[chatId] || []).some((m) => looksLikeEnvelope(m.content));
+      if (stillCiphered) void get().redecryptChat(chatId);
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -511,7 +534,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
   receiveIncomingMessage: async (row: any) => {
     const myProfileId = useAuthStore.getState().profile?.id;
-    if (!myProfileId) return;
+    if (!myProfileId) {
+      // No profile id = no decryption possible. Retry once the profile resolves
+      // instead of appending ciphertext.
+      setTimeout(() => {
+        if (useAuthStore.getState().profile?.id) void useChatStore.getState().receiveIncomingMessage(row);
+      }, 1500);
+      return;
+    }
     const convId = row.conversation_id as string;
     const isMine = row.sender_id === myProfileId;
 
@@ -519,13 +549,24 @@ export const useChatStore = create<ChatState>((set, get) => ({
       const { formatMessageRecord } = await import('../services/messagingCore');
       const m = formatMessageRecord(row);
       if (!isMine) {
-        await decryptMessages(myProfileId, convId, [m]);
+        try {
+          await decryptMessages(myProfileId, convId, [m]);
+        } catch (e) {
+          console.warn('[realtime] decrypt failed, will retry in background', (m as any).id, e);
+          m.content = CIPHER_PLACEHOLDER;
+          (m as any)._encrypted = true;
+        }
         void supabase.rpc('mark_messages_status', { p_conversation_id: convId, p_status: 'delivered' });
-      } else if (isEnvelope(m.content as any)) {
+      } else if (isEnvelope(m.content as any) || looksLikeEnvelope(m.content)) {
         // echo of my own send — show my plaintext preview (fetch flow already handles open chats)
         const existing = (useChatStore.getState().messages[convId] || []).find((x) => x.id === m.id);
-        if (existing) m.content = existing.content;
+        if (existing && !looksLikeEnvelope(existing.content)) m.content = existing.content;
         else m.content = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice note' : 'Attachment';
+      }
+      // ABSOLUTE gate — ciphertext never enters the store through this path.
+      if (looksLikeEnvelope(m.content)) {
+        m.content = CIPHER_PLACEHOLDER;
+        (m as any)._encrypted = true;
       }
       return m;
     })();
@@ -572,5 +613,87 @@ export const useChatStore = create<ChatState>((set, get) => ({
         c.id === chatId ? { ...c, requestStatus: 'accepted' as const } : c
       ),
     }));
+  },
+
+  /** Realtime UPDATE on messages (delivered / read receipts). Merge ONLY the
+   *  delivery fields — the wire row carries raw ciphertext in `content` and
+   *  overwriting with it used to re-encrypt already-decrypted bubbles. */
+  applyMessageDeliveryUpdate: (row) => {
+    if (!row?.id || !row?.conversation_id) return;
+    const status = (row.send_status || '').toString().toLowerCase();
+    if (!status) return;
+    set((state) => {
+      const msgs = state.messages[row.conversation_id];
+      if (!msgs) return {};
+      const idx = msgs.findIndex((m) => m.id === row.id);
+      if (idx === -1 || !msgs[idx] || msgs[idx].deliveryState === status) return {};
+      const next = msgs.map((m) => (m.id === row.id ? { ...m, deliveryState: status as any } : m));
+      const messages = { ...state.messages, [row.conversation_id]: next };
+      chatCache.setMessages(messages);
+      return { messages };
+    });
+  },
+
+  removeMessageLocally: (messageId) => {
+    set((state) => {
+      const messages: Record<string, Message[]> = {};
+      let touched = false;
+      for (const [chatId, msgs] of Object.entries(state.messages)) {
+        const filtered = msgs.filter((m) => m.id !== messageId);
+        if (filtered.length !== msgs.length) { touched = true; messages[chatId] = filtered; }
+      }
+      if (!touched) return {};
+      const merged = { ...state.messages, ...messages };
+      chatCache.setMessages(merged);
+      return { messages: merged };
+    });
+  },
+
+  /** Background re-decrypt sweep: find rows whose content still looks like wire
+   *  ciphertext (failed earlier when the session/prekey wasn't ready yet) and
+   *  run them through the ratchet again. Patches the store + memo on success;
+   *  leaves a clean placeholder on rows that are genuinely undecryptable. */
+  redecryptChat: async (chatId) => {
+    const myProfileId = useAuthStore.getState().profile?.id;
+    if (!myProfileId || !chatId) return;
+    const targets = (get().messages[chatId] || []).filter(
+      (m) => looksLikeEnvelope(m.content) || (typeof m.content === 'string' && m.content.startsWith('🔒'))
+    );
+    if (!targets.length) return;
+    // decryptMessages mutates rows in place; operate on COPIES so React sees changes
+    const working = targets.map((m) => ({ ...m })) as Message[];
+    try {
+      await decryptMessages(myProfileId, chatId, working);
+    } catch (e) {
+      console.warn('[redecryptChat] sweep error (non-fatal)', e);
+    }
+    const byId = new Map<string, Message>();
+    for (const w of working) {
+      if (w.id && !looksLikeEnvelope(w.content)) byId.set(String(w.id), w);
+    }
+    if (!byId.size) return;
+    set((state) => {
+      const existing = state.messages[chatId] || [];
+      let changed = false;
+      const next = existing.map((m) => {
+        const w = byId.get(String(m.id));
+        if (!w) return m;
+        changed = true;
+        return {
+          ...m,
+          content: w.content,
+          mediaUrl: (w as any).mediaUrl,
+          attachments: w.attachments,
+          _encrypted: (w as any)._encrypted,
+          _mediaKey: (w as any)._mediaKey,
+          _mime: (w as any)._mime,
+          _duration: (w as any)._duration,
+        } as Message;
+      });
+      if (!changed) return {};
+      const messages = { ...state.messages, [chatId]: next };
+      chatCache.setMessages(messages);
+      return { messages };
+    });
   },
 }));

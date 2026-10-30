@@ -8,10 +8,18 @@ export interface UseVoicePlayerOptions {
   onEnded?: () => void;
 }
 
-// Global active audio reference to ensure single playback across app
+// Global active audio reference to ensure single playback across the app
 let globalActiveAudio: HTMLAudioElement | null = null;
 let globalActiveStopCallback: (() => void) | null = null;
 
+/**
+ * Voice note playback.
+ *
+ * The Audio element is created ONCE per url and never torn down by unrelated
+ * re-renders (the previous version rebuilt it whenever playbackSpeed or the
+ * caller's callbacks changed identity — killing playback mid-listen). Speed
+ * changes are applied to the live element; onEnded is read through a ref.
+ */
 export function useVoicePlayer(options: UseVoicePlayerOptions) {
   const { audioUrl, duration: expectedDuration = 0, onEnded } = options;
 
@@ -22,38 +30,32 @@ export function useVoicePlayer(options: UseVoicePlayerOptions) {
   const [isBuffering, setIsBuffering] = useState(false);
 
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const speedRef = useRef<PlaybackSpeed>(1);
+  const onEndedRef = useRef<(() => void) | undefined>(onEnded);
+  onEndedRef.current = onEnded;
 
-  const stopPlayback = useCallback(() => {
-    if (audioRef.current) {
-      audioRef.current.pause();
-      audioRef.current.currentTime = 0;
-    }
+  const pausePlayback = useCallback(() => {
+    const a = audioRef.current;
+    if (a && !a.paused) a.pause();
     setIsPlaying(false);
-    setCurrentTime(0);
-    setIsBuffering(false);
   }, []);
 
-  // Initialize HTMLAudioElement
+  // Create / swap the Audio element ONLY when the url actually changes.
   useEffect(() => {
     if (!audioUrl) return;
 
     const audio = new Audio(audioUrl);
+    audio.preload = 'metadata';
+    audio.playbackRate = speedRef.current;
     audioRef.current = audio;
-    audio.playbackRate = playbackSpeed;
 
     const handleLoadedMetadata = () => {
       if (audio.duration && !isNaN(audio.duration) && isFinite(audio.duration)) {
         setDuration(Math.round(audio.duration));
-      } else if (expectedDuration > 0) {
-        setDuration(expectedDuration);
       }
       setIsBuffering(false);
     };
-
-    const handleTimeUpdate = () => {
-      setCurrentTime(audio.currentTime);
-    };
-
+    const handleTimeUpdate = () => setCurrentTime(audio.currentTime);
     const handleEnded = () => {
       setIsPlaying(false);
       setCurrentTime(0);
@@ -61,13 +63,13 @@ export function useVoicePlayer(options: UseVoicePlayerOptions) {
         globalActiveAudio = null;
         globalActiveStopCallback = null;
       }
-      if (onEnded) onEnded();
+      onEndedRef.current?.();
     };
-
     const handleWaiting = () => setIsBuffering(true);
     const handlePlaying = () => setIsBuffering(false);
-    const handleError = (e: Event) => {
-      console.warn('Voice player audio playback error:', e);
+    const handlePause = () => setIsPlaying(false);
+    const handleError = () => {
+      console.warn('Voice player audio error');
       setIsPlaying(false);
       setIsBuffering(false);
     };
@@ -77,15 +79,17 @@ export function useVoicePlayer(options: UseVoicePlayerOptions) {
     audio.addEventListener('ended', handleEnded);
     audio.addEventListener('waiting', handleWaiting);
     audio.addEventListener('playing', handlePlaying);
+    audio.addEventListener('pause', handlePause);
     audio.addEventListener('error', handleError);
 
     return () => {
-      audio.pause();
+      try { audio.pause(); } catch { /* noop */ }
       audio.removeEventListener('loadedmetadata', handleLoadedMetadata);
       audio.removeEventListener('timeupdate', handleTimeUpdate);
       audio.removeEventListener('ended', handleEnded);
       audio.removeEventListener('waiting', handleWaiting);
       audio.removeEventListener('playing', handlePlaying);
+      audio.removeEventListener('pause', handlePause);
       audio.removeEventListener('error', handleError);
       if (globalActiveAudio === audio) {
         globalActiveAudio = null;
@@ -93,54 +97,52 @@ export function useVoicePlayer(options: UseVoicePlayerOptions) {
       }
       audioRef.current = null;
     };
-  }, [audioUrl, expectedDuration, onEnded, playbackSpeed]);
+  }, [audioUrl]);
 
   const togglePlay = useCallback(() => {
-    if (!audioRef.current) return;
+    const a = audioRef.current;
+    if (!a) return;
 
     if (isPlaying) {
-      audioRef.current.pause();
+      a.pause();
       setIsPlaying(false);
-    } else {
-      // Pause any previously playing audio in the app
-      if (globalActiveStopCallback && globalActiveStopCallback !== stopPlayback) {
-        globalActiveStopCallback();
-      }
-
-      globalActiveAudio = audioRef.current;
-      globalActiveStopCallback = stopPlayback;
-
-      audioRef.current.playbackRate = playbackSpeed;
-      audioRef.current.play().catch((err) => {
-        console.warn('Playback play() promise rejected:', err);
-        setIsPlaying(false);
-      });
-      setIsPlaying(true);
+      return;
     }
-  }, [isPlaying, playbackSpeed, stopPlayback]);
+
+    // Single playback across the app — stop whatever else is playing.
+    if (globalActiveStopCallback && globalActiveStopCallback !== pausePlayback) {
+      globalActiveStopCallback();
+    }
+    globalActiveAudio = a;
+    globalActiveStopCallback = pausePlayback;
+
+    a.playbackRate = speedRef.current;
+    a.play().then(() => setIsPlaying(true)).catch((err) => {
+      console.warn('Playback play() rejected:', err);
+      setIsPlaying(false);
+    });
+  }, [isPlaying, pausePlayback]);
 
   const seek = useCallback((timeSeconds: number) => {
-    if (audioRef.current) {
-      audioRef.current.currentTime = timeSeconds;
-      setCurrentTime(timeSeconds);
+    const a = audioRef.current;
+    if (a && isFinite(timeSeconds)) {
+      a.currentTime = Math.max(0, timeSeconds);
+      setCurrentTime(a.currentTime);
     }
   }, []);
 
   const seekPercentage = useCallback((percentage: number) => {
     const targetDuration = duration || expectedDuration || 1;
-    const targetTime = (Math.max(0, Math.min(100, percentage)) / 100) * targetDuration;
-    seek(targetTime);
+    seek((Math.max(0, Math.min(100, percentage)) / 100) * targetDuration);
   }, [duration, expectedDuration, seek]);
 
   const cycleSpeed = useCallback(() => {
     const speeds: PlaybackSpeed[] = [1, 1.25, 1.5, 2];
-    const nextIndex = (speeds.indexOf(playbackSpeed) + 1) % speeds.length;
-    const nextSpeed = speeds[nextIndex];
-    setPlaybackSpeed(nextSpeed);
-    if (audioRef.current) {
-      audioRef.current.playbackRate = nextSpeed;
-    }
-  }, [playbackSpeed]);
+    const next = speeds[(speeds.indexOf(speedRef.current) + 1) % speeds.length];
+    speedRef.current = next;
+    setPlaybackSpeed(next);
+    if (audioRef.current) audioRef.current.playbackRate = next;
+  }, []);
 
   const downloadAudio = useCallback((fileName = 'VoiceNote.webm') => {
     if (!audioUrl) return;
@@ -163,6 +165,6 @@ export function useVoicePlayer(options: UseVoicePlayerOptions) {
     seekPercentage,
     cycleSpeed,
     downloadAudio,
-    stopPlayback,
+    stopPlayback: pausePlayback,
   };
 }

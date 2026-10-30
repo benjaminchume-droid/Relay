@@ -14,7 +14,6 @@ import { logger } from './RealtimeLogger';
 import { useChatStore } from '../../store/chatStore';
 import { useCommunityStore } from '../../store/communityStore';
 import { useAuthStore } from '../../store/authStore';
-import { formatMessageRecord } from '../messagingCore';
 import { chatCache } from '../chatCache';
 
 /**
@@ -74,25 +73,19 @@ export function routeClassifiedEvent(event: ClassifiedEvent): void {
 
     if (table === 'messages' && data) {
       const row = data.new || data.record || data;
-      const formattedData = formatMessageRecord(row);
-      const chatId = formattedData.chatId;
-      if (!chatId) return;
 
-      const store = useChatStore.getState();
-      const existing = store.messages[chatId] || [];
+      // HARD RULE: raw ciphertext may never enter the store. Both INSERT and
+      // UPDATE go through chatStore, which decrypts (INSERT) and merges only
+      // delivery fields (UPDATE). Writing formatMessageRecord(row) here used to
+      // leak R1/R2 envelopes into the UI and — worse — a read-receipt UPDATE
+      // overwrote already-decrypted plaintext with the raw wire envelope.
       if (eventType === 'INSERT') {
-        if (!existing.some((m) => m.id === formattedData.id)) {
-          const next = [...existing, formattedData];
-          useChatStore.setState({ messages: { ...store.messages, [chatId]: next } });
-          chatCache.setMessages({ ...store.messages, [chatId]: next });
-        }
+        void useChatStore.getState().receiveIncomingMessage(row);
       } else if (eventType === 'UPDATE') {
-        const next = existing.map((m) => (m.id === formattedData.id ? { ...m, ...formattedData } : m));
-        useChatStore.setState({ messages: { ...store.messages, [chatId]: next } });
-      } else if (eventType === 'DELETE' && (oldData?.id || data?.id)) {
-        const id = oldData?.id || data.id;
-        const next = existing.filter((m) => m.id !== id);
-        useChatStore.setState({ messages: { ...store.messages, [chatId]: next } });
+        useChatStore.getState().applyMessageDeliveryUpdate(row);
+      } else if (eventType === 'DELETE') {
+        const id = oldData?.id || data?.id;
+        if (id) useChatStore.getState().removeMessageLocally(String(id));
       }
       return;
     }

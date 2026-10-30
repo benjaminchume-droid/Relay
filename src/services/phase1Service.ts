@@ -259,23 +259,47 @@ export async function recordPostView(postId: string): Promise<void> {
 }
 
 export async function fetchPostComments(postId: string): Promise<PostComment[]> {
+  // NOTE: no embedded join here — post_comments.profile_id had no FK to
+  // profiles, so the embed threw (PGRST200), the error was swallowed upstream
+  // and the sheet showed "No replies yet" forever. Two plain queries + stitch
+  // cannot fail that way. (FK added server-side too — this stays as insurance.)
   const { data, error } = await supabase
     .from("post_comments")
-    .select("*, profiles:profile_id(id, username, display_name, avatar_url)")
+    .select("*")
     .eq("post_id", postId)
     .order("created_at", { ascending: true })
     .limit(100);
   if (error) throw error;
-  return (data || []).map((c: any) => ({
-    id: c.id,
-    postId: c.post_id,
-    profileId: c.profile_id,
-    authorName: c.profiles?.display_name || c.profiles?.username || "User",
-    authorUsername: c.profiles?.username,
-    authorAvatar: c.profiles?.avatar_url || undefined,
-    content: c.content || "",
-    createdAt: c.created_at,
-  }));
+  const rows = data || [];
+  if (!rows.length) return [];
+  const ids = Array.from(new Set(rows.map((c: any) => c.profile_id).filter(Boolean)));
+  const nameById = new Map<string, { name: string; username?: string; avatarUrl?: string }>();
+  if (ids.length) {
+    const { data: profs } = await supabase
+      .from("profiles")
+      .select("id, username, display_name, avatar_url")
+      .in("id", ids as string[]);
+    for (const p of profs || []) {
+      nameById.set((p as any).id, {
+        name: (p as any).display_name || (p as any).username || "User",
+        username: (p as any).username || undefined,
+        avatarUrl: (p as any).avatar_url || undefined,
+      });
+    }
+  }
+  return rows.map((c: any) => {
+    const prof = nameById.get(c.profile_id);
+    return {
+      id: c.id,
+      postId: c.post_id,
+      profileId: c.profile_id,
+      authorName: prof?.name || "User",
+      authorUsername: prof?.username,
+      authorAvatar: prof?.avatarUrl,
+      content: c.content || "",
+      createdAt: c.created_at,
+    };
+  });
 }
 
 export async function createPostComment(postId: string, content: string): Promise<PostComment> {
@@ -468,6 +492,64 @@ export async function fetchMyContacts(): Promise<Array<{ id: string; name: strin
     .map((r: any) => r.profiles)
     .filter(Boolean)
     .map((p: any) => ({ id: p.id, name: p.display_name || p.username || "User", username: p.username, avatarUrl: p.avatar_url || undefined }));
+}
+
+export type RosterPerson = {
+  id: string;
+  name: string;
+  username?: string;
+  avatarUrl?: string;
+  via: "chat" | "group";
+};
+
+/**
+ * The ONLY people a search on Explore may return: users I already share a
+ * conversation with — either an accepted direct chat ("actively chatting")
+ * or any group/community/channel conversation we are both members of.
+ */
+export async function fetchMessagingRoster(): Promise<RosterPerson[]> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("id")
+    .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+    .maybeSingle();
+  const myId = (me as any)?.id;
+  if (!myId) return [];
+
+  const { data, error } = await supabase
+    .from("conversation_members")
+    .select("profile_id, conversation_id, conversations(conversation_type, request_status), profiles:profile_id(id, username, display_name, avatar_url)")
+    .eq("status", "active")
+    .neq("profile_id", myId)
+    .limit(500);
+  if (error) return [];
+
+  const byId = new Map<string, RosterPerson>();
+  for (const row of data || []) {
+    const conv: any = Array.isArray(row.conversations) ? row.conversations[0] : row.conversations;
+    const p: any = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
+    if (!p?.id) continue;
+    const convType = String(conv?.conversation_type || "direct").toLowerCase();
+    const accepted = String(conv?.request_status || "accepted").toLowerCase() === "accepted";
+    const via: "chat" | "group" = convType === "group" || convType === "community" || convType === "channel" ? "group" : "chat";
+    if (via === "chat" && !accepted) continue; // pending requests are NOT searchable
+    const existing = byId.get(p.id);
+    if (existing) {
+      if (existing.via === "chat") continue; // keep the strongest signal
+      existing.via = via;
+      continue;
+    }
+    byId.set(p.id, {
+      id: p.id,
+      name: p.display_name || p.username || "User",
+      username: p.username || undefined,
+      avatarUrl: p.avatar_url || undefined,
+      via,
+    });
+  }
+  return Array.from(byId.values());
 }
 
 /** Contact-only story feed: stories authored by me or by my contacts. */
