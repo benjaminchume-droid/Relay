@@ -1,6 +1,10 @@
 <resources>
-    <style name="Theme.Relay" parent="android:Theme.Material.Light.NoActionBar">
+    <!-- Capacitor's BridgeActivity extends AppCompatActivity — the theme MUST be
+         an AppCompat descendant. The old platform Material theme threw
+         IllegalStateException at launch: "Relay keeps stopping". -->
+    <style name="Theme.Relay" parent="Theme.AppCompat.DayNight.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowLightStatusBar">true</item>
     </style>
 </resources>
