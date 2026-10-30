@@ -206,6 +206,7 @@ export interface Chat {
   participants: string[];
   unreadCount?: number;
   lastMessage?: {
+    id?: string;
     text: string;
     timestamp: string;
     senderId?: string;
