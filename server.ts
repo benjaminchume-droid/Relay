@@ -135,6 +135,7 @@ function createDefaultSettings(): UserProfile["settings"] {
       uiDensity: "comfortable",
       chatWallpaper: "glass-gradient",
       storiesLayout: "horizontal",
+      chatStyle: "classic",
       bubbleStyle: "edge-glow",
       bubbleSpacing: 10,
       fontSize: "sm",

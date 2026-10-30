@@ -73,6 +73,13 @@ interface ChatState {
   receiveIncomingMessage: (row: any) => Promise<void>;
 }
 
+// per-chat "read up to" watermark (epoch ms) — cleared badges can't be
+// resurrected by stale server unread counts racing markChatAsRead
+const WM_KEY = 'relay_read_watermarks_v1';
+function readWatermarks(): Record<string, number> {
+  try { return JSON.parse(localStorage.getItem(WM_KEY) || '{}'); } catch { return {}; }
+}
+
 export const useChatStore = create<ChatState>((set, get) => ({
   chats: chatCache.getChats(),
   activeChatId: null,
@@ -96,9 +103,20 @@ export const useChatStore = create<ChatState>((set, get) => ({
             }
             return c;
           });
-          // the open conversation can never be unread — server races can't resurrect the badge
+          // the open conversation can never be unread — server races can't resurrect the badge.
+          // read watermark: chats whose latest message is at/below our last read
+          // moment can never show a stale badge after markChatAsRead races.
           const active = state.activeChatId;
-          const final = active ? merged.map((c) => (c.id === active ? { ...c, unreadCount: 0 } : c)) : merged;
+          const wm = readWatermarks();
+          const final = merged.map((c) => {
+            if (c.id === active) return { ...c, unreadCount: 0 };
+            const mark = wm[c.id];
+            if (mark && (c.unreadCount || 0) > 0) {
+              const updated = (c as any).updatedAt || (c as any).lastMessage?.timestamp;
+              if (updated && new Date(updated).getTime() <= mark) return { ...c, unreadCount: 0 };
+            }
+            return c;
+          });
           chatCache.setChats(final);
           return { chats: final };
         });
@@ -112,6 +130,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ activeChatId: chatId, replyingToMessage: null });
     if (chatId) {
       // optimistic clear — badge must vanish the instant the chat opens
+      readWatermarks()[chatId] = Date.now();
+      try { localStorage.setItem(WM_KEY, JSON.stringify(readWatermarks())); } catch { /* optional */ }
       set((state) => {
         if (!state.chats.some((c) => c.id === chatId && (c.unreadCount || 0) > 0)) return {};
         const chats = state.chats.map((c) => (c.id === chatId ? { ...c, unreadCount: 0 } : c));

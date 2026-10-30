@@ -7,7 +7,7 @@ import { profileCache } from "./profileCache";
 import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
 import { encryptFor, encryptFanout, isEnvelope } from "./crypto/cryptoService";
-import { ownPlaintextRemember } from "./messageFetch";
+import { ownPlaintextRemember, ownMediaRemember } from "./messageFetch";
 import { encodePayload, type MsgPayload } from "./crypto/mediaDecryptor";
 
 const peerIdCache = new Map<string, string>();
@@ -306,6 +306,14 @@ export async function sendConversationMessage(
     (msgFormatted as any)._mediaKey = envelopePayload.key;
     const atts = (msgFormatted.attachments || []) as any[];
     for (const a of atts) a.mediaKey = envelopePayload.key;
+    // own voice notes: the ratchet can't decrypt our own ciphertext after a
+    // refetch — remember (url, key, mime) locally so WE can still play them
+    ownMediaRemember(String(msgFormatted.id), {
+      url: envelopePayload.u,
+      key: envelopePayload.key,
+      mime: envelopePayload.mime,
+    });
+    (msgFormatted as any)._mime = envelopePayload.mime;
   }
 
   let targetName = "";

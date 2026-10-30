@@ -37,6 +37,8 @@ export type AccentMode = 'single' | 'gradient' | 'dual' | 'rainbow' | 'animated-
 
 export type StoriesLayout = 'horizontal' | 'vertical' | 'grid';
 
+export type ChatStyle = 'classic' | 'retro';
+
 export interface AppearanceCustomization {
   themeMode: ThemeMode;
   presetName?: GlassPreset;
@@ -56,6 +58,7 @@ export interface AppearanceCustomization {
   chatWallpaper: WallpaperStyle;
   customWallpaperUrl?: string;
   storiesLayout: StoriesLayout;
+  chatStyle: ChatStyle;
   bubbleStyle: BubbleStyle;
   bubbleSpacing: number;
   fontSize: 'xs' | 'sm' | 'base' | 'lg';

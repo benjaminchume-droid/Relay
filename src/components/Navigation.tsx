@@ -145,8 +145,10 @@ export const MainNavigation: React.FC<{
 
         {currentUser && !shouldHideBottomNav && (
           <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">
+            {/** Liquid glass: deep blur + saturation, refractive top-edge sheen,
+                inner light line and accent glow on the active pill. */}
             <nav
-              className="flex items-center gap-1.5 px-2.5 py-1.5 rounded-[26px] bg-black/55 dark:bg-black/70 backdrop-blur-2xl border border-white/25 dark:border-white/15 shadow-xl shadow-black/20 select-none"
+              className="liquid-glass-nav flex items-center gap-1.5 px-2.5 py-1.5 rounded-[26px] select-none"
               style={{ marginBottom: 'env(safe-area-inset-bottom, 0px)' }}
             >
               {tabs.map((tab) => {
@@ -158,12 +160,12 @@ export const MainNavigation: React.FC<{
                     onClick={() => onSelectTab(tab.id)}
                     className={`relative p-2.5 rounded-[18px] transition-all duration-200 cursor-pointer flex items-center justify-center ${
                       isActive
-                        ? 'text-white shadow-md scale-105'
-                        : 'text-slate-500 hover:text-slate-800 dark:hover:text-white hover:bg-slate-100/60 dark:hover:bg-slate-800/60'
+                        ? 'text-white shadow-lg scale-105'
+                        : 'text-slate-600/90 dark:text-slate-300/80 hover:bg-white/40 dark:hover:bg-white/10'
                     }`}
                     style={isActive ? {
                       backgroundColor: 'var(--primary-accent, #2563EB)',
-                      boxShadow: '0 4px 14px rgba(37, 99, 235, 0.35)'
+                      boxShadow: '0 4px 16px color-mix(in srgb, var(--primary-accent, #2563EB) 45%, transparent), inset 0 1px 0 rgba(255,255,255,.35)'
                     } : {}}
                     title={tab.label}
                   >

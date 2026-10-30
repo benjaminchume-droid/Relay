@@ -2,22 +2,24 @@
  * @license
  * SPDX-License-Identifier: Apache-2.0
  *
- * Explore — a Twitter (X) × Meta Threads × TikTok mix:
- *  · For You — Threads-style conversation cards (compact, ~12 items, no clutter)
- *  · Stories — WhatsApp-style "Add status" composer (Text / Photo / Video /
- *    Voice) + immersive full-bleed viewer (TikTok energy): progress bars,
- *    tap navigation, hold-to-pause, swipe-down close, views + delete.
- *    The viewer is a fullscreen overlay — bottom nav is gone while it's open.
- *  · People  — X-style follow rows
+ * Explore — rebuilt to spec:
+ *  · No search bar anywhere on this screen (find-people lives at /search).
+ *  · For you — X (Twitter) replica feed: author row (avatar · name · handle ·
+ *    time), rich text + photo posts, action rail (reply / like / views) with
+ *    real counts, threaded comment sheet. The header "+" publishes a STORY.
+ *  · Stories — contact-only (you see stories from people in your contacts,
+ *    plus your own). WhatsApp-style composer (Text/Photo/Video/Voice).
+ *    The viewer is TikTok: fullscreen, fit-to-screen content, views badge at
+ *    the top, comment bar pinned at the bottom, vertical swipe to move, hold
+ *    to pause, swipe down to close. NO likes anywhere in stories.
+ *  · People — your contacts as X-style rows.
  */
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
-  Search, Heart, MessageCircle, Send, X, Plus, UserPlus, Eye, Loader2,
-  Text as TextIcon, Image as ImageIcon, Video as VideoIcon, Mic, Pause,
-  Play, Trash2, ChevronLeft, ChevronRight,
+  Heart, MessageCircle, Send, X, Plus, UserPlus, Eye, Loader2,
+  Text as TextIcon, Image as ImageIcon, Video as VideoIcon, Mic,
+  Play, Trash2, BarChart2, MoreHorizontal, Search,
 } from "lucide-react";
-import { GlassButton } from "./GlassUI";
-import { useContactsStore } from "../store/contactsStore";
 import { useChatStore } from "../store/chatStore";
 import { useAuthStore } from "../store/authStore";
 import { useUiStore } from "../store/uiStore";
@@ -28,11 +30,20 @@ import {
   fetchPublicFeed,
   createPublicPost,
   togglePostLike,
+  recordPostView,
+  fetchPostComments,
+  createPostComment,
   fetchActiveStories,
+  fetchContactStories,
+  fetchMyContacts,
   createStory,
   recordStoryView,
+  fetchStoryReplies,
+  createStoryReply,
   type FeedPost,
+  type PostComment,
   type StoryItem,
+  type StoryReply,
 } from "../services/phase1Service";
 
 const STORY_GRADIENTS = [
@@ -41,22 +52,24 @@ const STORY_GRADIENTS = [
   "linear-gradient(135deg,#4facfe,#00f2fe)",
   "linear-gradient(135deg,#43e97b,#38f9d7)",
   "linear-gradient(135deg,#fa709a,#fee140)",
-  "linear-gradient(135deg,#0f172a,#334155)",
+  "linear-gradient(135deg,#a18cd1,#fbc2eb)",
 ];
 
 type ExploreTab = "foryou" | "stories" | "people";
 type StoryMode = "text" | "image" | "video" | "voice";
+
+const ACCENT = "var(--primary-accent, #2563EB)";
 
 export const ExploreView: React.FC<{
   onSelectChat: (chatId: string) => void;
   onOpenUserSearch?: () => void;
 }> = ({ onSelectChat, onOpenUserSearch }) => {
   const [tab, setTab] = useState<ExploreTab>("foryou");
-  const [query, setQuery] = useState("");
-  const [friendStatuses, setFriendStatuses] = useState<Record<string, "initial" | "pending">>({});
   const [feed, setFeed] = useState<FeedPost[]>([]);
   const [stories, setStories] = useState<StoryItem[]>([]);
+  const [contacts, setContacts] = useState<Array<{ id: string; name: string; username?: string; avatarUrl?: string }>>([]);
   const [composer, setComposer] = useState("");
+  const [postImage, setPostImage] = useState<{ file: File; url: string } | null>(null);
   const [showStoryComposer, setShowStoryComposer] = useState(false);
   const [viewerIndex, setViewerIndex] = useState<number | null>(null);
   const [loadingFeed, setLoadingFeed] = useState(true);
@@ -64,48 +77,57 @@ export const ExploreView: React.FC<{
   const [error, setError] = useState<string | null>(null);
   const [visibleCount, setVisibleCount] = useState(12);
 
-  const { searchResults, searchUsers } = useContactsStore();
   const { createDirectChat } = useChatStore();
   const { currentUser } = useAuthStore();
   const { enterImmersive, exitImmersive } = useUiStore();
 
-  const loadExplore = async () => {
+  const loadExplore = useCallback(async () => {
     setLoadingFeed(true);
     setError(null);
     try {
-      const [f, s] = await Promise.all([fetchPublicFeed(24), fetchActiveStories()]);
+      const [f, s, c] = await Promise.all([fetchPublicFeed(30), fetchContactStories(), fetchMyContacts()]);
       setFeed(f);
       setStories(s);
+      setContacts(c);
     } catch (e: any) {
       setError(e?.message || "Failed to load explore");
     } finally {
       setLoadingFeed(false);
     }
-  };
-
-  useEffect(() => {
-    loadExplore();
   }, []);
 
   useEffect(() => {
-    if (query.trim().length >= 2) searchUsers(query.trim());
-  }, [query]);
+    loadExplore();
+  }, [loadExplore]);
 
   const handlePost = async () => {
-    if (!composer.trim() || posting) return;
+    if ((!composer.trim() && !postImage) || posting) return;
     setPosting(true);
     setError(null);
     try {
-      const post = await createPublicPost(composer.trim());
+      let mediaUrl: string | undefined;
+      if (postImage) {
+        const { data: { user } } = await supabase.auth.getUser();
+        const uid = user?.id || "anon";
+        const path = `${uid}/post_${Date.now()}.jpg`;
+        const up = await supabase.storage.from("story-media").upload(path, postImage.file, { contentType: postImage.file.type || "image/jpeg", upsert: false });
+        if (!up.error) {
+          const signed = await supabase.storage.from("story-media").createSignedUrl(path, 60 * 60 * 24 * 30);
+          mediaUrl = signed.data?.signedUrl;
+        }
+      }
+      const post = await createPublicPost(composer.trim() || "📷", mediaUrl);
       setFeed((prev) => [
         {
           ...post,
           authorName: currentUser?.name || currentUser?.username || "You",
           authorAvatar: currentUser?.avatarUrl,
+          mediaUrl,
         },
         ...prev,
       ]);
       setComposer("");
+      setPostImage(null);
     } catch (e: any) {
       setError(e?.message || "Failed to post");
     } finally {
@@ -114,10 +136,18 @@ export const ExploreView: React.FC<{
   };
 
   const handleLike = async (postId: string) => {
+    // optimistic — flip locally first so the tap feels instant (X behavior)
+    setFeed((prev) => prev.map((p) => (p.id === postId
+      ? { ...p, likedByMe: !p.likedByMe, likeCount: p.likeCount + (p.likedByMe ? -1 : 1) }
+      : p)));
     try {
       const res = await togglePostLike(postId);
       setFeed((prev) => prev.map((p) => (p.id === postId ? { ...p, likedByMe: res.liked, likeCount: res.likeCount } : p)));
     } catch { /* optimistic state kept */ }
+  };
+
+  const handleCommentPosted = (postId: string) => {
+    setFeed((prev) => prev.map((p) => (p.id === postId ? { ...p, commentCount: (p.commentCount || 0) + 1 } : p)));
   };
 
   const handleStartChat = async (userId: string) => {
@@ -125,20 +155,15 @@ export const ExploreView: React.FC<{
     if (chatId) onSelectChat(chatId);
   };
 
-  const handleAddFriend = async (userId: string) => {
-    setFriendStatuses((s) => ({ ...s, [userId]: "pending" }));
-    await handleStartChat(userId);
-  };
-
   // ---- story lifecycle ----
-  const openStoryComposer = () => {
+  const openStoryComposer = useCallback(() => {
     setShowStoryComposer(true);
     enterImmersive();
-  };
-  const closeStoryComposer = () => {
+  }, [enterImmersive]);
+  const closeStoryComposer = useCallback(() => {
     setShowStoryComposer(false);
     exitImmersive();
-  };
+  }, [exitImmersive]);
   const handleStoryCreated = (story: StoryItem) => {
     setStories((prev) => [story, ...prev]);
     closeStoryComposer();
@@ -147,45 +172,55 @@ export const ExploreView: React.FC<{
     setViewerIndex(i);
     enterImmersive();
   };
-  const closeViewer = () => {
+  const closeViewer = useCallback(() => {
     setViewerIndex(null);
     exitImmersive();
-  };
+  }, [exitImmersive]);
   const handleStoryDeleted = (storyId: string) => {
     setStories((prev) => prev.filter((s) => s.id !== storyId));
     closeViewer();
   };
 
+  // Browser back must ALWAYS restore the nav bar — even when a fullscreen
+  // overlay unmounts without going through its close handler. Guarded by a
+  // released flag so double-exit can never drive the counter negative.
+  const overlayReleaseRef = useRef<(() => void) | null>(null);
+  useEffect(() => {
+    overlayReleaseRef.current = viewerIndex !== null || showStoryComposer ? () => {} : null;
+    if (viewerIndex !== null || showStoryComposer) {
+      window.history.pushState({ relayOverlay: true }, "");
+    }
+  }, [viewerIndex, showStoryComposer]);
+  useEffect(() => {
+    const onPop = () => {
+      if (viewerIndex !== null) { setViewerIndex(null); exitImmersive(); }
+      else if (showStoryComposer) { setShowStoryComposer(false); exitImmersive(); }
+    };
+    window.addEventListener("popstate", onPop);
+    return () => {
+      window.removeEventListener("popstate", onPop);
+      // unmount cleanup — the "back button ate the nav bar" fix
+      if (viewerIndex !== null || showStoryComposer) exitImmersive();
+    };
+  }, [viewerIndex, showStoryComposer, exitImmersive]);
+
   const visibleFeed = feed.slice(0, visibleCount);
-  const peopleResults = query.trim().length >= 2 ? searchResults.slice(0, 12) : [];
 
   return (
-    <div className="w-full max-w-2xl mx-auto min-h-screen pb-32 text-left">
-      {/* header */}
+    <div className="w-full max-w-2xl mx-auto min-h-full pb-32 text-left">
+      {/* header — search bar REMOVED per spec */}
       <div className="sticky top-0 z-20 px-4 pt-4 pb-3 bg-gradient-to-b from-slate-50 via-slate-50/95 to-transparent dark:from-black dark:via-black/95 backdrop-blur-md">
-        <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center justify-between">
           <h1 className="text-2xl font-black tracking-tight text-slate-800 dark:text-white">Explore</h1>
           <button
             type="button"
             onClick={openStoryComposer}
-            style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}
+            style={{ backgroundColor: ACCENT }}
             className="p-2.5 rounded-full text-white shadow-md active:scale-95 transition-transform"
             aria-label="Add status"
           >
             <Plus size={18} />
           </button>
-        </div>
-        <div className="relative">
-          <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none text-slate-400"><Search size={15} /></div>
-          <input
-            value={query}
-            onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search people"
-            className="w-full pl-10 pr-4 py-2.5 rounded-full bg-white/80 dark:bg-white/10 text-slate-800 dark:text-white placeholder-slate-400 text-xs font-medium border border-slate-200/80 dark:border-white/10 focus:outline-none focus:ring-2 focus:ring-[var(--primary-accent,#2563EB)]/40"
-          />
-          {query && (
-            <button type="button" onClick={() => setQuery("")} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400"><X size={14} /></button>
-          )}
         </div>
         {/* segmented tabs */}
         <div className="flex items-center gap-1 mt-3 p-1 rounded-full bg-white/70 dark:bg-white/5 border border-slate-200 dark:border-white/10 w-fit">
@@ -199,7 +234,7 @@ export const ExploreView: React.FC<{
               type="button"
               onClick={() => setTab(id)}
               className={`px-4 py-1.5 rounded-full text-[11px] font-bold transition-all ${tab === id ? "text-white shadow-sm" : "text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-white"}`}
-              style={tab === id ? { backgroundColor: "var(--primary-accent, #2563EB)" } : {}}
+              style={tab === id ? { backgroundColor: ACCENT } : {}}
             >
               {label}
             </button>
@@ -210,49 +245,68 @@ export const ExploreView: React.FC<{
       <div className="px-4">
         {error && <div className="mb-3 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 text-[11px] text-red-600 dark:text-red-300 font-medium">{error}</div>}
 
-        {/* ---------------- FOR YOU (Threads-style cards) ---------------- */}
+        {/* ---------------- FOR YOU — X replica ---------------- */}
         {tab === "foryou" && (
-          <div className="space-y-3">
-            <div className="flex items-start gap-2.5 p-3.5 rounded-3xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-              <img src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || "You")} alt="" className="w-8 h-8 rounded-full object-cover shrink-0" />
-              <textarea
-                value={composer}
-                onChange={(e) => setComposer(e.target.value)}
-                rows={composer.trim() ? 3 : 1}
-                placeholder="Start a thread…"
-                className="flex-1 bg-transparent text-[13px] text-slate-800 dark:text-white placeholder-slate-400 resize-none focus:outline-none pt-1.5"
-              />
-              {composer.trim() && (
-                <button type="button" onClick={handlePost} disabled={posting} style={{ backgroundColor: "var(--primary-accent, #2563EB)" }} className="px-4 py-1.5 rounded-full text-[11px] font-bold text-white disabled:opacity-50 shrink-0">
-                  {posting ? "Posting…" : "Post"}
-                </button>
-              )}
+          <div className="space-y-0.5">
+            <div className="flex items-start gap-2.5 px-3.5 py-3 border-b border-slate-200/70 dark:border-white/10">
+              <img src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || "You")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+              <div className="min-w-0 flex-1">
+                <textarea
+                  value={composer}
+                  onChange={(e) => setComposer(e.target.value)}
+                  rows={composer.trim() || postImage ? 3 : 1}
+                  placeholder="What's happening?"
+                  className="w-full bg-transparent text-[14px] text-slate-800 dark:text-white placeholder-slate-400 resize-none focus:outline-none pt-1"
+                />
+                {postImage && (
+                  <div className="relative mt-1 rounded-2xl overflow-hidden border border-slate-200 dark:border-white/10">
+                    <img src={postImage.url} alt="" className="max-h-64 w-full object-cover" />
+                    <button type="button" onClick={() => setPostImage(null)} className="absolute top-2 right-2 p-1.5 rounded-full bg-black/60 text-white"><X size={14} /></button>
+                  </div>
+                )}
+                <div className="flex items-center justify-between mt-1.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const el = document.getElementById("foryou-image-input") as HTMLInputElement | null;
+                      el?.click();
+                    }}
+                    className="p-2 rounded-full text-slate-400 hover:bg-slate-100 dark:hover:bg-white/10"
+                    aria-label="Add photo"
+                  >
+                    <ImageIcon size={17} />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handlePost}
+                    disabled={posting || (!composer.trim() && !postImage)}
+                    className="py-2 px-5 rounded-full text-[12px] font-black text-white disabled:opacity-40"
+                    style={{ backgroundColor: ACCENT }}
+                  >
+                    {posting ? "Posting…" : "Post"}
+                  </button>
+                </div>
+              </div>
             </div>
-
+            <input
+              id="foryou-image-input"
+              type="file"
+              accept="image/*"
+              className="hidden"
+              onChange={(e) => {
+                const f = e.target.files?.[0];
+                if (f) setPostImage({ file: f, url: URL.createObjectURL(f) });
+                e.target.value = "";
+              }}
+            />
             {loadingFeed ? (
               <div className="flex items-center justify-center py-14 text-slate-400"><Loader2 size={22} className="animate-spin" /></div>
             ) : (
               <>
                 {visibleFeed.map((post) => (
-                  <article key={post.id} className="px-3.5 py-3.5 rounded-3xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10 hover:border-slate-300 dark:hover:border-white/20 transition-colors">
-                    <div className="flex items-start gap-3">
-                      <img src={post.authorAvatar || getLetterAvatar(post.authorName || "U")} alt="" className="w-9 h-9 rounded-full object-cover shrink-0" />
-                      <div className="min-w-0 flex-1">
-                        <div className="flex items-center gap-1.5 min-w-0">
-                          <span className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{post.authorName || "User"}</span>
-                          <span className="text-[11px] text-slate-400 truncate">{formatRelativeTime(post.createdAt)}</span>
-                        </div>
-                        <p className="text-[13.5px] text-slate-700 dark:text-slate-200 leading-relaxed mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{post.content}</p>
-                        <div className="flex items-center gap-6 mt-2.5 -ml-1.5">
-                          <button type="button" onClick={() => handleLike(post.id)} className={`flex items-center gap-1.5 text-[11px] font-bold transition-colors ${post.likedByMe ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`}>
-                            <Heart size={15} className={post.likedByMe ? "fill-current" : ""} /> {post.likeCount || 0}
-                          </button>
-                          <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400"><MessageCircle size={15} /> Reply</span>
-                          <span className="flex items-center gap-1.5 text-[11px] font-bold text-slate-400"><Eye size={15} /> {post.viewCount ?? ""}</span>
-                        </div>
-                      </div>
-                    </div>
-                  </article>
+                  <div key={post.id}>
+                    <FeedCard post={post} onLike={handleLike} onCommentPosted={handleCommentPosted} />
+                  </div>
                 ))}
                 {feed.length > visibleCount && (
                   <button type="button" onClick={() => setVisibleCount((c) => c + 12)} className="w-full py-2.5 rounded-2xl bg-white/60 dark:bg-white/5 border border-slate-200 dark:border-white/10 text-[11px] font-bold text-slate-500 dark:text-slate-300">
@@ -260,7 +314,7 @@ export const ExploreView: React.FC<{
                   </button>
                 )}
                 {feed.length === 0 && (
-                  <div className="py-14 text-center text-xs text-slate-400">Nothing here yet — post the first thread.</div>
+                  <div className="py-14 text-center text-xs text-slate-400">Nothing here yet — be the first to post.</div>
                 )}
               </>
             )}
@@ -272,7 +326,7 @@ export const ExploreView: React.FC<{
           <div>
             <div className="flex gap-3 overflow-x-auto pb-2 no-scrollbar">
               <button type="button" onClick={openStoryComposer} className="shrink-0 w-16 flex flex-col items-center gap-1.5">
-                <span className="w-14 h-14 rounded-full border-2 border-dashed border-[var(--primary-accent,#2563EB)]/50 flex items-center justify-center text-[var(--primary-accent,#2563EB)] bg-white/60 dark:bg-white/5"><Plus size={20} /></span>
+                <span className="w-14 h-14 rounded-full border-2 border-dashed flex items-center justify-center bg-white/60 dark:bg-white/5" style={{ borderColor: "color-mix(in srgb, " + ACCENT + " 50%, transparent)", color: ACCENT }}><Plus size={20} /></span>
                 <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400">Your story</span>
               </button>
               {stories.map((s, i) => (
@@ -285,12 +339,12 @@ export const ExploreView: React.FC<{
                   <span className="text-[10px] font-semibold text-slate-600 dark:text-slate-300 truncate w-16 text-center">{s.authorName || "User"}</span>
                 </button>
               ))}
-              {stories.length === 0 && <p className="text-xs text-slate-400 self-center px-2">No active stories — be the first</p>}
+              {stories.length === 0 && <p className="text-xs text-slate-400 self-center px-2">No stories from your contacts yet</p>}
             </div>
 
-            {/* story cards (TikTok energy) */}
+            {/* story cards */}
             <div className="mt-4 space-y-2">
-              {stories.slice(0, 12).map((s) => (
+              {stories.slice(0, 15).map((s) => (
                 <button
                   key={`card-${s.id}`}
                   type="button"
@@ -312,29 +366,35 @@ export const ExploreView: React.FC<{
           </div>
         )}
 
-        {/* ---------------- PEOPLE (X-style rows) ---------------- */}
+        {/* ---------------- PEOPLE — your contacts ---------------- */}
         {tab === "people" && (
           <div className="space-y-2">
-            {peopleResults.map((u: any) => (
+            <button
+              type="button"
+              onClick={onOpenUserSearch}
+              className="w-full flex items-center gap-3 px-3.5 py-3 rounded-2xl border border-dashed border-slate-300 dark:border-white/15 text-slate-500 dark:text-slate-300 text-[12px] font-bold"
+            >
+              <Search size={15} /> Find people to follow
+            </button>
+            {contacts.map((u) => (
               <div key={u.id} className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-                <img src={u.avatarUrl || getLetterAvatar(u.name || u.username || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                <img src={u.avatarUrl || getLetterAvatar(u.name || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
                 <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{u.name || u.username}</p>
-                  <p className="text-[11px] text-slate-400 truncate">{formatHandle(u)}</p>
+                  <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{u.name}</p>
+                  {u.username && <p className="text-[11px] text-slate-400 truncate">{formatHandle(u.username)}</p>}
                 </div>
-                {friendStatuses[u.id] === "pending" ? (
-                  <button type="button" onClick={() => handleStartChat(u.id)} className="px-3.5 py-1.5 rounded-full text-[11px] font-bold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-200 flex items-center gap-1">
-                    <Send size={12} /> Message
-                  </button>
-                ) : (
-                  <button type="button" onClick={() => handleAddFriend(u.id)} className="px-3.5 py-1.5 rounded-full text-[11px] font-bold text-white flex items-center gap-1" style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}>
-                    <UserPlus size={12} /> Follow
-                  </button>
-                )}
+                <button
+                  type="button"
+                  onClick={() => handleStartChat(u.id)}
+                  className="px-3.5 py-1.5 rounded-full text-[11px] font-bold text-white flex items-center gap-1"
+                  style={{ backgroundColor: ACCENT }}
+                >
+                  <Send size={12} /> Message
+                </button>
               </div>
             ))}
-            {peopleResults.length === 0 && (
-              <p className="text-xs text-slate-400 py-6 text-center">{query.trim().length >= 2 ? "No people found" : "Type at least 2 characters to find people"}</p>
+            {contacts.length === 0 && (
+              <p className="text-xs text-slate-400 py-6 text-center">No contacts yet — find people above.</p>
             )}
           </div>
         )}
@@ -359,6 +419,167 @@ export const ExploreView: React.FC<{
   );
 };
 
+// ================= For You post card (X replica) =================
+
+function FeedCard({
+  post, onLike, onCommentPosted,
+}: {
+  post: FeedPost;
+  onLike: (id: string) => void;
+  onCommentPosted: (id: string) => void;
+}) {
+  const [showComments, setShowComments] = useState(false);
+  const viewedRef = useRef(false);
+
+  useEffect(() => {
+    if (viewedRef.current) return;
+    viewedRef.current = true;
+    recordPostView(post.id);
+  }, [post.id]);
+
+  return (
+    <article className="px-3.5 py-3 border-b border-slate-200/70 dark:border-white/10 hover:bg-slate-50/60 dark:hover:bg-white/[0.03] transition-colors">
+      <div className="flex items-start gap-3">
+        <img src={post.authorAvatar || getLetterAvatar(post.authorName || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-1.5 min-w-0">
+            <span className="text-[13.5px] font-bold text-slate-900 dark:text-white truncate">{post.authorName || "User"}</span>
+            {post.authorUsername && (
+              <span className="text-[12px] text-slate-400 truncate">{formatHandle(post.authorUsername)}</span>
+            )}
+            <span className="text-[12px] text-slate-400 shrink-0">· {formatRelativeTime(post.createdAt)}</span>
+            <MoreHorizontal size={15} className="ml-auto text-slate-400 shrink-0" />
+          </div>
+          {post.content && (
+            <p className="text-[14px] text-slate-800 dark:text-slate-100 leading-snug mt-0.5 whitespace-pre-wrap [overflow-wrap:anywhere]">{post.content}</p>
+          )}
+          {post.mediaUrl && (
+            <img src={post.mediaUrl} alt="" className="mt-2 rounded-2xl max-h-80 w-full object-cover border border-slate-200 dark:border-white/10" />
+          )}
+          {/* X action rail */}
+          <div className="flex items-center gap-7 mt-2.5 -ml-1.5">
+            <button
+              type="button"
+              onClick={() => setShowComments(true)}
+              className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-400 hover:text-sky-500 transition-colors"
+            >
+              <MessageCircle size={15.5} /> {post.commentCount || ""}
+            </button>
+            <button
+              type="button"
+              onClick={() => onLike(post.id)}
+              className={`flex items-center gap-1.5 text-[11.5px] font-medium transition-colors ${post.likedByMe ? "text-rose-500" : "text-slate-400 hover:text-rose-500"}`}
+            >
+              <Heart size={15.5} className={post.likedByMe ? "fill-current" : ""} /> {post.likeCount || ""}
+            </button>
+            <span className="flex items-center gap-1.5 text-[11.5px] font-medium text-slate-400">
+              <BarChart2 size={15.5} /> {formatViews(post.viewCount ?? 0)}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {showComments && (
+        <CommentSheet
+          postId={post.id}
+          postAuthor={post.authorName}
+          onPosted={() => onCommentPosted(post.id)}
+          onClose={() => setShowComments(false)}
+        />
+      )}
+    </article>
+  );
+}
+
+function formatViews(n: number): string {
+  if (!n) return "0";
+  if (n < 1000) return String(n);
+  if (n < 1_000_000) return `${(n / 1000).toFixed(1).replace(/\.0$/, "")}K`;
+  return `${(n / 1_000_000).toFixed(1).replace(/\.0$/, "")}M`;
+}
+
+// ================= comment sheet (X-style reply bar) =================
+
+function CommentSheet({
+  postId, postAuthor, onPosted, onClose,
+}: {
+  postId: string;
+  postAuthor: string;
+  onPosted: () => void;
+  onClose: () => void;
+}) {
+  const [comments, setComments] = useState<PostComment[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [text, setText] = useState("");
+  const [sending, setSending] = useState(false);
+  const { currentUser } = useAuthStore();
+
+  useEffect(() => {
+    let alive = true;
+    fetchPostComments(postId)
+      .then((c) => { if (alive) setComments(c); })
+      .catch(() => {})
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [postId]);
+
+  const send = async () => {
+    if (!text.trim() || sending) return;
+    setSending(true);
+    try {
+      const c = await createPostComment(postId, text.trim());
+      setComments((prev) => [...prev, c]);
+      setText("");
+      onPosted();
+    } catch { /* keep text */ }
+    finally { setSending(false); }
+  };
+
+  return (
+    <div className="mt-3 rounded-2xl border border-slate-200 dark:border-white/10 bg-white/80 dark:bg-white/5 overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-slate-200/70 dark:border-white/10">
+        <span className="text-[11px] font-black uppercase tracking-wider text-slate-500 dark:text-slate-300">Replying to {postAuthor}</span>
+        <button type="button" onClick={onClose} className="p-1 text-slate-400"><X size={14} /></button>
+      </div>
+      <div className="max-h-56 overflow-y-auto">
+        {loading && <div className="py-4 flex justify-center text-slate-400"><Loader2 size={16} className="animate-spin" /></div>}
+        {!loading && comments.length === 0 && <p className="py-4 text-center text-[11px] text-slate-400">No replies yet</p>}
+        {comments.map((c) => (
+          <div key={c.id} className="flex items-start gap-2.5 px-3 py-2 border-b border-slate-100 dark:border-white/5 last:border-0">
+            <img src={c.authorAvatar || getLetterAvatar(c.authorName || "U")} alt="" className="w-7 h-7 rounded-full object-cover shrink-0 mt-0.5" />
+            <div className="min-w-0 flex-1">
+              <div className="flex items-center gap-1.5">
+                <span className="text-[12px] font-bold text-slate-900 dark:text-white truncate">{c.authorName}</span>
+                <span className="text-[10.5px] text-slate-400">{formatRelativeTime(c.createdAt)}</span>
+              </div>
+              <p className="text-[12.5px] text-slate-700 dark:text-slate-200 whitespace-pre-wrap [overflow-wrap:anywhere]">{c.content}</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex items-center gap-2 px-2.5 py-2 border-t border-slate-200/70 dark:border-white/10">
+        <img src={currentUser?.avatarUrl || getLetterAvatar(currentUser?.name || "You")} alt="" className="w-7 h-7 rounded-full object-cover shrink-0" />
+        <input
+          value={text}
+          onChange={(e) => setText(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); send(); } }}
+          placeholder="Post your reply..."
+          className="flex-1 bg-transparent text-[12.5px] text-slate-800 dark:text-white placeholder-slate-400 focus:outline-none"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={sending || !text.trim()}
+          className="px-3.5 py-1.5 rounded-full text-[11px] font-bold text-white disabled:opacity-40"
+          style={{ backgroundColor: ACCENT }}
+        >
+          {sending ? "…" : "Reply"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ================= story thumbnail =================
 
 function StoryThumb({ story }: { story: StoryItem }) {
@@ -375,7 +596,7 @@ function StoryThumb({ story }: { story: StoryItem }) {
   }
   if (story.type === "voice") {
     return (
-      <span className="w-12 h-12 rounded-xl shrink-0 flex items-center justify-center" style={{ background: "var(--primary-accent, #2563EB)" }}>
+      <span className="w-12 h-12 rounded-xl shrink-0 flex items-center justify-center" style={{ background: ACCENT }}>
         <Mic size={18} className="text-white" />
       </span>
     );
@@ -387,7 +608,7 @@ function StoryThumb({ story }: { story: StoryItem }) {
   );
 }
 
-// ================= story viewer =================
+// ================= TikTok-style story viewer =================
 
 const STORY_SECONDS: Record<string, number> = { text: 6, image: 6, video: 20, voice: 15 };
 
@@ -404,18 +625,29 @@ function StoryViewer({
   const story = stories[index];
   const [progress, setProgress] = useState(0);
   const [paused, setPaused] = useState(false);
-  const touchStartX = useRef<number | null>(null);
-  const touchStartY = useRef<number | null>(null);
+  const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
+  const [replies, setReplies] = useState<StoryReply[]>([]);
+  const [replyText, setReplyText] = useState("");
+  const [replySending, setReplySending] = useState(false);
+  const [viewsOpen, setViewsOpen] = useState(false);
 
   const duration = (STORY_SECONDS[story.type] || 6) * 1000;
 
+  // load replies (story comments) per story
   useEffect(() => {
-    setProgress(0);
+    let alive = true;
+    setReplies([]);
     recordStoryView(story.id).catch(() => {});
+    fetchStoryReplies(story.id)
+      .then((r) => { if (alive) setReplies(r); })
+      .catch(() => {});
+    return () => { alive = false; };
   }, [story.id]);
 
+  // progress engine — video/voice are driven by their real media, others by timer
+  const mediaMode = story.type === "video" || story.type === "voice";
   useEffect(() => {
-    if (paused) return;
+    if (paused || mediaMode) return;
     const start = Date.now() - progress * duration;
     const t = setInterval(() => {
       const p = (Date.now() - start) / duration;
@@ -428,7 +660,14 @@ function StoryViewer({
       }
     }, 50);
     return () => clearInterval(t);
-  }, [index, paused, story.id]);
+  }, [index, paused, story.id, mediaMode, duration]);
+
+  // media-driven progress: bump progress from timeupdate so the bar tracks reality
+  const onMediaTime = (frac: number) => setProgress(frac);
+  const onMediaEnded = () => {
+    if (index < stories.length - 1) onIndex(index + 1);
+    else onClose();
+  };
 
   const next = () => {
     if (index < stories.length - 1) onIndex(index + 1);
@@ -445,24 +684,32 @@ function StoryViewer({
     } catch { /* keep open */ }
   };
 
+  const sendReply = async () => {
+    if (!replyText.trim() || replySending) return;
+    setReplySending(true);
+    try {
+      const r = await createStoryReply(story.id, replyText.trim());
+      setReplies((p) => [...p, r]);
+      setReplyText("");
+    } catch { /* keep text */ }
+    finally { setReplySending(false); }
+  };
+
   return (
     <div
       className="fixed inset-0 z-[80] bg-black select-none"
       onTouchStart={(e) => {
-        touchStartX.current = e.touches[0].clientX;
-        touchStartY.current = e.touches[0].clientY;
+        touchStart.current = { x: e.touches[0].clientX, y: e.touches[0].clientY, t: Date.now() };
       }}
       onTouchEnd={(e) => {
-        if (touchStartY.current == null) return;
-        const dy = e.changedTouches[0].clientY - touchStartY.current;
-        if (dy > 90) { onClose(); return; }
-        if (touchStartX.current != null) {
-          const dx = e.changedTouches[0].clientX - touchStartX.current;
-          if (dx < -60) next();
-          else if (dx > 60) prev();
-        }
-        touchStartX.current = null;
-        touchStartY.current = null;
+        if (!touchStart.current) return;
+        const dy = e.changedTouches[0].clientY - touchStart.current.y;
+        const dx = e.changedTouches[0].clientX - touchStart.current.x;
+        const dt = Date.now() - touchStart.current.t;
+        touchStart.current = null;
+        if (dy > 110 && dt < 600 && Math.abs(dx) < 90) { onClose(); return; } // fast swipe down = close
+        if (dy < -70 && dt < 700 && Math.abs(dx) < 90) { next(); return; }    // swipe up = next (TikTok)
+        if (dy > 70 && dt < 700 && Math.abs(dx) < 90) { prev(); return; }     // swipe down slow = prev
       }}
     >
       {/* progress bars */}
@@ -477,16 +724,20 @@ function StoryViewer({
         ))}
       </div>
 
-      {/* header */}
+      {/* header — author + views badge (views live at the TOP per spec) */}
       <div className="absolute top-7 left-4 right-4 z-20 flex items-center gap-2.5">
         <img src={story.authorAvatar || getLetterAvatar(story.authorName || "U")} alt="" className="w-8 h-8 rounded-full object-cover border border-white/40" />
         <div className="min-w-0 flex-1">
           <p className="text-xs font-bold text-white truncate">{story.authorName || "User"}</p>
           <p className="text-[10px] text-white/60">{formatRelativeTime(story.createdAt)}</p>
         </div>
-        {isMine && (
-          <span className="px-2.5 py-1 rounded-full bg-white/15 text-white text-[10px] font-bold">{story.viewCount || 0} views</span>
-        )}
+        <button
+          type="button"
+          onClick={() => setViewsOpen((v) => !v)}
+          className="px-2.5 py-1 rounded-full bg-white/15 text-white text-[10px] font-bold flex items-center gap-1"
+        >
+          <Eye size={11} /> {story.viewCount || 0} views
+        </button>
         {isMine && (
           <button type="button" onClick={deleteMine} className="p-2 rounded-full hover:bg-white/10 text-white/80" aria-label="Delete story">
             <Trash2 size={16} />
@@ -497,54 +748,143 @@ function StoryViewer({
         </button>
       </div>
 
-      {/* tap zones + content */}
-      <div className="absolute inset-0 flex" onClick={() => { /* body click = pause toggle on desktop */ }}>
-        <button type="button" aria-label="Previous" className="w-1/4 h-full flex items-center justify-start pl-2 text-white/40 hover:text-white z-10" onClick={(e) => { e.stopPropagation(); prev(); }}>
-          <ChevronLeft size={26} />
-        </button>
+      {/* tap zones + fit-to-screen content */}
+      <div className="absolute inset-0 flex">
+        <button type="button" aria-label="Previous" className="w-[22%] h-full z-10" onClick={(e) => { e.stopPropagation(); prev(); }} />
         <div
-          className="flex-1 h-full flex items-center justify-center"
+          className="flex-1 h-full flex items-center justify-center overflow-hidden"
           onMouseDown={() => setPaused(true)}
           onMouseUp={() => setPaused(false)}
-          onTouchStart={() => setPaused(true)}
-          onTouchEnd={() => setPaused(false)}
         >
-          <StoryBody story={story} />
+          <StoryBody story={story} paused={paused} onTime={onMediaTime} onEnded={onMediaEnded} />
         </div>
-        <button type="button" aria-label="Next" className="w-1/4 h-full flex items-center justify-end pr-2 text-white/40 hover:text-white z-10" onClick={(e) => { e.stopPropagation(); next(); }}>
-          <ChevronRight size={26} />
-        </button>
+        <button type="button" aria-label="Next" className="w-[22%] h-full z-10" onClick={(e) => { e.stopPropagation(); next(); }} />
+      </div>
+
+      {/* views pop-over (author only) */}
+      {viewsOpen && isMine && (
+        <div className="absolute top-24 right-4 z-30 px-3.5 py-2.5 rounded-2xl bg-white/10 backdrop-blur-xl border border-white/15 text-white text-[11px] font-semibold max-w-[220px]">
+          <p className="font-black uppercase tracking-wider text-white/70 text-[9px] mb-1">Story analytics</p>
+          <p>{story.viewCount || 0} views · {replies.length} replies</p>
+          <p className="text-white/50 mt-0.5">Viewer details arrive with phase 2 analytics.</p>
+        </div>
+      )}
+
+      {/* comment bar — pinned bottom (comments ONLY, no likes in stories) */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pb-5 pt-3 bg-gradient-to-t from-black/80 via-black/45 to-transparent" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
+        {replies.length > 0 && (
+          <div className="mb-2 max-h-32 overflow-y-auto space-y-1.5 px-1">
+            {replies.slice(-8).map((r) => (
+              <div key={r.id} className="flex items-start gap-2">
+                <img src={r.authorAvatar || getLetterAvatar(r.authorName || "U")} alt="" className="w-5 h-5 rounded-full object-cover mt-0.5 shrink-0" />
+                <p className="text-[11.5px] text-white/90 leading-snug">
+                  <span className="font-bold mr-1.5">{r.authorName}</span>
+                  <span className="text-white/80 [overflow-wrap:anywhere]">{r.content}</span>
+                </p>
+              </div>
+            ))}
+          </div>
+        )}
+        <div className="flex items-center gap-2">
+          <div className="flex-1 flex items-center gap-2 px-4 py-2.5 rounded-full bg-white/12 backdrop-blur-xl border border-white/25">
+            <input
+              value={replyText}
+              onChange={(e) => setReplyText(e.target.value)}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); sendReply(); } }}
+              onFocus={() => setPaused(true)}
+              onBlur={() => setPaused(false)}
+              placeholder="Send a comment…"
+              className="flex-1 bg-transparent text-white text-[12.5px] placeholder-white/50 focus:outline-none"
+            />
+          </div>
+          <button
+            type="button"
+            onClick={sendReply}
+            disabled={replySending || !replyText.trim()}
+            className="p-3 rounded-full text-white disabled:opacity-40 shrink-0"
+            style={{ backgroundColor: ACCENT }}
+            aria-label="Send comment"
+          >
+            <Send size={16} />
+          </button>
+        </div>
       </div>
     </div>
   );
 }
 
-function StoryBody({ story }: { story: StoryItem }) {
+function StoryBody({
+  story, paused, onTime, onEnded,
+}: {
+  story: StoryItem;
+  paused: boolean;
+  onTime: (frac: number) => void;
+  onEnded: () => void;
+}) {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const audioRef = useRef<HTMLAudioElement>(null);
+
+  // honor pause for real media
+  useEffect(() => {
+    const v = videoRef.current;
+    const a = audioRef.current;
+    if (paused) { v?.pause(); a?.pause(); }
+    else {
+      if (v && story.type === "video") v.play().catch(() => {});
+      if (a && story.type === "voice") a.play().catch(() => {});
+    }
+  }, [paused, story.type]);
+
   if (story.type === "text") {
     return (
-      <div className="w-full max-w-sm aspect-[9/16] max-h-[76vh] rounded-3xl overflow-hidden shadow-2xl flex items-center justify-center" style={{ background: story.backgroundColor || STORY_GRADIENTS[0] }}>
-        <p className="px-6 text-[17px] leading-relaxed text-white font-bold text-center whitespace-pre-wrap [overflow-wrap:anywhere]">{story.caption}</p>
+      <div className="w-full h-full flex items-center justify-center p-8" style={{ background: story.backgroundColor || STORY_GRADIENTS[0] }}>
+        <p className="max-w-md text-[19px] leading-relaxed text-white font-bold text-center whitespace-pre-wrap [overflow-wrap:anywhere]">{story.caption}</p>
       </div>
     );
   }
   if (story.type === "voice") {
     const secs = Math.round((story as any).durationMs ? (story as any).durationMs / 1000 : 0);
     return (
-      <div className="w-full max-w-sm aspect-[9/16] max-h-[76vh] rounded-3xl overflow-hidden shadow-2xl flex flex-col items-center justify-center gap-5" style={{ background: story.backgroundColor || STORY_GRADIENTS[5] }}>
-        <Mic size={56} className="text-white/90" />
-        {story.mediaUrl && <audio src={story.mediaUrl} controls autoPlay className="w-4/5" />}
-        <p className="text-white/70 text-xs font-bold">{secs > 0 ? `${secs}s voice status` : "Voice status"}</p>
+      <div className="w-full h-full flex flex-col items-center justify-center gap-6 p-8" style={{ background: story.backgroundColor || STORY_GRADIENTS[5] }}>
+        <span className="w-28 h-28 rounded-full bg-white/15 border border-white/25 flex items-center justify-center backdrop-blur-xl">
+          <Mic size={52} className="text-white/90" />
+        </span>
+        {story.mediaUrl && (
+          <audio
+            ref={audioRef}
+            src={story.mediaUrl}
+            autoPlay
+            onTimeUpdate={(e) => {
+              const el = e.currentTarget;
+              if (el.duration && isFinite(el.duration)) onTime(el.currentTime / el.duration);
+            }}
+            onEnded={onEnded}
+            className="w-4/5"
+          />
+        )}
+        <p className="text-white/75 text-xs font-bold tracking-wide">{secs > 0 ? `${secs}s voice status` : "Voice status"}</p>
       </div>
     );
   }
-  // image / video
   if (story.type === "video" && story.mediaUrl) {
     return (
-      <video src={story.mediaUrl} autoPlay playsInline controls className="max-w-full max-h-[86vh] object-contain" />
+      <video
+        ref={videoRef}
+        src={story.mediaUrl}
+        autoPlay
+        playsInline
+        onTimeUpdate={(e) => {
+          const el = e.currentTarget;
+          if (el.duration && isFinite(el.duration)) onTime(el.currentTime / el.duration);
+        }}
+        onEnded={onEnded}
+        className="w-full h-full object-contain bg-black"
+      />
     );
   }
+  // image — fit to screen, edge to edge like TikTok
   return story.mediaUrl ? (
-    <img src={story.mediaUrl} alt="" className="max-w-full max-h-[86vh] object-contain" />
+    <img src={story.mediaUrl} alt="" className="w-full h-full object-contain" />
   ) : (
     <div className="text-white/50 text-xs">Media unavailable</div>
   );
@@ -571,7 +911,6 @@ function StoryComposer({
   const recChunks = useRef<Blob[]>([]);
   const recTimer = useRef<ReturnType<typeof setInterval> | null>(null);
   const fileInput = useRef<HTMLInputElement | null>(null);
-  const { currentUser } = useAuthStore();
 
   const canPost =
     (mode === "text" && text.trim()) ||
@@ -581,7 +920,6 @@ function StoryComposer({
 
   const pick = (kind: "image" | "video") => {
     setMode(kind);
-    // trigger the shared hidden input with the right accept filter
     requestAnimationFrame(() => {
       const el = fileInput.current;
       if (!el) return;
@@ -655,7 +993,7 @@ function StoryComposer({
 
       const story = await createStory({
         type: mode === "voice" ? "voice" : mode === "text" ? "text" : mode,
-        caption: mode === "text" || mode === "voice" ? (text.trim() || undefined) : (text.trim() || undefined),
+        caption: text.trim() || undefined,
         mediaUrl,
         backgroundColor: mode === "text" || mode === "voice" ? STORY_GRADIENTS[gradient] : undefined,
         durationHours: 24,
@@ -680,7 +1018,7 @@ function StoryComposer({
               type="button"
               onClick={post}
               disabled={posting}
-              style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}
+              style={{ backgroundColor: ACCENT }}
               className="px-4 py-1.5 rounded-full text-[12px] font-bold text-white disabled:opacity-50"
             >
               {posting ? "Sharing…" : "Share"}
@@ -784,7 +1122,7 @@ function StoryComposer({
             className={`flex items-center gap-1.5 px-3.5 py-2 rounded-full text-[11.5px] font-bold transition-all ${
               mode === id ? "text-white border" : "text-white/60 hover:text-white"
             }`}
-            style={mode === id ? { borderColor: "var(--primary-accent, #2563EB)", backgroundColor: "color-mix(in srgb, var(--primary-accent, #2563EB) 25%, transparent)" } : {}}
+            style={mode === id ? { borderColor: ACCENT, backgroundColor: "color-mix(in srgb, " + ACCENT + " 25%, transparent)" } : {}}
           >
             <Icon size={14} /> {label}
           </button>

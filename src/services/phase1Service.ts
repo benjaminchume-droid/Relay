@@ -14,7 +14,30 @@ export type FeedPost = {
   mediaUrl?: string;
   likeCount: number;
   commentCount: number;
+  viewCount?: number;
   likedByMe: boolean;
+  createdAt: string;
+};
+
+export type PostComment = {
+  id: string;
+  postId: string;
+  profileId: string;
+  authorName: string;
+  authorUsername?: string;
+  authorAvatar?: string;
+  content: string;
+  createdAt: string;
+};
+
+export type StoryReply = {
+  id: string;
+  storyId: string;
+  profileId: string;
+  authorName: string;
+  authorUsername?: string;
+  authorAvatar?: string;
+  content: string;
   createdAt: string;
 };
 
@@ -94,6 +117,7 @@ export async function fetchPublicFeed(limit = 30): Promise<FeedPost[]> {
       mediaUrl: p.media_url || undefined,
       likeCount: p.like_count || 0,
       commentCount: p.comment_count || 0,
+      viewCount: p.view_count || 0,
       likedByMe: false,
       createdAt: p.created_at,
     }));
@@ -109,6 +133,7 @@ export async function fetchPublicFeed(limit = 30): Promise<FeedPost[]> {
     mediaUrl: p.media_url || undefined,
     likeCount: p.like_count || 0,
     commentCount: p.comment_count || 0,
+    viewCount: p.view_count || 0,
     likedByMe: !!p.liked_by_me,
     createdAt: p.created_at,
   }));
@@ -130,6 +155,7 @@ export async function createPublicPost(content: string, mediaUrl?: string): Prom
     mediaUrl: p.media_url || undefined,
     likeCount: p.like_count || 0,
     commentCount: p.comment_count || 0,
+    viewCount: p.view_count || 0,
     likedByMe: false,
     createdAt: p.created_at,
   };
@@ -223,6 +249,101 @@ export async function createStory(payload: {
     viewCount: 0,
     expiresAt: s.expires_at,
     createdAt: s.created_at,
+  };
+}
+
+export async function recordPostView(postId: string): Promise<void> {
+  try {
+    await supabase.rpc("record_post_view", { p_post_id: postId });
+  } catch { /* view counting is best-effort */ }
+}
+
+export async function fetchPostComments(postId: string): Promise<PostComment[]> {
+  const { data, error } = await supabase
+    .from("post_comments")
+    .select("*, profiles:profile_id(id, username, display_name, avatar_url)")
+    .eq("post_id", postId)
+    .order("created_at", { ascending: true })
+    .limit(100);
+  if (error) throw error;
+  return (data || []).map((c: any) => ({
+    id: c.id,
+    postId: c.post_id,
+    profileId: c.profile_id,
+    authorName: c.profiles?.display_name || c.profiles?.username || "User",
+    authorUsername: c.profiles?.username,
+    authorAvatar: c.profiles?.avatar_url || undefined,
+    content: c.content || "",
+    createdAt: c.created_at,
+  }));
+}
+
+export async function createPostComment(postId: string, content: string): Promise<PostComment> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url")
+    .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+    .maybeSingle();
+  const pid = (profile as any)?.id || user.id;
+  const { data, error } = await supabase
+    .from("post_comments")
+    .insert({ post_id: postId, profile_id: pid, content })
+    .select()
+    .single();
+  if (error) throw error;
+  try { await supabase.rpc("increment_post_comment_count", { p_post_id: postId }); } catch { /* count is advisory */ }
+  return {
+    id: data.id,
+    postId: data.post_id,
+    profileId: data.profile_id,
+    authorName: (profile as any)?.display_name || (profile as any)?.username || "You",
+    authorUsername: (profile as any)?.username,
+    authorAvatar: (profile as any)?.avatar_url || undefined,
+    content: data.content,
+    createdAt: data.created_at,
+  };
+}
+
+export async function fetchStoryReplies(storyId: string): Promise<StoryReply[]> {
+  const { data, error } = await supabase.rpc("list_story_replies", { p_story_id: storyId });
+  if (error) throw error;
+  const list = Array.isArray(data) ? data : [];
+  return list.map((r: any) => ({
+    id: r.reply_id,
+    storyId,
+    profileId: r.profile_id,
+    authorName: r.display_name || r.username || "User",
+    authorUsername: r.username,
+    authorAvatar: r.avatar_url || undefined,
+    content: r.reply_content,
+    createdAt: r.created_at,
+  }));
+}
+
+export async function createStoryReply(storyId: string, content: string): Promise<StoryReply> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) throw new Error("Not authenticated");
+  const { data: profile } = await supabase
+    .from("profiles")
+    .select("id, username, display_name, avatar_url")
+    .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+    .maybeSingle();
+  const { data, error } = await supabase.rpc("create_story_reply", {
+    p_story_id: storyId,
+    p_content: content,
+  });
+  if (error) throw error;
+  return {
+    id: (data as any).id,
+    storyId,
+    profileId: (data as any).profile_id,
+    authorName: (profile as any)?.display_name || (profile as any)?.username || "You",
+    authorUsername: (profile as any)?.username,
+    authorAvatar: (profile as any)?.avatar_url || undefined,
+    content: (data as any).content,
+    createdAt: (data as any).created_at,
   };
 }
 
@@ -324,4 +445,49 @@ export async function createCommunityThread(
       .eq("id", t.id);
   }
   return mapThreadToPost({ ...t, metadata: { image_url: payload.imageUrl } });
+}
+
+/** People tab: linked contacts (your people), not a search. */
+export async function fetchMyContacts(): Promise<Array<{ id: string; name: string; username?: string; avatarUrl?: string }>> {
+  const { data: { user } } = await supabase.auth.getUser();
+  if (!user) return [];
+  const { data: me } = await supabase
+    .from("profiles")
+    .select("id")
+    .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+    .maybeSingle();
+  if (!me?.id) return [];
+  const { data, error } = await supabase
+    .from("contacts")
+    .select("linked_profile_id, profiles:linked_profile_id(id, username, display_name, avatar_url)")
+    .eq("owner_profile_id", me.id)
+    .not("linked_profile_id", "is", null)
+    .limit(100);
+  if (error) return [];
+  return (data || [])
+    .map((r: any) => r.profiles)
+    .filter(Boolean)
+    .map((p: any) => ({ id: p.id, name: p.display_name || p.username || "User", username: p.username, avatarUrl: p.avatar_url || undefined }));
+}
+
+/** Contact-only story feed: stories authored by me or by my contacts. */
+export async function fetchContactStories(): Promise<StoryItem[]> {
+  const all = await fetchActiveStories();
+  try {
+    const mine = (await fetchMyContacts()).map((c) => c.id);
+    const { data: { user } } = await supabase.auth.getUser();
+    let myProfileId: string | null = null;
+    if (user) {
+      const { data: me } = await supabase
+        .from("profiles")
+        .select("id")
+        .or(`id.eq.${user.id},auth_user_id.eq.${user.id}`)
+        .maybeSingle();
+      myProfileId = (me as any)?.id || null;
+    }
+    const allowed = new Set<string>([...(mine || []), myProfileId || ""]);
+    return all.filter((s) => allowed.has(s.profileId));
+  } catch {
+    return all;
+  }
 }

@@ -407,3 +407,78 @@ html.dark .liquid-bg-particle,
 .glass-panel, .liquid-glass-card, .glass-nav-floating, .glass-input {
   transition: background-color 0.15s ease, border-color 0.15s ease, color 0.15s ease, box-shadow 0.15s ease;
 }
+
+/* ===== Liquid glass floating nav (blur + refraction, not a dark blob) ===== */
+.liquid-glass-nav {
+  position: relative;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.55) 0%, rgba(255, 255, 255, 0.28) 100%);
+  -webkit-backdrop-filter: blur(28px) saturate(180%);
+  backdrop-filter: blur(28px) saturate(180%);
+  border: 1px solid rgba(255, 255, 255, 0.55);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.85),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.25),
+    0 12px 40px rgba(15, 23, 42, 0.18),
+    0 2px 10px rgba(15, 23, 42, 0.10);
+}
+.dark .liquid-glass-nav,
+[data-theme-mode="dark"] .liquid-glass-nav,
+[data-theme-mode="pure-black"] .liquid-glass-nav,
+[data-theme-mode="black"] .liquid-glass-nav {
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0.05) 100%);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.22),
+    inset 0 -1px 1px rgba(255, 255, 255, 0.06),
+    0 12px 40px rgba(0, 0, 0, 0.45),
+    0 2px 10px rgba(0, 0, 0, 0.30);
+}
+/* refraction sheen across the top edge */
+.liquid-glass-nav::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events: none;
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.45) 0%, rgba(255, 255, 255, 0) 28%),
+    radial-gradient(120% 60% at 50% -20%, rgba(255, 255, 255, 0.35) 0%, rgba(255, 255, 255, 0) 60%);
+  mix-blend-mode: screen;
+}
+.dark .liquid-glass-nav::before,
+[data-theme-mode="dark"] .liquid-glass-nav::before,
+[data-theme-mode="pure-black"] .liquid-glass-nav::before,
+[data-theme-mode="black"] .liquid-glass-nav::before {
+  background:
+    linear-gradient(115deg, rgba(255, 255, 255, 0.18) 0%, rgba(255, 255, 255, 0) 30%),
+    radial-gradient(120% 60% at 50% -20%, rgba(255, 255, 255, 0.14) 0%, rgba(255, 255, 255, 0) 60%);
+}
+
+/* ===== Chat bubbles — WhatsApp replica (Classic style) ===== */
+.wa-bubble-mine {
+  background: var(--primary-accent, #2563EB);
+  color: #fff;
+  border-radius: 14px 14px 4px 14px;
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.13);
+}
+.wa-bubble-other {
+  background: #ffffff;
+  color: #111b21;
+  border-radius: 14px 14px 14px 4px;
+  box-shadow: 0 1px 1.5px rgba(0, 0, 0, 0.13);
+}
+html.dark .wa-bubble-other,
+[data-theme-mode="dark"] .wa-bubble-other,
+.dark .wa-bubble-other,
+[data-theme-mode="pure-black"] .wa-bubble-other,
+[data-theme-mode="black"] .wa-bubble-other {
+  background: #202c33;
+  color: #e9edef;
+}
+/* quoted block inside a bubble */
+.wa-quote-mine { border-left: 3.5px solid rgba(255, 255, 255, 0.65); background: rgba(0, 0, 0, 0.14); }
+.wa-quote-other { border-left: 3.5px solid var(--primary-accent, #2563EB); background: rgba(0, 0, 0, 0.045); }
+html.dark .wa-quote-other,
+.dark .wa-quote-other { background: rgba(255, 255, 255, 0.06); }

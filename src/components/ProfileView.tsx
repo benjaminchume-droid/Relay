@@ -183,7 +183,7 @@ export const ProfileView: React.FC = () => {
               className={`py-2 px-3.5 rounded-2xl flex items-center gap-2 text-xs font-bold shrink-0 cursor-pointer transition-all ${
                 isActive 
                   ? 'text-white shadow-md' 
-                  : 'bg-white/70 text-slate-600 hover:bg-white border border-slate-200/80'
+                  : 'bg-white/70 dark:bg-white/5 text-slate-600 dark:text-slate-300 hover:bg-white dark:hover:bg-white/10 border border-slate-200/80 dark:border-white/10'
               }`}
             >
               <IconComp size={15} />
@@ -210,6 +210,35 @@ export const ProfileView: React.FC = () => {
 
           <ThemePresetsSection />
 
+          {/* Chat Style — Classic (WhatsApp) | Retro (Snapchat layout, our UI) */}
+          <GlassCard className="p-5 space-y-3">
+            <span className="text-xs font-bold text-slate-800 block">Chat Style</span>
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">Classic bubbles — WhatsApp style. Retro — Snapchat layout, no bubbles, on our colors.</p>
+            <div className="grid grid-cols-2 gap-2.5">
+              {([
+                { id: 'classic', label: 'Classic', hint: 'WhatsApp replica' },
+                { id: 'retro', label: 'Retro', hint: 'Snapchat layout' },
+              ] as const).map((opt) => {
+                const isSel = (customization.chatStyle || 'classic') === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    onClick={() => updateCustomization({ chatStyle: opt.id })}
+                    style={isSel ? { backgroundColor: 'var(--primary-accent, #2563EB)', borderColor: 'var(--primary-accent, #2563EB)' } : {}}
+                    className={`p-3 rounded-2xl border text-xs font-bold transition-all cursor-pointer ${
+                      isSel
+                        ? 'text-white shadow-md'
+                        : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-white/10 border-slate-200 dark:border-white/10'
+                    }`}
+                  >
+                    <span className="block">{opt.label}</span>
+                    <span className={`block text-[10px] font-medium mt-0.5 ${isSel ? 'text-white/80' : 'text-slate-400'}`}>{opt.hint}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
           {/* Presets System */}
           <GlassCard className="p-5 space-y-3">
             <span className="text-xs font-bold text-slate-800 block">Glass System Presets</span>
@@ -227,7 +256,7 @@ export const ProfileView: React.FC = () => {
                     className={`p-3 rounded-2xl border text-xs font-semibold capitalize cursor-pointer transition-all ${
                       isSel 
                         ? 'text-white shadow-md scale-[1.02]' 
-                        : 'bg-white/60 text-slate-700 hover:bg-white border-slate-200'
+                        : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-200 hover:bg-white dark:hover:bg-white/10 border-slate-200 dark:border-white/10'
                     }`}
                   >
                     {key.replace('-', ' ')}
@@ -253,7 +282,7 @@ export const ProfileView: React.FC = () => {
                     className={`p-3 rounded-2xl border text-xs font-semibold transition-all relative flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                       isSel
                         ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
-                        : 'bg-white/60 text-slate-700 border-slate-200 hover:bg-white'
+                        : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:bg-white dark:hover:bg-white/10'
                     }`}
                   >
                     <span>{tm.label}</span>
@@ -387,7 +416,7 @@ export const ProfileView: React.FC = () => {
           <form onSubmit={handleSaveProfile} className="space-y-4">
             <div className="space-y-2">
               <label className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Profile Banner</label>
-              <div className="h-24 w-full rounded-2xl bg-slate-100 relative overflow-hidden border border-slate-200 flex items-center justify-center">
+              <div className="h-24 w-full rounded-2xl bg-slate-100 dark:bg-white/5 relative overflow-hidden border border-slate-200 dark:border-white/10 flex items-center justify-center">
                 {currentUser.bannerUrl ? (
                   <img src={currentUser.bannerUrl} alt="banner" className="w-full h-full object-cover" />
                 ) : (
@@ -516,7 +545,7 @@ export const ProfileView: React.FC = () => {
         </GlassCard>
       )}
 
-      <div className="pt-8 border-t border-slate-200/80">
+      <div className="pt-8 border-t border-slate-200/80 dark:border-white/10">
         <GlassCard className="p-5 border-red-200/80 bg-red-50/40 space-y-3">
           <div className="flex items-center justify-between">
             <div>

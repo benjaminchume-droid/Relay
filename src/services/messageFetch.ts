@@ -55,6 +55,30 @@ function ptMemoRemember(messageId: string, text: string): void {
 // would corrupt the session. Keep the plaintext keyed by message id instead.
 const OWN_PT_KEY = 'relay_own_plaintext_v1';
 
+// Own-media memory: (url, key, mime) needed to decrypt our own voice notes and
+// attachments after a history refetch — the ratchet can't self-decrypt.
+const OWN_MEDIA_KEY = 'relay_own_media_v1';
+
+export function ownMediaRemember(messageId: string, media: { url: string; key: string; mime: string }): void {
+  if (!messageId || !media?.url || !media?.key) return;
+  try {
+    const all = JSON.parse(localStorage.getItem(OWN_MEDIA_KEY) || '{}');
+    all[messageId] = media;
+    const ids = Object.keys(all);
+    if (ids.length > 300) {
+      for (const k of ids.slice(0, ids.length - 300)) delete all[k];
+    }
+    localStorage.setItem(OWN_MEDIA_KEY, JSON.stringify(all));
+  } catch { /* storage optional */ }
+}
+
+function ownMediaLookup(messageId: string): { url: string; key: string; mime: string } | null {
+  try {
+    const all = JSON.parse(localStorage.getItem(OWN_MEDIA_KEY) || '{}');
+    return all[messageId] || null;
+  } catch { return null; }
+}
+
 function ownPlaintextLoad(): Record<string, string> {
   try { return JSON.parse(localStorage.getItem(OWN_PT_KEY) || '{}'); } catch { return {}; }
 }
@@ -90,6 +114,13 @@ export async function decryptMessages(
     if (msg.senderId && msg.senderId === myProfileId) {
       const remembered = ownPlaintextRecall(String(msg.id));
       msg.content = remembered ?? 'Encrypted message';
+      // media we sent (voice notes, photos): decrypt via the local (url,key,mime) memo
+      const ownMedia = ownMediaLookup(String(msg.id));
+      if (ownMedia) {
+        (msg as any)._mediaKey = ownMedia.key;
+        (msg as any)._mime = ownMedia.mime;
+        scheduleMediaDecrypt(msg);
+      }
       continue;
     }
     // Already decrypted before (realtime echo, earlier refetch, earlier session)?
