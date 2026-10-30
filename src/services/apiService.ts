@@ -588,6 +588,82 @@ export const apiService = {
     } catch { /* non-fatal */ }
     return { success: false };
   },
+
+  /** All reactions for a set of messages, with author names for the chips. */
+  fetchMessageReactions: async (messageIds: string[]): Promise<Array<{ messageId: string; profileId: string; reaction: string; name: string }>> => {
+    try {
+      if (!messageIds.length) return [];
+      const { data, error } = await supabase
+        .from("message_reactions")
+        .select("message_id, profile_id, reaction, profiles:profile_id(display_name, username)")
+        .in("message_id", messageIds)
+        .limit(500);
+      if (error) return [];
+      return (data || []).map((r: any) => ({
+        messageId: r.message_id,
+        profileId: r.profile_id,
+        reaction: r.reaction,
+        name: r.profiles?.display_name || r.profiles?.username || "User",
+      }));
+    } catch { return []; }
+  },
+
+  /** The pinned message of a conversation (latest pin wins), if any. */
+  fetchPinnedMessage: async (chatId: string): Promise<{ messageId: string; content: string; senderName: string; type: string } | null> => {
+    try {
+      const { data: pin, error: pinErr } = await supabase
+        .from("message_pins")
+        .select("message_id, pinned_at")
+        .eq("conversation_id", chatId)
+        .order("pinned_at", { ascending: false })
+        .limit(1)
+        .maybeSingle();
+      if (pinErr || !pin) return null;
+      const { data: m } = await supabase
+        .from("messages")
+        .select("id, content, is_deleted, message_type, sender_id")
+        .eq("id", pin.message_id)
+        .maybeSingle();
+      if (!m || m.is_deleted) return null;
+      let senderName = "User";
+      if (m.sender_id) {
+        const cached = profileCache.get(String(m.sender_id));
+        if (cached?.name) senderName = cached.name;
+        else {
+          const { data: p } = await supabase
+            .from("profiles")
+            .select("display_name, username")
+            .eq("id", m.sender_id)
+            .maybeSingle();
+          senderName = p?.display_name || p?.username || "User";
+        }
+      }
+      const raw = typeof m.content === "string" ? m.content : "";
+      const content = raw.startsWith("R1:") || raw.startsWith("R2:") ? "Pinned message" : raw || "Pinned message";
+      return { messageId: m.id, content, senderName, type: m.message_type || "text" };
+    } catch { return null; }
+  },
+
+  /** Pin / unpin a message at the top of its conversation. */
+  togglePinMessage: async (chatId: string, messageId: string): Promise<{ pinned: boolean }> => {
+    const cur = await getCurrentProfile();
+    if (!cur?.profileId) return { pinned: false };
+    const { data: existing } = await supabase
+      .from("message_pins")
+      .select("message_id")
+      .eq("conversation_id", chatId)
+      .eq("message_id", messageId)
+      .maybeSingle();
+    if (existing) {
+      await supabase.from("message_pins").delete().eq("conversation_id", chatId).eq("message_id", messageId);
+      return { pinned: false };
+    }
+    const { error } = await supabase
+      .from("message_pins")
+      .insert({ conversation_id: chatId, message_id: messageId, pinned_by: cur.profileId });
+    if (error) throw error;
+    return { pinned: true };
+  },
 };
 
 export default apiService;

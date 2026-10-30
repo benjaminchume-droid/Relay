@@ -783,7 +783,10 @@ function StoryViewer({
     // retry once shortly after mount — a reply written a moment ago is often
     // still landing when the viewer opens
     const t = setTimeout(load, 2000);
-    return () => { alive = false; clearTimeout(t); };
+    // LIVE: poll while the viewer is open so comments from the other side
+    // pop in while you are watching (TikTok behavior)
+    const poll = setInterval(load, 3000);
+    return () => { alive = false; clearTimeout(t); clearInterval(poll); };
   }, [story.id]);
 
   // progress engine — video/voice are driven by their real media, others by timer
@@ -892,26 +895,26 @@ function StoryViewer({
         </button>
       </div>
 
-      {/* tap zones + fit-to-screen content — background paints the FULL
-          viewer (text/voice), not just the middle column */}
+      {/* media — FULL BLEED edge to edge. The old layout sandwiched the media
+          between two 22%-wide tap-zone columns, so every photo/video sat in a
+          56%-wide center strip with black bars either side. Media now fills
+          the entire screen and the tap zones float ON TOP of it. */}
       <div
-        className="absolute inset-0 flex"
+        className="absolute inset-0"
+        onMouseDown={() => setPaused(true)}
+        onMouseUp={() => setPaused(false)}
         style={{
           background: story.type === "text" || story.type === "voice"
             ? (story.backgroundColor || (story.type === "voice" ? STORY_GRADIENTS[5] : STORY_GRADIENTS[0]))
             : undefined,
         }}
       >
-        <button type="button" aria-label="Previous" className="w-[22%] h-full z-10" onClick={(e) => { e.stopPropagation(); prev(); }} />
-        <div
-          className="flex-1 h-full flex items-center justify-center overflow-hidden"
-          onMouseDown={() => setPaused(true)}
-          onMouseUp={() => setPaused(false)}
-        >
-          <StoryBody story={story} paused={paused} onTime={onMediaTime} onEnded={onMediaEnded} />
-        </div>
-        <button type="button" aria-label="Next" className="w-[22%] h-full z-10" onClick={(e) => { e.stopPropagation(); next(); }} />
+        <StoryBody story={story} paused={paused} onTime={onMediaTime} onEnded={onMediaEnded} />
       </div>
+
+      {/* tap zones — transparent overlays above the media, below the header */}
+      <button type="button" aria-label="Previous" className="absolute left-0 top-0 bottom-0 w-[26%] z-10" onClick={(e) => { e.stopPropagation(); prev(); }} />
+      <button type="button" aria-label="Next" className="absolute right-0 top-0 bottom-0 w-[26%] z-10" onClick={(e) => { e.stopPropagation(); next(); }} />
 
       {/* views pop-over (author only) */}
       {viewsOpen && isMine && (
@@ -929,7 +932,7 @@ function StoryViewer({
         {replies.length > 0 && (
           <div ref={repliesScrollRef} className="mb-2.5 max-h-40 overflow-y-auto space-y-2 px-0.5 no-scrollbar">
             {replies.slice(-6).map((r) => (
-              <div key={r.id} className="flex items-start gap-2 w-fit max-w-[92%] px-2.5 py-1.5 rounded-2xl rounded-bl-md bg-white/12 backdrop-blur-md border border-white/10">
+              <div key={r.id} className="story-pop flex items-start gap-2 w-fit max-w-[92%] px-2.5 py-1.5 rounded-2xl rounded-bl-md bg-white/12 backdrop-blur-md border border-white/10">
                 <img src={r.authorAvatar || getLetterAvatar(r.authorName || "U")} alt="" className="w-6 h-6 rounded-full object-cover mt-0.5 shrink-0 border border-white/20" />
                 <p className="text-[12px] text-white leading-snug">
                   <span className="font-bold mr-1.5">{r.authorName}</span>

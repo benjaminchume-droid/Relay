@@ -6,7 +6,7 @@
 import { create } from 'zustand';
 import { Chat, Message, MessageAttachment } from '../types';
 import { apiService } from '../services/apiService';
-import { sendConversationMessage, getOrCreateDirectChat, getCurrentProfile } from '../services/messagingCore';
+import { sendConversationMessage, getOrCreateDirectChat, getCurrentProfile, editMessageEncrypted } from '../services/messagingCore';
 import { chatCache } from '../services/chatCache';
 import { profileCache } from '../services/profileCache';
 import { useAuthStore } from './authStore';
@@ -54,6 +54,8 @@ interface ChatState {
   searchQuery: string;
   isLoading: boolean;
   error: string | null;
+  /** Latest pinned message per chat (banner at the top of the chat screen). */
+  pinnedByChat: Record<string, { messageId: string; content: string; senderName: string } | null>;
 
   fetchChats: () => Promise<void>;
   setActiveChat: (chatId: string | null) => Promise<void>;
@@ -70,6 +72,7 @@ interface ChatState {
   deleteMessage: (messageId: string) => Promise<void>;
   reactToMessage: (messageId: string, emoji: string) => Promise<void>;
   togglePinMessage: (messageId: string) => Promise<void>;
+  fetchChatExtras: (chatId: string) => Promise<void>;
   sendTypingSignal: (chatId: string) => Promise<void>;
   pollUpdates: () => Promise<void>;
   setReplyingToMessage: (msg: Message | null) => void;
@@ -119,6 +122,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
   searchQuery: '',
   isLoading: false,
   error: null,
+  pinnedByChat: {} as Record<string, { messageId: string; content: string; senderName: string } | null>,
 
   fetchChats: async () => {
     try {
@@ -193,9 +197,43 @@ export const useChatStore = create<ChatState>((set, get) => ({
       // retry — sessions/prekeys often arrive a beat after the rows do.
       const stillCiphered = (get().messages[chatId] || []).some((m) => looksLikeEnvelope(m.content));
       if (stillCiphered) void get().redecryptChat(chatId);
+      // reactions + pinned banner ride along with every fetch
+      void get().fetchChatExtras(chatId);
     } catch (err: any) {
       set({ error: err.message });
     }
+  },
+
+  /** Reactions + pinned banner for one conversation. */
+  fetchChatExtras: async (chatId) => {
+    try {
+      const msgs = get().messages[chatId] || [];
+      const ids = msgs.map((m) => String(m.id)).filter((id) => id && !id.startsWith('temp_'));
+      const [reactions, pinned] = await Promise.all([
+        apiService.fetchMessageReactions(ids),
+        apiService.fetchPinnedMessage(chatId),
+      ]);
+      if (reactions.length) {
+        set((state) => {
+          const byMsg = new Map<string, Array<{ userId: string; userName: string; emoji: string }>>();
+          for (const r of reactions) {
+            const list = byMsg.get(r.messageId) || [];
+            list.push({ userId: r.profileId, userName: r.name, emoji: r.reaction });
+            byMsg.set(r.messageId, list);
+          }
+          const next = (state.messages[chatId] || []).map((m) => {
+            const rx = byMsg.get(String(m.id));
+            if (!rx) return m;
+            const same = JSON.stringify(m.reactions || []) === JSON.stringify(rx);
+            return same ? m : { ...m, reactions: rx };
+          });
+          const messages = { ...state.messages, [chatId]: next };
+          chatCache.setMessages(messages);
+          return { messages };
+        });
+      }
+      set((state) => ({ pinnedByChat: { ...state.pinnedByChat, [chatId]: pinned ? { messageId: pinned.messageId, content: pinned.content, senderName: pinned.senderName } : null } }));
+    } catch { /* non-fatal */ }
   },
 
   sendMessage: async ({ content, type = 'text', attachments, isForwarded, replyToId }) => {
@@ -315,8 +353,11 @@ export const useChatStore = create<ChatState>((set, get) => ({
     const chatId = get().activeChatId;
     if (!chatId) return;
     try {
-      await apiService.editMessage(messageId, content);
+      // re-encrypt the new text with the conversation session — the wire stays
+      // ciphertext-only, receivers decrypt it from the UPDATE/refetch pipeline
+      await editMessageEncrypted(chatId, messageId, content);
       set((state) => ({ messages: { ...state.messages, [chatId]: (state.messages[chatId] || []).map((m) => m.id === messageId ? { ...m, content, isEdited: true } : m) } }));
+      chatCache.setMessages({ ...get().messages });
     } catch (err: any) {
       set({ error: err.message });
     }
@@ -334,11 +375,45 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   reactToMessage: async (messageId, emoji) => {
-    try { await (apiService as any).reactToMessage?.(messageId, emoji); } catch (err: any) { set({ error: err.message }); }
+    const chatId = get().activeChatId;
+    const myId = useAuthStore.getState().profile?.id || 'me';
+    // optimistic toggle — the chip appears/disappears instantly
+    let optimisticRemoved = false;
+    if (chatId) {
+      set((state) => ({
+        messages: {
+          ...state.messages,
+          [chatId]: (state.messages[chatId] || []).map((m) => {
+            if (String(m.id) !== String(messageId)) return m;
+            const rx = [...(m.reactions || [])];
+            const ownIdx = rx.findIndex((r) => r.userId === myId);
+            if (ownIdx !== -1) { optimisticRemoved = true; rx.splice(ownIdx, 1); }
+            else rx.push({ userId: myId, userName: 'You', emoji });
+            return { ...m, reactions: rx };
+          }),
+        },
+      }));
+      const messages = get().messages;
+      chatCache.setMessages(messages);
+    }
+    try {
+      const res = await apiService.reactToMessage(messageId, emoji);
+      if (res?.removed !== optimisticRemoved && chatId) void get().fetchChatExtras(chatId);
+    } catch (err: any) {
+      if (chatId) void get().fetchChatExtras(chatId);
+      set({ error: err.message });
+    }
   },
 
   togglePinMessage: async (messageId) => {
-    try { await (apiService as any).togglePinMessage?.(messageId); } catch (err: any) { set({ error: err.message }); }
+    const chatId = get().activeChatId;
+    if (!chatId) return;
+    try {
+      await apiService.togglePinMessage(chatId, messageId);
+      void get().fetchChatExtras(chatId);
+    } catch (err: any) {
+      set({ error: err.message });
+    }
   },
 
   sendTypingSignal: async (chatId) => {
@@ -526,18 +601,76 @@ export const useChatStore = create<ChatState>((set, get) => ({
       })
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'messages' }, (payload) => {
         const row = payload.new as any;
-        if (!row?.id || !row?.conversation_id || !row?.send_status) return;
+        if (!row?.id || !row?.conversation_id) return;
+        const convId = row.conversation_id as string;
+
+        // deleted for everyone — soft-deleted rows render as a tombstone
+        if (row.is_deleted) {
+          set((state) => {
+            const msgs = state.messages[convId];
+            if (!msgs) return {};
+            const idx = msgs.findIndex((m) => String(m.id) === String(row.id));
+            if (idx === -1 || msgs[idx].isDeleted) return {};
+            const next = msgs.map((m) => (String(m.id) === String(row.id) ? { ...m, isDeleted: true, content: 'This message was deleted' } : m));
+            const messages = { ...state.messages, [convId]: next };
+            chatCache.setMessages(messages);
+            return { messages };
+          });
+          return;
+        }
+
+        // edited — decrypt the new content before it can touch the UI
+        if (row.is_edited) {
+          void (async () => {
+            const myProfileId = useAuthStore.getState().profile?.id;
+            if (!myProfileId) return;
+            let newText: string | null = null;
+            const { formatMessageRecord } = await import('../services/messagingCore');
+            const fake = formatMessageRecord(row);
+            try {
+              await decryptMessages(myProfileId, convId, [fake]);
+              if (!looksLikeEnvelope(fake.content)) newText = fake.content;
+            } catch { /* keep old text */ }
+            set((state) => {
+              const msgs = state.messages[convId];
+              if (!msgs) return {};
+              const idx = msgs.findIndex((m) => String(m.id) === String(row.id));
+              if (idx === -1) return {};
+              const next = msgs.map((m) => {
+                if (String(m.id) !== String(row.id)) return m;
+                const mine = m.senderId === myProfileId;
+                const content = mine ? m.content : (newText ?? m.content);
+                return { ...m, content, isEdited: true };
+              });
+              const messages = { ...state.messages, [convId]: next };
+              chatCache.setMessages(messages);
+              return { messages };
+            });
+          })();
+          return;
+        }
+
         // live tick updates for my outgoing messages (delivered / read)
+        if (!row.send_status) return;
         set((state) => {
-          const msgs = state.messages[row.conversation_id];
+          const msgs = state.messages[convId];
           if (!msgs) return {};
           const idx = msgs.findIndex((m) => m.id === row.id);
           if (idx === -1 || !msgs[idx] || msgs[idx].deliveryState === row.send_status) return {};
           const next = msgs.map((m) => (m.id === row.id ? { ...m, deliveryState: row.send_status as any } : m));
-          const messages = { ...state.messages, [row.conversation_id]: next };
+          const messages = { ...state.messages, [convId]: next };
           chatCache.setMessages(messages);
           return { messages };
         });
+      })
+      // reactions + pins stream in live so chips and the pinned banner pop instantly
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_reactions' }, () => {
+        const active = useChatStore.getState().activeChatId;
+        if (active) void useChatStore.getState().fetchChatExtras(active);
+      })
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'message_pins' }, () => {
+        const active = useChatStore.getState().activeChatId;
+        if (active) void useChatStore.getState().fetchChatExtras(active);
       })
       .subscribe();
   },

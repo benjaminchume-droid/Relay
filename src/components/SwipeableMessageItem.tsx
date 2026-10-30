@@ -80,7 +80,11 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
         <CornerUpLeft size={16} />
       </div>
 
-      {/* Swipeable Message Container */}
+      {/* Swipeable Message Container — default `items-stretch` so inner rows
+          span the full width and each row's own justify-end/justify-start
+          controls the LEFT/RIGHT bubble alignment (this used to default to
+          items-start, which collapsed every row to its content width and
+          pinned ALL bubbles — including mine — to the left edge). */}
       <div
         onTouchStart={handleTouchStart}
         onTouchMove={handleTouchMove}
@@ -89,7 +93,7 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
           transform: `translateX(${dragX}px)`,
           transition: isSwiping ? 'none' : 'transform 0.25s cubic-bezier(0.175, 0.885, 0.32, 1.275)'
         }}
-        className={`relative z-0 w-full flex flex-col ${className.includes('items-end') ? 'items-end' : 'items-start'}`}
+        className={`relative z-0 w-full flex flex-col items-stretch ${className.includes('items-start') ? 'items-start' : ''}`}
       >
         {children}
       </div>

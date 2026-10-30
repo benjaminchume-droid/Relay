@@ -25,7 +25,7 @@ export function looksLikeEnvelope(s: unknown): boolean {
 }
 
 /** Sanitized placeholder for content that must never render as ciphertext. */
-export const CIPHER_PLACEHOLDER = "🔒 Encrypted message";
+export const CIPHER_PLACEHOLDER = "This message can't be displayed on this device";
 
 /** Kick off lazy media decryption; resolves to a blob URL when ready. */
 export function scheduleMediaDecrypt(msg: Message): void {

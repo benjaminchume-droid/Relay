@@ -552,11 +552,20 @@ export async function fetchMessagingRoster(): Promise<RosterPerson[]> {
   return Array.from(byId.values());
 }
 
-/** Contact-only story feed: stories authored by me or by my contacts. */
+/** Contact-only story feed: stories authored by me or by my contacts.
+ *  "Contacts" = messaging roster (people I actively chat with / share a group
+ *  with) ∪ linked contacts — the chat roster is what actually matters. */
 export async function fetchContactStories(): Promise<StoryItem[]> {
   const all = await fetchActiveStories();
   try {
-    const mine = (await fetchMyContacts()).map((c) => c.id);
+    const ids = new Set<string>();
+    const [contacts, roster] = await Promise.all([
+      fetchMyContacts().catch(() => [] as Array<{ id: string }>),
+      fetchMessagingRoster().catch(() => [] as Array<{ id: string }>),
+    ]);
+    for (const c of [...(contacts || []), ...(roster || [])]) {
+      if (c?.id) ids.add(c.id);
+    }
     const { data: { user } } = await supabase.auth.getUser();
     let myProfileId: string | null = null;
     if (user) {
@@ -567,8 +576,8 @@ export async function fetchContactStories(): Promise<StoryItem[]> {
         .maybeSingle();
       myProfileId = (me as any)?.id || null;
     }
-    const allowed = new Set<string>([...(mine || []), myProfileId || ""]);
-    return all.filter((s) => allowed.has(s.profileId));
+    if (myProfileId) ids.add(myProfileId);
+    return all.filter((s) => ids.has(s.profileId));
   } catch {
     return all;
   }

@@ -374,3 +374,56 @@ export async function sendConversationMessage(
 
   return { message: msgFormatted, chat };
 }
+
+/**
+ * Edit a text message, end-to-end encrypted.
+ *
+ * The row content on the wire is always ciphertext — the new text is
+ * re-encrypted with the SAME Signal session used for sends (R1 envelope for a
+ * DM, R2 fan-out for groups/channels), so no plaintext ever reaches the
+ * backend. Receivers decrypt the edited content through the normal
+ * decryptMessages pipeline (the UPDATE realtime event or the next refetch).
+ */
+export async function editMessageEncrypted(
+  chatId: string,
+  messageId: string,
+  newText: string
+): Promise<void> {
+  const current = await getCurrentProfile();
+  if (!current) throw new Error("Not authenticated");
+  const { profileId } = current;
+
+  let targetUserId: string | null = null;
+  let targetConvId = chatId;
+  if (chatId.startsWith("dm_")) {
+    const parts = chatId.replace("dm_", "").split("_");
+    targetUserId = parts.find((p) => p !== profileId) || parts[0] || null;
+    if (targetUserId) targetConvId = await getOrCreateDirectChat(profileId, targetUserId);
+  } else if (!UUID_RE.test(chatId)) {
+    targetUserId = chatId;
+    targetConvId = await getOrCreateDirectChat(profileId, targetUserId);
+  }
+
+  let peerIds: string[] = [];
+  if (targetUserId && UUID_RE.test(targetUserId)) {
+    peerIds = [await resolveExactProfileId(targetUserId)];
+  } else {
+    peerIds = await resolveConversationPeers(targetConvId, profileId);
+  }
+  if (!peerIds.length) throw new Error("No recipient to encrypt the edit for");
+
+  const wireContent =
+    peerIds.length <= 1
+      ? await encryptFor(profileId, targetConvId, peerIds[0], encodePayload({ k: "t", t: newText } as MsgPayload))
+      : await encryptFanout(profileId, targetConvId, peerIds, encodePayload({ k: "t", t: newText } as MsgPayload));
+
+  // remember our own plaintext for this row so refetches stay readable
+  ownPlaintextRemember(String(messageId), newText);
+
+  const { error } = await supabase
+    .from("messages")
+    .update({ content: wireContent, is_edited: true, edited_at: new Date().toISOString() })
+    .eq("id", messageId)
+    .eq("sender_id", profileId);
+  if (error) throw error;
+}
