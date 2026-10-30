@@ -209,6 +209,107 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     void fetchChatExtras(chatId);
   }, [chatId, chatMsgs.length]);
 
+  const isMineMsg = (msg: { senderId?: string }) => {
+    if (!msg.senderId) return false;
+    if (msg.senderId === "me") return true;
+    if (myProfileId && msg.senderId === myProfileId) return true;
+    if (currentUser?.id && msg.senderId === currentUser.id) return true;
+    return false;
+  };
+
+  // ---- long-press → context menu at the press point ----
+  const cancelLongPress = useCallback(() => {
+    if (lpTimerRef.current) { clearTimeout(lpTimerRef.current); lpTimerRef.current = null; }
+    lpOriginRef.current = null;
+  }, []);
+
+  const onPressStart = useCallback((e: React.PointerEvent, msg: any) => {
+    if (isPendingIncoming || (msg as any).isDeleted) return;
+    // mouse: context menu comes from right-click; long-press is for touch
+    if (e.pointerType === "mouse") return;
+    lpFiredRef.current = false;
+    lpOriginRef.current = { x: e.clientX, y: e.clientY };
+    const x = e.clientX, y = e.clientY;
+    cancelLongPress();
+    lpTimerRef.current = setTimeout(() => {
+      lpFiredRef.current = true;
+      try { navigator.vibrate?.(12); } catch { /* noop */ }
+      setMenu({ x, y, msg });
+    }, 420);
+  }, [isPendingIncoming, cancelLongPress]);
+
+  const onPressMove = useCallback((e: React.PointerEvent) => {
+    if (!lpTimerRef.current || !lpOriginRef.current) return;
+    const dist = Math.hypot(e.clientX - lpOriginRef.current.x, e.clientY - lpOriginRef.current.y);
+    if (dist > 14) cancelLongPress(); // scrolling/swiping — never open the menu
+  }, [cancelLongPress]);
+
+  const onPressEnd = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
+
+  const onRowContextMenu = useCallback((e: React.MouseEvent, msg: any) => {
+    if (isPendingIncoming || (msg as any).isDeleted) return;
+    e.preventDefault();
+    setMenu({ x: e.clientX, y: e.clientY, msg });
+  }, [isPendingIncoming]);
+
+  const closeMenu = useCallback(() => setMenu(null), []);
+
+  const menuAction = useCallback(async (action: string, arg?: any) => {
+    const msg = menu?.msg;
+    closeMenu();
+    if (!msg) return;
+    switch (action) {
+      case "react":
+        void reactToMessage(String(msg.id), arg);
+        break;
+      case "reply":
+        setReplyingToMessage(msg);
+        break;
+      case "copy":
+        try { await navigator.clipboard.writeText(String(msg.content || "")); } catch { /* clipboard denied */ }
+        break;
+      case "edit":
+        setEditingMsg(msg);
+        setText(String(msg.content || ""));
+        setReplyingToMessage(null);
+        break;
+      case "pin":
+        void togglePinMessage(String(msg.id));
+        break;
+      case "delete":
+        void deleteMessage(String(msg.id));
+        break;
+    }
+  }, [menu, closeMenu, reactToMessage, setReplyingToMessage, togglePinMessage, deleteMessage]);
+
+  // ---- grouping pass (WhatsApp rhythm): consecutive same-sender messages
+  // within 5 minutes form a bubble group — sender avatar/name on the FIRST,
+  // tight spacing inside a group.
+  const groupedMsgs = useMemo(() => {
+    const rows: Array<{
+      msg: any; idx: number; mine: boolean; msgTs: string;
+      showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean;
+    }> = chatMsgs.map((msg, idx) => {
+      const mine = isMineMsg(msg);
+      const msgTs = (msg as any).timestamp || (msg as any).createdAt;
+      const prev = idx > 0 ? chatMsgs[idx - 1] : null;
+      const prevTs = prev ? ((prev as any).timestamp || (prev as any).createdAt) : null;
+      const showDay = !prevTs || !isSameDay(msgTs, prevTs);
+      const sameSender = !!prev && isMineMsg(prev) === mine;
+      const gapSmall = !!(prevTs && msgTs && (new Date(msgTs).getTime() - new Date(prevTs).getTime()) < 5 * 60 * 1000);
+      return { msg, idx, mine, msgTs, showDay, firstOfGroup: showDay || !sameSender || !gapSmall, lastOfGroup: true };
+    });
+    rows.forEach((r, i) => {
+      const next = rows[i + 1];
+      r.lastOfGroup = !next || next.showDay || next.firstOfGroup;
+    });
+    return rows;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chatMsgs, myProfileId, currentUser?.id]);
+
+  // EVERY hook above runs unconditionally — the early return below must sit
+  // AFTER all of them (a hook after an early return throws React #300 and
+  // unmounts the whole app when the contact screen opens).
   if (showProfile) {
     if (isGroup) return <GroupProfileScreen chatId={chat.id} onBack={() => setShowProfile(false)} />;
     const targetUserId = chat.participants?.find((p) => p !== myProfileId && p !== currentUser?.id) || (chat as any).recipientId || chat.id;
@@ -350,79 +451,6 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     pressStartXYRef.current = null;
   };
 
-  const isMineMsg = (msg: { senderId?: string }) => {
-    if (!msg.senderId) return false;
-    if (msg.senderId === "me") return true;
-    if (myProfileId && msg.senderId === myProfileId) return true;
-    if (currentUser?.id && msg.senderId === currentUser.id) return true;
-    return false;
-  };
-
-  // ---- long-press → context menu at the press point ----
-  const cancelLongPress = useCallback(() => {
-    if (lpTimerRef.current) { clearTimeout(lpTimerRef.current); lpTimerRef.current = null; }
-    lpOriginRef.current = null;
-  }, []);
-
-  const onPressStart = useCallback((e: React.PointerEvent, msg: any) => {
-    if (isPendingIncoming || (msg as any).isDeleted) return;
-    // mouse: context menu comes from right-click; long-press is for touch
-    if (e.pointerType === "mouse") return;
-    lpFiredRef.current = false;
-    lpOriginRef.current = { x: e.clientX, y: e.clientY };
-    const x = e.clientX, y = e.clientY;
-    cancelLongPress();
-    lpTimerRef.current = setTimeout(() => {
-      lpFiredRef.current = true;
-      try { navigator.vibrate?.(12); } catch { /* noop */ }
-      setMenu({ x, y, msg });
-    }, 420);
-  }, [isPendingIncoming, cancelLongPress]);
-
-  const onPressMove = useCallback((e: React.PointerEvent) => {
-    if (!lpTimerRef.current || !lpOriginRef.current) return;
-    const dist = Math.hypot(e.clientX - lpOriginRef.current.x, e.clientY - lpOriginRef.current.y);
-    if (dist > 14) cancelLongPress(); // scrolling/swiping — never open the menu
-  }, [cancelLongPress]);
-
-  const onPressEnd = useCallback(() => { cancelLongPress(); }, [cancelLongPress]);
-
-  const onRowContextMenu = useCallback((e: React.MouseEvent, msg: any) => {
-    if (isPendingIncoming || (msg as any).isDeleted) return;
-    e.preventDefault();
-    setMenu({ x: e.clientX, y: e.clientY, msg });
-  }, [isPendingIncoming]);
-
-  const closeMenu = useCallback(() => setMenu(null), []);
-
-  const menuAction = useCallback(async (action: string, arg?: any) => {
-    const msg = menu?.msg;
-    closeMenu();
-    if (!msg) return;
-    switch (action) {
-      case "react":
-        void reactToMessage(String(msg.id), arg);
-        break;
-      case "reply":
-        setReplyingToMessage(msg);
-        break;
-      case "copy":
-        try { await navigator.clipboard.writeText(String(msg.content || "")); } catch { /* clipboard denied */ }
-        break;
-      case "edit":
-        setEditingMsg(msg);
-        setText(String(msg.content || ""));
-        setReplyingToMessage(null);
-        break;
-      case "pin":
-        void togglePinMessage(String(msg.id));
-        break;
-      case "delete":
-        void deleteMessage(String(msg.id));
-        break;
-    }
-  }, [menu, closeMenu, reactToMessage, setReplyingToMessage, togglePinMessage, deleteMessage]);
-
   const isPinnedMsg = !!(pinned && menu && String(pinned.messageId) === String(menu.msg?.id));
 
   const scrollToMessage = (messageId: string) => {
@@ -430,31 +458,6 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
       document.getElementById(`msg-${messageId}`)?.scrollIntoView({ behavior: "smooth", block: "center" });
     } catch { /* noop */ }
   };
-
-  // ---- grouping pass (WhatsApp rhythm): consecutive same-sender messages
-  // within 5 minutes form a bubble group — sender avatar/name on the FIRST,
-  // tight spacing inside a group.
-  const groupedMsgs = useMemo(() => {
-    const rows: Array<{
-      msg: any; idx: number; mine: boolean; msgTs: string;
-      showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean;
-    }> = chatMsgs.map((msg, idx) => {
-      const mine = isMineMsg(msg);
-      const msgTs = (msg as any).timestamp || (msg as any).createdAt;
-      const prev = idx > 0 ? chatMsgs[idx - 1] : null;
-      const prevTs = prev ? ((prev as any).timestamp || (prev as any).createdAt) : null;
-      const showDay = !prevTs || !isSameDay(msgTs, prevTs);
-      const sameSender = !!prev && isMineMsg(prev) === mine;
-      const gapSmall = !!(prevTs && msgTs && (new Date(msgTs).getTime() - new Date(prevTs).getTime()) < 5 * 60 * 1000);
-      return { msg, idx, mine, msgTs, showDay, firstOfGroup: showDay || !sameSender || !gapSmall, lastOfGroup: true };
-    });
-    rows.forEach((r, i) => {
-      const next = rows[i + 1];
-      r.lastOfGroup = !next || next.showDay || next.firstOfGroup;
-    });
-    return rows;
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [chatMsgs, myProfileId, currentUser?.id]);
 
   const recordingActive = recStatus === "recording" || recStatus === "paused" || recStatus === "locked";
   const fmtSecs = (s: number) => `${Math.floor(s / 60) < 10 ? "0" : ""}${Math.floor(s / 60)}:${s % 60 < 10 ? "0" : ""}${s % 60}`;
@@ -641,7 +644,9 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           </div>
         </nav>
 
-        {/* pinned banner — tap to jump to the pinned message */}
+        {/* pinned banner — tap to jump to the pinned message. Content comes
+            from the DECRYPTED store copy when we have it (the raw row is
+            ciphertext on the wire), falling back to the fetched preview. */}
         {pinned && (
           <button
             type="button"
@@ -651,7 +656,13 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             <PinIcon size={13} className="shrink-0" style={{ color: ACCENT }} />
             <span className="min-w-0 flex-1">
               <span className="block text-[9px] font-black uppercase tracking-wider truncate" style={{ color: ACCENT }}>Pinned · {pinned.senderName}</span>
-              <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200 truncate">{pinned.content}</span>
+              <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200 truncate">
+                {(() => {
+                  const dm = (messages[chatId] || []).find((m) => String(m.id) === String(pinned.messageId));
+                  const c = dm && !looksLikeEnvelope(dm.content) ? String(dm.content) : pinned.content;
+                  return c || "Pinned message";
+                })()}
+              </span>
             </span>
           </button>
         )}

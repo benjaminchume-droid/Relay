@@ -593,18 +593,36 @@ export const apiService = {
   fetchMessageReactions: async (messageIds: string[]): Promise<Array<{ messageId: string; profileId: string; reaction: string; name: string }>> => {
     try {
       if (!messageIds.length) return [];
-      const { data, error } = await supabase
+      const sel = "message_id, profile_id, reaction";
+      const withEmbed = await supabase
         .from("message_reactions")
         .select("message_id, profile_id, reaction, profiles:profile_id(display_name, username)")
         .in("message_id", messageIds)
         .limit(500);
+      if (!withEmbed.error) {
+        return (withEmbed.data || []).map((r: any) => ({
+          messageId: r.message_id,
+          profileId: r.profile_id,
+          reaction: r.reaction,
+          name: r.profiles?.display_name || r.profiles?.username || "User",
+        }));
+      }
+      // fallback without the profile embed (older DBs may lack the FK)
+      const { data, error } = await supabase
+        .from("message_reactions")
+        .select(sel)
+        .in("message_id", messageIds)
+        .limit(500);
       if (error) return [];
-      return (data || []).map((r: any) => ({
-        messageId: r.message_id,
-        profileId: r.profile_id,
-        reaction: r.reaction,
-        name: r.profiles?.display_name || r.profiles?.username || "User",
-      }));
+      return (data || []).map((r: any) => {
+        const cached = profileCache.get(String(r.profile_id));
+        return {
+          messageId: r.message_id,
+          profileId: r.profile_id,
+          reaction: r.reaction,
+          name: cached?.name || "User",
+        };
+      });
     } catch { return []; }
   },
 

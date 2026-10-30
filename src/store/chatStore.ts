@@ -189,6 +189,13 @@ export const useChatStore = create<ChatState>((set, get) => ({
             combined.push(localMsg);
           }
         }
+        // chronological order is the chat's contract — locally-queued/failed
+        // messages must slot in by timestamp, not after the server page
+        combined.sort((a, b) => {
+          const ta = new Date((a as any).timestamp || (a as any).createdAt || 0).getTime() || 0;
+          const tb = new Date((b as any).timestamp || (b as any).createdAt || 0).getTime() || 0;
+          return ta - tb;
+        });
         const newMap = { ...state.messages, [chatId]: combined };
         chatCache.setMessages(newMap);
         return { messages: newMap };
