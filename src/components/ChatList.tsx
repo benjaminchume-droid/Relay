@@ -15,6 +15,7 @@ import { Chat } from '../types';
 import { formatChatTimestamp, formatHandle, formatRelativeTime } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
 import { fetchPresence, presenceLabel, isPresenceActive, type PresenceRow } from '../services/presenceService';
+import { looksLikeEnvelope, CIPHER_PLACEHOLDER } from '../services/messageFetch';
 
 export const ChatList: React.FC<{
   onSelectChat: (chatId: string) => void;
@@ -251,7 +252,7 @@ const ChatItem: React.FC<{ chat: Chat; onSelect: () => void }> = ({ chat, onSele
                 <Check size={14} className="text-slate-400 shrink-0" />
               )
             )}
-            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">{hasLastMessage ? chat.lastMessage!.text : (isRequest ? 'Message request' : chat.type === 'direct' ? presenceLabel(peerPresence) : 'No messages yet')}</span>
+            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">{hasLastMessage ? (looksLikeEnvelope(chat.lastMessage!.text) ? CIPHER_PLACEHOLDER : chat.lastMessage!.text) : (isRequest ? 'Message request' : chat.type === 'direct' ? presenceLabel(peerPresence) : 'No messages yet')}</span>
           </div>
         </div>
       </div>

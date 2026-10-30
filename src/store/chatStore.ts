@@ -100,7 +100,17 @@ function readWatermarks(): Record<string, number> {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
-  chats: chatCache.getChats(),
+  chats: (function () {
+    const chats = chatCache.getChats();
+    // cached previews from older builds can carry raw wire ciphertext
+    return chats.map((c) => {
+      const t = (c as any).lastMessage?.text;
+      if (typeof t === 'string' && looksLikeEnvelope(t)) {
+        return { ...c, lastMessage: { ...(c as any).lastMessage, text: CIPHER_PLACEHOLDER } };
+      }
+      return c;
+    });
+  })(),
   activeChatId: null,
   messages: sanitizeCachedMessages(chatCache.getMessages()),
   activeTyping: {},

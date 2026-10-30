@@ -520,7 +520,7 @@ export async function fetchMessagingRoster(): Promise<RosterPerson[]> {
 
   const { data, error } = await supabase
     .from("conversation_members")
-    .select("profile_id, conversation_id, conversations(conversation_type, request_status), profiles:profile_id(id, username, display_name, avatar_url)")
+    .select("profile_id, conversation_id, request_status, conversations(conversation_type), profiles:profile_id(id, username, display_name, avatar_url)")
     .eq("status", "active")
     .neq("profile_id", myId)
     .limit(500);
@@ -532,7 +532,7 @@ export async function fetchMessagingRoster(): Promise<RosterPerson[]> {
     const p: any = Array.isArray(row.profiles) ? row.profiles[0] : row.profiles;
     if (!p?.id) continue;
     const convType = String(conv?.conversation_type || "direct").toLowerCase();
-    const accepted = String(conv?.request_status || "accepted").toLowerCase() === "accepted";
+    const accepted = String(row.request_status || "accepted").toLowerCase() === "accepted";
     const via: "chat" | "group" = convType === "group" || convType === "community" || convType === "channel" ? "group" : "chat";
     if (via === "chat" && !accepted) continue; // pending requests are NOT searchable
     const existing = byId.get(p.id);
