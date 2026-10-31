@@ -58,6 +58,7 @@ import { apiService } from "../../services/apiService";
 import { looksLikeEnvelope } from "../../services/messageFetch";
 import type { VoiceNoteData } from "../../modules/voice/types";
 import { formatDayDivider, isSameDay, DeliveryTicks, CallSystemPill } from "./chatHelpers";
+import { AttachmentTray, ImageViewerOverlay, FileBubble, rectOf, type AnchorRect } from "./chatAttachments";
 
 const ACCENT = "var(--primary-accent, #2563EB)";
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -93,7 +94,8 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const [, forceTick] = useState(0);
   const [menu, setMenu] = useState<{ x: number; y: number; msg: any } | null>(null);
   const [editingMsg, setEditingMsg] = useState<any>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [attachTray, setAttachTray] = useState<AnchorRect | null>(null);
+  const [viewerMsg, setViewerMsg] = useState<{ url: string; name?: string } | null>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const scrollerRef = useRef<HTMLDivElement | null>(null);
   const isAtBottomRef = useRef(true);
@@ -436,6 +438,9 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         content: file.name,
         type: isImage ? "image" : isVideo ? "video" : "file",
         attachments: [{ url: uploaded.url, name: file.name, mimeType: file.type, size: file.size, mediaKey: uploaded.mediaKey } as any],
+        // local object URL → the optimistic bubble renders the actual media
+        // instantly instead of pointing at the (still encrypted) remote blob
+        localPreviewUrl: URL.createObjectURL(file),
       });
     } catch (err: any) { setSendError(err?.message || "Upload failed"); }
     finally { setIsSending(false); }
@@ -463,6 +468,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         content: "Voice note",
         type: "voice",
         attachments: [{ url, name: fname, mimeType: mime, duration: voiceNote.duration, mediaKey } as any],
+        localPreviewUrl: voiceNote.blob ? URL.createObjectURL(voiceNote.blob) : undefined,
       });
     } catch (err: any) { setSendError(err?.message || "Voice send failed"); }
     finally { setIsSending(false); }
@@ -536,14 +542,22 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const bottomPad = `calc(env(safe-area-inset-bottom, 0px) + ${68 + bottomExtra}px)`;
 
   const renderRow = ({ msg, idx, mine, msgTs, showDay, firstOfGroup, lastOfGroup }: any) => {
-    const mediaUrl = (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
+    // _localUrl: fresh local preview (object URL) of a JUST-SENT attachment —
+    // it beats the stale encrypted mediaUrl until the decrypt pipeline swaps in.
+    const mediaUrl = (msg as any)._localUrl || (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
     const isVoice = msg.type === "voice" || (msg as any).attachments?.[0]?.mimeType?.startsWith?.("audio");
     const mime = (msg as any)._mime || (msg as any).attachments?.[0]?.mimeType;
     const decryptFailed = (msg as any)._encrypted && !mediaUrl;
     const isDeletedMsg = !!(msg as any).isDeleted;
+    const isImageType = (msg.type as string) === "image" || (msg.type as string) === "photo";
+    const isVideoType = (msg.type as string) === "video";
+    const att0: any = (msg as any).attachments?.[0];
+    const attName: string = att0?.fileName || att0?.name || "";
+    // documents/files (non image / audio / voice / playable video) → file row
+    const fileAtt = att0 && !isVoice && !isImageType && !(isVideoType && mediaUrl) ? att0 : null;
     // Locked-bubble feature: a row we genuinely can't decrypt renders as a
     // distinct dashed "locked" bubble — never ciphertext, never plain fake text.
-    const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !isDeletedMsg;
+    const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !fileAtt && !isDeletedMsg;
     // ABSOLUTE UI GATE — raw ciphertext can never be rendered, even if a
     // future code path forgets to decrypt. The store sweep repairs it.
     const bodyText = looksLikeEnvelope(msg.content) ? "This message can't be displayed on this device" : String(msg.content ?? "");
@@ -610,11 +624,26 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                   timestamp={msgTs ? formatChatTimestamp(msgTs) : ""}
                   state={(msg as any).deliveryState}
                 />
-              ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
+              ) : mediaUrl && isImageType ? (
                 <div className="pb-3.5">
-                  <img src={mediaUrl} alt="" className="rounded-lg max-w-full max-h-64 object-cover" />
+                  <img
+                    src={mediaUrl}
+                    alt=""
+                    className="rounded-lg max-w-full max-h-64 object-cover cursor-zoom-in"
+                    onClick={(e) => { e.stopPropagation(); setViewerMsg({ url: mediaUrl, name: attName || undefined }); }}
+                  />
                   <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} overlay edited={!!(msg as any).isEdited} />
                 </div>
+              ) : mediaUrl && isVideoType ? (
+                <div className="pb-3.5">
+                  <video src={mediaUrl} controls preload="metadata" className="rounded-lg max-w-full max-h-64" />
+                  <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} overlay edited={!!(msg as any).isEdited} />
+                </div>
+              ) : fileAtt ? (
+                <>
+                  <FileBubble name={attName || bodyText || "Attachment"} size={att0?.size} mime={mime} url={mediaUrl} isMine={mine} />
+                  <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} inline edited={!!(msg as any).isEdited} />
+                </>
               ) : (
                 <>
                   {isLocked ? (
@@ -667,6 +696,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             onContextMenu={onRowContextMenu}
             myId={myProfileId}
             onToggleReaction={reactToMessage}
+            onOpenImage={(url, name) => setViewerMsg({ url, name })}
             onCallBack={() => {
               setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
               void placeCall(chatId, "voice", myProfileId);
@@ -851,8 +881,9 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             onSend={() => handleSend()}
             isSending={isSending}
             editing={!!editingMsg}
-            fileInputRef={fileInputRef}
             onFilePick={handleFilePick}
+            trayOpen={!!attachTray}
+            onToggleTray={(e) => setAttachTray((t) => (t ? null : rectOf(e.currentTarget)))}
             recorderSlot={
               text.trim() ? null : (
                 <button
@@ -876,8 +907,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           />
         ) : (
           <LiquidPanel as="form" onSubmit={handleSend} className="px-2.5 py-2 border-t border-slate-200/60 dark:border-white/10 flex items-center gap-1.5 bg-white/70 dark:bg-black/60 backdrop-blur-xl" style={{ borderRadius: 0 }}>
-            <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" className="hidden" onChange={handleFilePick} />
-            <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10" aria-label="Attach"><Paperclip size={19} /></button>
+            <button type="button" data-attach-trigger onClick={(e) => setAttachTray((t) => (t ? null : rectOf(e.currentTarget)))} className={`p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 ${attachTray ? "bg-slate-100 dark:bg-white/10" : ""}`} aria-label="Attach"><Paperclip size={19} /></button>
             <input
               value={text}
               onChange={(e) => { setText(e.target.value); sendTypingSignal(chatId); }}
@@ -978,10 +1008,20 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
         />
       )}
 
+      {/* WhatsApp-style attachment tray (paperclip popup) — shared by BOTH
+          composers; lives at the screen root because the glass composer panels
+          use backdrop-filter, which would break position:fixed from inside */}
+      <AttachmentTray open={!!attachTray} anchor={attachTray} onClose={() => setAttachTray(null)} onFilePick={handleFilePick} />
+
       {(micHint || (permissionDenied && recError)) && (
         <div className="absolute bottom-24 left-1/2 -translate-x-1/2 px-3.5 py-2 rounded-full bg-slate-900/90 dark:bg-white/10 text-white text-[11px] font-semibold shadow-lg backdrop-blur-md z-40 pointer-events-none whitespace-nowrap">
           {permissionDenied && recError ? "Microphone permission is required for voice notes" : micHint}
         </div>
+      )}
+
+      {/* full-screen in-app image viewer (chat bubbles, both styles) */}
+      {viewerMsg && (
+        <ImageViewerOverlay url={viewerMsg.url} name={viewerMsg.name} onClose={() => setViewerMsg(null)} />
       )}
     </div>
   );
@@ -1216,7 +1256,7 @@ function VoiceBubble({
 
 function RetroMessageList({
   chatMsgs, isMineMsg, isGroup, onSwipeReply,
-  onPressStart, onPressMove, onPressEnd, onContextMenu, myId, onToggleReaction, onCallBack,
+  onPressStart, onPressMove, onPressEnd, onContextMenu, myId, onToggleReaction, onCallBack, onOpenImage,
 }: {
   chatMsgs: any[];
   isMineMsg: (m: any) => boolean;
@@ -1229,6 +1269,7 @@ function RetroMessageList({
   myId: string;
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
   onCallBack: () => void;
+  onOpenImage: (url: string, name?: string) => void;
 }) {
   // grouping — same rhythm as Classic: runs of same-sender messages
   const rows: Array<{ msg: any; idx: number; mine: boolean; msgTs: string; showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean }> = chatMsgs.map((msg, idx) => {
@@ -1249,11 +1290,17 @@ function RetroMessageList({
   return (
     <div className="space-y-0.5">
       {rows.map(({ msg, idx, mine, msgTs, showDay, firstOfGroup }) => {
-        const mediaUrl = (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
+        // _localUrl: fresh local preview (object URL) of a JUST-SENT attachment
+        const mediaUrl = (msg as any)._localUrl || (msg as any).mediaUrl || (msg as any).attachments?.[0]?.url;
         const isVoice = msg.type === "voice" || (msg as any).attachments?.[0]?.mimeType?.startsWith?.("audio");
         const decryptFailed = (msg as any)._encrypted && !mediaUrl;
         const isDeletedMsg = !!(msg as any).isDeleted;
-        const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !isDeletedMsg;
+        const isImageType = (msg.type as string) === "image" || (msg.type as string) === "photo";
+        const isVideoType = (msg.type as string) === "video";
+        const att0: any = (msg as any).attachments?.[0];
+        const attName: string = att0?.fileName || att0?.name || "";
+        const fileAtt = att0 && !isVoice && !isImageType && !(isVideoType && mediaUrl) ? att0 : null;
+        const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !fileAtt && !isDeletedMsg;
         const bodyText = looksLikeEnvelope(msg.content) ? "This message can't be displayed on this device" : String(msg.content ?? "");
         return (
           <React.Fragment key={msg.id || idx}>
@@ -1321,8 +1368,19 @@ function RetroMessageList({
                       plain
                     />
                   </div>
-                ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
-                  <img src={mediaUrl} alt="" className="rounded-2xl max-w-[75%] max-h-64 object-cover border border-slate-200 dark:border-white/10" />
+                ) : mediaUrl && isImageType ? (
+                  <img
+                    src={mediaUrl}
+                    alt=""
+                    className="rounded-2xl max-w-[75%] max-h-64 object-cover border border-slate-200 dark:border-white/10 cursor-zoom-in"
+                    onClick={(e) => { e.stopPropagation(); onOpenImage(mediaUrl, attName || undefined); }}
+                  />
+                ) : mediaUrl && isVideoType ? (
+                  <video src={mediaUrl} controls preload="metadata" className="rounded-2xl max-w-[75%] max-h-64 border border-slate-200 dark:border-white/10" />
+                ) : fileAtt ? (
+                  <div className="max-w-[320px] rounded-2xl bg-slate-100/90 dark:bg-white/[0.07] border border-slate-200/80 dark:border-white/10 px-2.5 py-2">
+                    <FileBubble name={attName || bodyText || "Attachment"} size={att0?.size} mime={(msg as any)._mime || att0?.mimeType} url={mediaUrl} />
+                  </div>
                 ) : (
                   <p className={`text-[14px] font-medium whitespace-pre-wrap [overflow-wrap:anywhere] pr-8 text-left ${isLocked ? "italic text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"}`}>
                     {isLocked && <Lock size={11} className="inline mr-1 -mt-0.5" aria-hidden />}
@@ -1345,15 +1403,16 @@ function RetroMessageList({
 }
 
 function RetroComposer({
-  text, setText, onSend, isSending, editing, fileInputRef, onFilePick, recorderSlot, sendSlot,
+  text, setText, onSend, isSending, editing, onFilePick, trayOpen, onToggleTray, recorderSlot, sendSlot,
 }: {
   text: string;
   setText: (t: string) => void;
   onSend: () => void;
   isSending: boolean;
   editing?: boolean;
-  fileInputRef: React.RefObject<HTMLInputElement | null>;
   onFilePick: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  trayOpen: boolean;
+  onToggleTray: (e: React.MouseEvent<HTMLButtonElement>) => void;
   recorderSlot: React.ReactNode;
   sendSlot: React.ReactNode;
 }) {
@@ -1364,8 +1423,7 @@ function RetroComposer({
       className="shrink-0 w-full px-3 py-2.5 border-t border-slate-200/60 dark:border-white/10 flex items-center gap-2 bg-white/70 dark:bg-black/60 backdrop-blur-xl"
       style={{ borderRadius: 0, paddingBottom: "max(0.625rem, env(safe-area-inset-bottom))" }}
     >
-      <input ref={fileInputRef} type="file" accept="image/*,video/*,audio/*,.pdf,.doc,.docx" className="hidden" onChange={onFilePick} />
-      <button type="button" onClick={() => fileInputRef.current?.click()} className="p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10" aria-label="Attach"><Paperclip size={18} /></button>
+      <button type="button" data-attach-trigger onClick={onToggleTray} className={`p-2.5 rounded-full text-slate-500 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-white/10 ${trayOpen ? "bg-slate-100 dark:bg-white/10" : ""}`} aria-label="Attach"><Paperclip size={18} /></button>
       <div className="flex-1 flex items-center gap-2 px-4 py-2 rounded-full border border-slate-300 dark:border-white/15 bg-white dark:bg-white/5">
         <input
           value={text}

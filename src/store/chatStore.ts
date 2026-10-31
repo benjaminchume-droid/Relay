@@ -15,13 +15,22 @@ import { decryptMessages, scheduleMediaDecrypt, looksLikeEnvelope, CIPHER_PLACEH
 import { isEnvelope } from '../services/crypto/cryptoService';
 import { relayRealtimeService } from '../services/realtime/RelayRealtimeService';
 
+/** Human preview for the chat list: real media type / file name, never a
+ *  bare "Attachment" when we know better. */
+function previewTextFor(type: Message['type'] | undefined, content: string, attachments?: MessageAttachment[]): string {
+  const att: any = attachments?.[0];
+  const attName: string = att?.fileName || att?.name || '';
+  const t = (type || '') as string;
+  if (t === 'image' || t === 'photo') return 'Photo';
+  if (t === 'voice') return 'Voice note';
+  if (t === 'video') return 'Video';
+  if (att) return attName ? `Document: ${attName}` : 'Attachment';
+  return content || 'Message';
+}
+
 function previewOf(msg: Message): string {
   if ((msg as any).isDeleted) return 'Message deleted';
-  if (msg.type === 'image') return 'Photo';
-  if (msg.type === 'voice') return 'Voice note';
-  if (msg.type === 'video') return 'Video';
-  if (msg.attachments?.length) return 'Attachment';
-  return msg.content || 'Message';
+  return previewTextFor(msg.type, msg.content, msg.attachments);
 }
 
 /** The server can't decrypt, so its preview for E2EE rows is a static
@@ -45,7 +54,7 @@ async function decryptChatPreviews(chats: Chat[]): Promise<Chat[]> {
   try {
     const { data: rows } = await supabase
       .from('messages')
-      .select('id, conversation_id, sender_id, message_type, content, mime_type')
+      .select('id, conversation_id, sender_id, message_type, content, mime_type, file_name')
       .in('id', rowIds.slice(0, 40));
     if (!rows?.length) return chats;
     const pseudo = rows.map((r: any) => ({
@@ -57,6 +66,7 @@ async function decryptChatPreviews(chats: Chat[]): Promise<Chat[]> {
       timestamp: '',
       deliveryState: 'sent',
       _mime: r.mime_type,
+      attachments: r.file_name ? [{ id: 'prev_' + r.id, type: 'file', url: '', fileName: r.file_name }] : undefined,
     } as any));
     const { decryptMessages } = await import('../services/messageFetch');
     // sessions are per (conversation, peer) — decrypt each conversation's
@@ -73,11 +83,17 @@ async function decryptChatPreviews(chats: Chat[]): Promise<Chat[]> {
     const textById = new Map<string, string>();
     for (const m of pseudo) {
       let label = m.content;
+      const atts: any[] = (m as any).attachments || [];
       if (!label || looksLikeEnvelope(label)) {
         label = m.type === 'image' ? 'Photo'
           : m.type === 'voice' ? 'Voice note'
           : m.type === 'video' ? 'Video'
+          : atts[0]?.fileName ? `Document: ${atts[0].fileName}`
+          : atts.length ? 'Attachment'
           : 'New message';
+      } else if (label === 'Attachment' && atts[0]?.fileName) {
+        // own sends decrypt to the generic placeholder — upgrade to the real name
+        label = `Document: ${atts[0].fileName}`;
       }
       textById.set(String(m.id), label);
     }
@@ -132,6 +148,9 @@ interface ChatState {
     attachments?: MessageAttachment[];
     isForwarded?: boolean;
     replyToId?: string;
+    /** Local object URL of the picked file — lets the optimistic bubble render
+     *  the actual media instantly instead of the still-encrypted remote blob. */
+    localPreviewUrl?: string;
   }) => Promise<void>;
   retryMessage: (messageId: string) => Promise<void>;
   editMessage: (messageId: string, content: string) => Promise<void>;
@@ -312,7 +331,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch { /* non-fatal */ }
   },
 
-  sendMessage: async ({ content, type = 'text', attachments, isForwarded, replyToId }) => {
+  sendMessage: async ({ content, type = 'text', attachments, isForwarded, replyToId, localPreviewUrl }) => {
     const chatId = get().activeChatId;
     if (!chatId) return;
     const payloadKey = `${chatId}:${type}:${content || ''}:${attachments?.[0]?.url || ''}`;
@@ -343,13 +362,22 @@ export const useChatStore = create<ChatState>((set, get) => ({
       } : undefined,
       isForwarded
     };
+    // local preview of a just-picked file — the bubble renders the real media
+    // immediately (the remote url is still ciphertext until decryption lands)
+    if (localPreviewUrl) (pendingMsg as any)._localUrl = localPreviewUrl;
     set((state) => ({ messages: { ...state.messages, [chatId]: [...(state.messages[chatId] || []), pendingMsg] } }));
     try {
       const { message, chat } = await sendConversationMessage(chatId, { content, type, attachments, replyToId: replyToId || replyingTo?.id, isForwarded });
       set((state) => {
         const realChatId = chat.id || message.chatId || chatId;
         const currentMsgs = state.messages[chatId] || state.messages[realChatId] || [];
-        const confirmedMsg = { ...message, deliveryState: 'sent' as const };
+        const prevTemp = currentMsgs.find((m) => m.id === tempId);
+        const confirmedMsg = {
+          ...message,
+          deliveryState: 'sent' as const,
+          // keep the instant local preview until the decrypted media replaces it
+          ...(((prevTemp as any)?._localUrl) ? { _localUrl: (prevTemp as any)._localUrl } : {}),
+        };
         const updatedMsgs = currentMsgs.map((m) => m.id === tempId ? confirmedMsg : m);
         const existingChatIdx = state.chats.findIndex((c) => c.id === chatId || c.id === realChatId);
         let updatedChats: Chat[];
@@ -358,7 +386,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             ...c, id: realChatId,
             name: chat.name && chat.name !== 'Conversation' ? chat.name : c.name,
             avatarUrl: chat.avatarUrl || c.avatarUrl,
-            lastMessage: { text: message.content || 'Attachment', timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' },
+            lastMessage: { text: previewTextFor(type, content || '', attachments), timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' },
             updatedAt: message.timestamp
           } : c);
         } else {
@@ -369,7 +397,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             avatarUrl: chat.avatarUrl,
             participants: chat.participants || [currentUser?.id || 'me'],
             unreadCount: 0,
-            lastMessage: { text: message.content || 'Attachment', timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' },
+            lastMessage: { text: previewTextFor(type, content || '', attachments), timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' },
             updatedAt: message.timestamp
           }, ...state.chats];
         }
@@ -407,7 +435,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         const updatedMsgs = msgs.map((m) => m.id === messageId ? { ...message, deliveryState: 'sent' as const } : m);
         const updatedChats = state.chats.map((c) => (c.id === chatId || c.id === realChatId) ? {
           ...c, id: realChatId,
-          lastMessage: { text: message.content || 'Attachment', timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' as const },
+          lastMessage: { text: previewTextFor(targetMsg.type, targetMsg.content, targetMsg.attachments), timestamp: message.timestamp, senderId: message.senderId, deliveryState: 'sent' as const },
           updatedAt: message.timestamp
         } : c);
         const newMessagesMap = { ...state.messages };
@@ -786,7 +814,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
         // echo of my own send — show my plaintext preview (fetch flow already handles open chats)
         const existing = (useChatStore.getState().messages[convId] || []).find((x) => x.id === m.id);
         if (existing && !looksLikeEnvelope(existing.content)) m.content = existing.content;
-        else m.content = m.type === 'image' ? 'Photo' : m.type === 'voice' ? 'Voice note' : 'Attachment';
+        else m.content = previewOf(m);
       }
       // ABSOLUTE gate — ciphertext never enters the store through this path.
       if (looksLikeEnvelope(m.content)) {
