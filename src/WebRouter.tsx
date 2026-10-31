@@ -7,6 +7,7 @@ import { BrowserRouter, Routes, Route, Navigate, useParams } from 'react-router-
 import App from './App';
 import InvitePage from './pages/InvitePage';
 import WebLoginPage from './pages/WebLoginPage';
+import ContactLinkPage from './pages/ContactLinkPage';
 
 function InviteRoute({ kind }: { kind: 'group' | 'community' | 'channel' }) {
   const { token } = useParams();
@@ -29,6 +30,8 @@ export function WebRouter() {
         <Route path="/c/:token" element={<InviteRoute kind="community" />} />
         <Route path="/community/:token" element={<InviteRoute kind="community" />} />
         <Route path="/channel/:token" element={<InviteRoute kind="channel" />} />
+        <Route path="/u/:token" element={<ContactLinkPage />} />
+        <Route path="/user/:token" element={<ContactLinkPage />} />
         <Route path="/*" element={<App />} />
       </Routes>
     </BrowserRouter>

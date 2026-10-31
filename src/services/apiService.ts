@@ -467,14 +467,15 @@ export const apiService = {
   searchUsers: async (q: string) => {
     const { data } = await supabase
       .from("profiles")
-      .select("id, display_name, full_name, username, avatar_url")
-      .or(`username.ilike.%${q}%,display_name.ilike.%${q}%,full_name.ilike.%${q}%`)
+      .select("id, display_name, full_name, username, avatar_url, bio, status_message")
+      .or(`username.ilike.%${q}%,display_name.ilike.%${q}%,full_name.ilike.%${q}%,bio.ilike.%${q}%`)
       .limit(20);
     return (data || []).map((p: any) => ({
       id: p.id,
       name: p.display_name || p.full_name || p.username || "User",
       username: p.username || "",
       avatarUrl: p.avatar_url,
+      bio: p.bio || p.status_message || "",
     }));
   },
 

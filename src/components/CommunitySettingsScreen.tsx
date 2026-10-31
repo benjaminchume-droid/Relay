@@ -15,6 +15,7 @@ import { useCommunityStore } from "../store/communityStore";
 import { getLetterAvatar } from "../lib/avatar";
 import { AmbientLiquidBackground, LiquidPanel } from "./GlassUI";
 import { listCommunityMembers, getMyRole, type CommunityMemberRow } from "../services/communityChannels";
+import { getCommunityInviteUrl } from "../lib/authRedirect";
 
 type Props = {
   communityId: string;
@@ -43,10 +44,10 @@ export const CommunitySettingsScreen: React.FC<Props> = ({ communityId, onBack, 
     })();
   }, [communityId, myProfileId]);
 
-  const inviteLink = useMemo(() => {
-    if (!community?.inviteLink) return `https://relayid.vercel.app/c/${community?.handle || communityId}`;
-    return community.inviteLink;
-  }, [community]);
+  const inviteLink = useMemo(
+    () => getCommunityInviteUrl(community?.handle || communityId),
+    [community?.handle, communityId]
+  );
 
   const filteredMembers = useMemo(() => {
     const q = memberQuery.trim().toLowerCase();

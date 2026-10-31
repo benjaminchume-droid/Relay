@@ -3,7 +3,7 @@
  * Signaling is delegated to callService (Supabase RPCs + realtime).
  * Phase 5: ICE servers from iceConfig (STUN + optional TURN).
  */
-import { postSignal, subscribeCallSignals, type CallType } from "../../services/callService";
+import { postSignal, subscribeCallSignals, fetchSignals, type CallType } from "../../services/callService";
 import { getIceServers } from "./iceConfig";
 
 export type WebRtcHandlers = {
@@ -23,6 +23,8 @@ export class WebRtcManager {
   private isCaller = false;
   private handlers: WebRtcHandlers = {};
   private pendingIce: RTCIceCandidateInit[] = [];
+  private handledSignalIds = new Set<string>();
+  private failTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(handlers: WebRtcHandlers = {}) {
     this.handlers = handlers;
@@ -75,6 +77,14 @@ export class WebRtcManager {
 
     pc.onconnectionstatechange = () => {
       this.handlers.onConnectionState?.(pc.connectionState);
+      // a genuinely failed ICE negotiation must not leave both ends hanging:
+      // auto-end after a short grace period.
+      if (pc.connectionState === "failed") {
+        if (this.failTimer) clearTimeout(this.failTimer);
+        this.failTimer = setTimeout(() => {
+          this.handlers.onError?.(new Error("Call connection failed"));
+        }, 1200);
+      }
     };
 
     if (this.localStream) {
@@ -102,23 +112,31 @@ export class WebRtcManager {
 
     const pc = this.ensurePeer();
 
-    this.unsubSignals = subscribeCallSignals(opts.callId, opts.myProfileId, async (signal) => {
+    const handleSignal = async (signal: { id: string; signalType: string; payload: any }) => {
       try {
+        if (signal.id) {
+          if (this.handledSignalIds.has(signal.id)) return;
+          this.handledSignalIds.add(signal.id);
+        }
         if (signal.signalType === "offer" && !this.isCaller) {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-          for (const c of this.pendingIce) {
-            await pc.addIceCandidate(new RTCIceCandidate(c));
+          if (pc.signalingState === "stable" && !pc.remoteDescription) {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            for (const c of this.pendingIce) {
+              await pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+            this.pendingIce = [];
+            const answer = await pc.createAnswer();
+            await pc.setLocalDescription(answer);
+            await postSignal(opts.callId, "answer", answer);
           }
-          this.pendingIce = [];
-          const answer = await pc.createAnswer();
-          await pc.setLocalDescription(answer);
-          await postSignal(opts.callId, "answer", answer);
         } else if (signal.signalType === "answer" && this.isCaller) {
-          await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
-          for (const c of this.pendingIce) {
-            await pc.addIceCandidate(new RTCIceCandidate(c));
+          if (pc.signalingState === "have-local-offer") {
+            await pc.setRemoteDescription(new RTCSessionDescription(signal.payload));
+            for (const c of this.pendingIce) {
+              await pc.addIceCandidate(new RTCIceCandidate(c));
+            }
+            this.pendingIce = [];
           }
-          this.pendingIce = [];
         } else if (signal.signalType === "ice") {
           if (pc.remoteDescription) {
             await pc.addIceCandidate(new RTCIceCandidate(signal.payload));
@@ -129,6 +147,24 @@ export class WebRtcManager {
       } catch (e: any) {
         this.handlers.onError?.(e instanceof Error ? e : new Error(String(e)));
       }
+    };
+
+    // BACKLOG — the caller posts its offer (+ early ICE) the moment it rings,
+    // which is BEFORE the callee subscribes. postgres_changes only delivers
+    // rows inserted after subscribing, so without replaying the stored rows
+    // here the callee never sees the offer and the call can never connect.
+    // RLS on call_signaling exposes only our own rows via anon select — the
+    // service filters other senders below.
+    try {
+      const backlog = await fetchSignals(opts.callId);
+      for (const s of backlog) {
+        if (s.senderId === opts.myProfileId) continue;
+        await handleSignal(s);
+      }
+    } catch { /* backlog best-effort — realtime continues below */ }
+
+    this.unsubSignals = subscribeCallSignals(opts.callId, opts.myProfileId, (signal) => {
+      void handleSignal(signal);
     });
 
     if (this.isCaller) {
@@ -164,6 +200,7 @@ export class WebRtcManager {
   async hangup() {
     this.unsubSignals?.();
     this.unsubSignals = null;
+    if (this.failTimer) { clearTimeout(this.failTimer); this.failTimer = null; }
     this.localStream?.getTracks().forEach((t) => t.stop());
     this.localStream = null;
     this.remoteStream = null;
@@ -171,5 +208,6 @@ export class WebRtcManager {
     this.pc = null;
     this.callId = null;
     this.pendingIce = [];
+    this.handledSignalIds.clear();
   }
 }

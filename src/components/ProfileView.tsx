@@ -20,6 +20,8 @@ import { getLetterAvatar } from '../lib/avatar';
 import { isInAppWebView } from '../lib/nativeBridge';
 import { ThemePresetsSection } from './ThemePresetsSection';
 import { DownloadsSection } from './DownloadsSection';
+import { WALLPAPERS } from './chat/wallpapers';
+import { RELAY_WEB_VERSION } from '../lib/version';
 import { notificationService, type NotificationPrefs } from '../services/notificationService';
 
 type LegalDoc = 'privacy' | 'guidelines' | 'terms';
@@ -206,7 +208,6 @@ export const ProfileView: React.FC = () => {
 
   const accentList: AccentColor[] = ['liquid-azure', 'emerald-frost', 'neon-violet', 'rose-gold', 'midnight', 'amber-glow'];
   const bubbleStyles: BubbleStyle[] = ['edge-glow', 'classic', 'gradient', 'minimal'];
-  const wallpapers: WallpaperStyle[] = ['glass-gradient', 'dark-aurora', 'neon-mesh', 'minimal-grid', 'warm-clay', 'pure-slate'];
   const themeModes: Array<{ id: ThemeMode; label: string }> = [
     { id: 'light', label: 'Light' },
     { id: 'dark', label: 'Dark' },
@@ -445,27 +446,33 @@ export const ProfileView: React.FC = () => {
             </div>
           </GlassCard>
 
-          {/* Wallpapers */}
+          {/* Wallpapers — every option here actually renders in the chat viewport */}
           <GlassCard className="p-4 space-y-2.5">
             <span className="text-xs font-bold text-slate-800 dark:text-white block">Chat Viewport Wallpaper</span>
-            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-              {wallpapers.map((wp) => {
-                const isSel = customization.chatWallpaper === wp;
+            <p className="text-[10.5px] text-slate-500 dark:text-slate-400">Snowfall pools on top of your chat bubbles; Rainfall streaks and splashes. All styles apply live.</p>
+            <div className="grid grid-cols-3 sm:grid-cols-4 gap-2">
+              {WALLPAPERS.map((wp) => {
+                const isSel = customization.chatWallpaper === wp.id;
                 return (
                   <button
-                    key={wp}
-                    onClick={() => setWallpaper(wp)}
+                    key={wp.id}
+                    onClick={() => setWallpaper(wp.id)}
                     style={{
                       backgroundColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined,
                       borderColor: isSel ? 'var(--primary-accent, #2563EB)' : undefined
                     }}
-                    className={`p-2.5 rounded-xl border text-xs font-semibold capitalize cursor-pointer transition-all ${
-                      isSel 
-                        ? 'text-white shadow-md' 
+                    className={`p-1.5 rounded-xl border cursor-pointer transition-all ${
+                      isSel
+                        ? 'text-white shadow-md'
                         : 'bg-white/60 dark:bg-slate-800/60 text-slate-700 dark:text-slate-200 hover:bg-white border-slate-200 dark:border-white/10'
                     }`}
                   >
-                    {wp.replace('-', ' ')}
+                    <span
+                      className="block h-10 w-full rounded-lg border border-black/5 dark:border-white/10 mb-1"
+                      style={{ background: wp.swatch }}
+                      aria-hidden
+                    />
+                    <span className="block text-[9.5px] font-bold truncate">{wp.name}</span>
                   </button>
                 );
               })}
@@ -722,7 +729,7 @@ export const ProfileView: React.FC = () => {
           <GlassCard className="p-5 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-800">Version</span>
-              <span className="font-mono text-slate-500">Relay 0.5.5 · Liquid Glass</span>
+              <span className="font-mono text-slate-500">Relay {RELAY_WEB_VERSION}</span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-200/70 dark:border-white/10">
               <span className="font-bold text-slate-800">Company</span>

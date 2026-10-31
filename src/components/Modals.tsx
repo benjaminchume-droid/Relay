@@ -5,13 +5,14 @@
 
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { X, Check, Users, Plus, Search, ShieldAlert } from 'lucide-react';
+import { X, Check, Users, Plus, Search, ShieldAlert, Link2, MessageCircle } from 'lucide-react';
 import { GlassButton, GlassInput } from './GlassUI';
 import { useChatStore } from '../store/chatStore';
 import { useContactsStore } from '../store/contactsStore';
 import { useCommunityStore } from '../store/communityStore';
 import { formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
+import { parseInviteToken, resolveInvite, joinInvite } from '../lib/invites';
 
 export const ModalsOverlay: React.FC<{
   showNewChatModal: boolean;
@@ -45,6 +46,62 @@ export const ModalsOverlay: React.FC<{
   const [directSearchQuery, setDirectSearchQuery] = useState('');
   const [isStartingChat, setIsStartingChat] = useState<string | null>(null);
   const [chatStartError, setChatStartError] = useState<string | null>(null);
+
+  // recent chats — the people you actually talk to, one tap away
+  const recentChats = React.useMemo(() => {
+    return chats
+      .filter((c) => c.type === 'direct' && c.requestStatus !== 'pending_incoming')
+      .slice()
+      .sort((a, b) => {
+        const ta = a.lastMessage?.timestamp ? new Date(a.lastMessage.timestamp).getTime() : 0;
+        const tb = b.lastMessage?.timestamp ? new Date(b.lastMessage.timestamp).getTime() : 0;
+        return tb - ta;
+      })
+      .slice(0, 8);
+  }, [chats]);
+
+  // join a group/community by pasting its invite link
+  const [showJoinLink, setShowJoinLink] = useState(false);
+  const [joinInput, setJoinInput] = useState('');
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinMsg, setJoinMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleJoinByLink = async () => {
+    if (!joinInput.trim() || joinBusy) return;
+    setJoinBusy(true);
+    setJoinMsg(null);
+    try {
+      const parsed = parseInviteToken(joinInput);
+      if (!parsed) throw new Error("That doesn't look like a Relay invite link.");
+      const preview = await resolveInvite(parsed.kind, parsed.token);
+      if (!preview.valid) throw new Error(preview.error || 'Invite not found.');
+      const res = await joinInvite(preview);
+      if (!res.ok) throw new Error(res.error || 'Could not join.');
+      await useChatStore.getState().fetchChats();
+      if (parsed.kind === 'group') {
+        setJoinMsg({ ok: true, text: `Joined ${preview.name}. Opening…` });
+        setTimeout(() => {
+          onCloseNewChatModal();
+          setJoinInput('');
+          setShowJoinLink(false);
+          setJoinMsg(null);
+          onSelectChat(preview.targetId);
+        }, 700);
+      } else {
+        setJoinMsg({ ok: true, text: `Joined community ${preview.name}.` });
+        setTimeout(() => {
+          onCloseNewChatModal();
+          setJoinInput('');
+          setShowJoinLink(false);
+          setJoinMsg(null);
+        }, 1100);
+      }
+    } catch (e: any) {
+      setJoinMsg({ ok: false, text: e?.message || 'Could not join with that link.' });
+    } finally {
+      setJoinBusy(false);
+    }
+  };
 
   React.useEffect(() => {
     if (showNewChatModal) {
@@ -128,6 +185,47 @@ export const ModalsOverlay: React.FC<{
                 </button>
               )}
 
+              {/* Join an existing group/community by pasting its invite link */}
+              <div>
+                <button
+                  type="button"
+                  onClick={() => { setShowJoinLink((v) => !v); setJoinMsg(null); }}
+                  className="w-full p-3.5 rounded-2xl bg-slate-50 dark:bg-white/5 hover:bg-slate-100 dark:hover:bg-white/10 border border-slate-200 dark:border-white/10 flex items-center gap-3 transition-all text-slate-700 dark:text-slate-200 cursor-pointer group"
+                >
+                  <div className="w-9 h-9 rounded-xl bg-slate-200 dark:bg-white/10 text-slate-600 dark:text-slate-300 flex items-center justify-center shrink-0 group-hover:scale-105 transition-transform">
+                    <Link2 size={18} />
+                  </div>
+                  <div className="min-w-0 text-left">
+                    <h4 className="text-xs font-bold">Join with invite link</h4>
+                    <p className="text-[10px] text-slate-500 dark:text-slate-400 font-medium">Paste a group or community link to join instantly</p>
+                  </div>
+                </button>
+                {showJoinLink && (
+                  <div className="mt-2 space-y-2">
+                    <GlassInput
+                      placeholder="https://…/g/…  or  /c/community-handle"
+                      icon={<Link2 size={15} />}
+                      value={joinInput}
+                      onChange={(e) => setJoinInput(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') {
+                          e.preventDefault();
+                          void handleJoinByLink();
+                        }
+                      }}
+                    />
+                    <GlassButton variant="primary" onClick={() => void handleJoinByLink()} disabled={joinBusy || !joinInput.trim()} className="w-full py-2.5 text-xs cursor-pointer">
+                      {joinBusy ? 'Joining…' : 'Join'}
+                    </GlassButton>
+                  </div>
+                )}
+                {joinMsg && (
+                  <div className={`mt-2 p-2.5 rounded-xl text-[11px] font-medium ${joinMsg.ok ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-rose-50 text-rose-700 border border-rose-200'}`}>
+                    {joinMsg.text}
+                  </div>
+                )}
+              </div>
+
               {/* Direct Message Search & Contact List */}
               <div className="space-y-3 pt-1">
                 <div className="flex items-center gap-2">
@@ -164,10 +262,39 @@ export const ModalsOverlay: React.FC<{
 
                 <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
                   {searchStatus === 'idle' && (
-                    <div className="text-center py-8 space-y-1">
-                      <p className="text-xs font-semibold text-slate-600">Find someone on Relay</p>
-                      <p className="text-[11px] text-slate-400">Search by name or username.</p>
-                    </div>
+                    recentChats.length > 0 ? (
+                      <div className="space-y-1.5">
+                        <p className="text-[10px] font-bold uppercase tracking-wider text-slate-400 px-1 pt-1">Recent chats</p>
+                        {recentChats.map((c) => (
+                          <button
+                            key={c.id}
+                            type="button"
+                            onClick={() => {
+                              onCloseNewChatModal();
+                              onSelectChat(c.id);
+                            }}
+                            className="w-full p-2.5 rounded-2xl border border-slate-100 hover:bg-slate-50 flex items-center gap-3 transition-colors text-left cursor-pointer dark:bg-black"
+                          >
+                            <img
+                              src={c.avatarUrl || getLetterAvatar(c.name)}
+                              alt={c.name}
+                              className="w-9 h-9 rounded-full object-cover shrink-0 border border-slate-200 dark:border-white/10"
+                            />
+                            <div className="min-w-0 flex-1">
+                              <h4 className="text-xs font-bold text-slate-800 truncate dark:text-slate-100">{c.name}</h4>
+                              <p className="text-[10px] text-slate-400 truncate">{c.lastMessage?.text || 'Tap to open'}</p>
+                            </div>
+                            <MessageCircle size={14} className="text-[var(--primary-accent)] shrink-0" />
+                          </button>
+                        ))}
+                        <p className="text-[10px] text-slate-400 text-center pt-1">…or search everyone on Relay below.</p>
+                      </div>
+                    ) : (
+                      <div className="text-center py-8 space-y-1">
+                        <p className="text-xs font-semibold text-slate-600">Find someone on Relay</p>
+                        <p className="text-[11px] text-slate-400">Search by name, username, or bio.</p>
+                      </div>
+                    )
                   )}
 
                   {searchStatus === 'loading' && (

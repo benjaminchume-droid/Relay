@@ -19,6 +19,30 @@ function looksLikeUuid(s: string) {
   return /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(s);
 }
 
+/**
+ * Parse a pasted invite link (or bare token) into a resolvable pair.
+ * Accepts: https://host/g/<token>  /c/<handle>  /invite/<token>  /community/<t>
+ *          /channel/<t>  /group/<t>, a bare token, or @handle.
+ */
+export function parseInviteToken(input: string): { kind: InviteKind; token: string } | null {
+  const raw = (input || '').trim();
+  if (!raw) return null;
+
+  const routeMatch = raw.match(/\/(g|group|c|community|channel|invite)\/([A-Za-z0-9._~@-]+)/);
+  if (routeMatch) {
+    const seg = routeMatch[1];
+    const token = decodeURIComponent(routeMatch[2]);
+    const kind: InviteKind = seg === 'c' || seg === 'community' ? 'community' : seg === 'channel' ? 'channel' : 'group';
+    return { kind, token };
+  }
+
+  // bare token — guess: @handle or slug-ish → community, uuid → group id
+  const bare = raw.replace(/^@/, '');
+  if (looksLikeUuid(bare)) return { kind: 'group', token: bare };
+  if (/^[a-z0-9][a-z0-9._-]{2,}$/i.test(bare)) return { kind: 'community', token: bare };
+  return { kind: 'group', token: bare };
+}
+
 export async function resolveInvite(kind: InviteKind, tokenOrId: string): Promise<InvitePreview> {
   const token = tokenOrId.trim();
 

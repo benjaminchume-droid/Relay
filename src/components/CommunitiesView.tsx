@@ -17,6 +17,7 @@ import { supabase } from "../lib/supabase/client";
 import { getLetterAvatar } from "../lib/avatar";
 import { AmbientLiquidBackground, GlassButton, LiquidPanel } from "./GlassUI";
 import { CommunitySettingsScreen } from "./CommunitySettingsScreen";
+import { parseInviteToken, resolveInvite, joinInvite } from "../lib/invites";
 import {
   listChannels, ensureChannelConversation, setVoicePresence, fetchVoiceOccupants,
   type CommunityChannel,
@@ -48,6 +49,35 @@ export const CommunitiesView: React.FC<Props> = ({
   const [voiceOccupants, setVoiceOccupants] = useState<Record<string, number>>({});
   const [discoverQuery, setDiscoverQuery] = useState("");
   const [joiningId, setJoiningId] = useState<string | null>(null);
+
+  // join a community by pasting its invite link
+  const [showJoinLink, setShowJoinLink] = useState(false);
+  const [joinInput, setJoinInput] = useState("");
+  const [joinBusy, setJoinBusy] = useState(false);
+  const [joinMsg, setJoinMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const handleJoinByLink = async () => {
+    if (!joinInput.trim() || joinBusy) return;
+    setJoinBusy(true);
+    setJoinMsg(null);
+    try {
+      const parsed = parseInviteToken(joinInput);
+      if (!parsed) throw new Error("That doesn't look like a Relay invite link.");
+      const preview = await resolveInvite(parsed.kind, parsed.token);
+      if (!preview.valid) throw new Error(preview.error || "Invite not found.");
+      const res = await joinInvite(preview);
+      if (!res.ok) throw new Error(res.error || "Could not join.");
+      await fetchCommunities();
+      setJoinMsg({ ok: true, text: `Joined ${preview.name}.` });
+      if (parsed.kind === "community") setActiveCommunityId(preview.targetId);
+      setJoinInput("");
+      setShowJoinLink(false);
+    } catch (e: any) {
+      setJoinMsg({ ok: false, text: e?.message || "Could not join with that link." });
+    } finally {
+      setJoinBusy(false);
+    }
+  };
 
   const myCommunities = useMemo(() => communities.filter((c) => c.isJoined), [communities]);
   const discover = useMemo(() => {
@@ -239,8 +269,34 @@ export const CommunitiesView: React.FC<Props> = ({
       <AmbientLiquidBackground />
       <LiquidPanel as="header" className="w-full shrink-0 z-20 !rounded-none border-b border-slate-200/60 dark:border-white/10 px-4 py-3 flex items-center justify-between bg-white/70 dark:bg-black/60 backdrop-blur-xl" style={{ borderRadius: 0 }}>
         <h1 className="text-base font-black tracking-tight text-slate-900 dark:text-white">Communities</h1>
-        <button type="button" onClick={onOpenCreateCommunityModal} style={{ backgroundColor: "var(--primary-accent, #2563EB)" }} className="p-2 rounded-full text-white shadow-md" aria-label="Create community"><Plus size={18} /></button>
+        <div className="flex items-center gap-2">
+          <button type="button" onClick={() => { setShowJoinLink((v) => !v); setJoinMsg(null); }} className="p-2 rounded-full bg-white/70 dark:bg-white/10 border border-slate-200 dark:border-white/10 text-slate-600 dark:text-slate-200" aria-label="Join with invite link" title="Join with invite link"><Link2 size={17} /></button>
+          <button type="button" onClick={onOpenCreateCommunityModal} style={{ backgroundColor: "var(--primary-accent, #2563EB)" }} className="p-2 rounded-full text-white shadow-md" aria-label="Create community"><Plus size={18} /></button>
+        </div>
       </LiquidPanel>
+
+      {showJoinLink && (
+        <div className="px-3 pt-3">
+          <LiquidPanel className="p-3 rounded-2xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10 space-y-2">
+            <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-slate-100 dark:bg-white/10">
+              <Link2 size={15} className="text-slate-400 shrink-0" />
+              <input
+                value={joinInput}
+                onChange={(e) => setJoinInput(e.target.value)}
+                onKeyDown={(e) => { if (e.key === "Enter") void handleJoinByLink(); }}
+                placeholder="Paste a community or group invite link"
+                className="flex-1 bg-transparent text-[13px] focus:outline-none text-slate-900 dark:text-white placeholder:text-slate-400"
+              />
+            </div>
+            {joinMsg && (
+              <p className={`text-[11px] font-medium px-1 ${joinMsg.ok ? "text-emerald-600 dark:text-emerald-400" : "text-rose-600 dark:text-rose-400"}`}>{joinMsg.text}</p>
+            )}
+            <GlassButton type="button" onClick={() => void handleJoinByLink()} disabled={joinBusy || !joinInput.trim()} className="w-full py-2.5 text-xs font-bold text-white disabled:opacity-50" style={{ backgroundColor: "var(--primary-accent, #2563EB)" }}>
+              {joinBusy ? "Joining…" : "Join"}
+            </GlassButton>
+          </LiquidPanel>
+        </div>
+      )}
 
       <div className="flex-1 min-h-0 overflow-y-auto px-3 py-4 pb-28" style={{ overscrollBehavior: "contain" }}>
         {error && <div className="mb-3 px-3 py-2 rounded-xl bg-red-50 dark:bg-red-950/40 text-[11px] text-red-600 dark:text-red-300 font-medium">{error}</div>}

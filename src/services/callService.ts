@@ -139,6 +139,23 @@ export function subscribeConversationCalls(
   };
 }
 
+export async function fetchSignals(callId: string): Promise<CallSignal[]> {
+  const { data, error } = await supabase
+    .from("call_signaling")
+    .select("*")
+    .eq("call_id", callId)
+    .order("created_at", { ascending: true });
+  if (error) return [];
+  return (data || []).map((row: any) => ({
+    id: row.id,
+    callId: row.call_id,
+    senderId: row.sender_id,
+    signalType: row.signal_type,
+    payload: row.payload,
+    createdAt: row.created_at,
+  }));
+}
+
 export function subscribeCallSignals(
   callId: string,
   myProfileId: string,

@@ -32,8 +32,8 @@
 import React, { useEffect, useMemo, useRef, useState, useCallback } from "react";
 import {
   ArrowLeft, Send, Paperclip, MoreVertical, Phone, Video, Mic, X,
-  MessageSquare, Trash2, Pause, Play, ChevronLeft, ChevronUp, Lock,
-  Pencil, Copy, CornerUpLeft, Pin as PinIcon, PinOff, Check,
+  MessageSquare, Trash2, Pause, Play, ChevronLeft, ChevronUp, ChevronDown, Lock,
+  Pencil, Copy, CornerUpLeft, Pin as PinIcon, PinOff, Check, PhoneOff, Mic as MicIcon,
 } from "lucide-react";
 import { useChatStore } from "../../store/chatStore";
 import { useAuthStore } from "../../store/authStore";
@@ -45,6 +45,7 @@ import { formatChatTimestamp } from "../../lib/utils";
 import { getLetterAvatar } from "../../lib/avatar";
 import { useCallStore } from "../../store/callStore";
 import { AmbientLiquidBackground, LiquidPanel } from "../GlassUI";
+import { ChatWallpaperLayer } from "./wallpapers";
 import { useRelayRealtime } from "../../services/realtime/useRelayRealtime";
 import { fetchPresence, presenceLabel, type PresenceRow } from "../../services/presenceService";
 import { ReplyPreviewComposer } from "../ReplyPreviewComposer";
@@ -56,7 +57,7 @@ import { useVoicePlayer } from "../../modules/voice/useVoicePlayer";
 import { apiService } from "../../services/apiService";
 import { looksLikeEnvelope } from "../../services/messageFetch";
 import type { VoiceNoteData } from "../../modules/voice/types";
-import { formatDayDivider, isSameDay, DeliveryTicks } from "./chatHelpers";
+import { formatDayDivider, isSameDay, DeliveryTicks, CallSystemPill } from "./chatHelpers";
 
 const ACCENT = "var(--primary-accent, #2563EB)";
 const QUICK_REACTIONS = ["👍", "❤️", "😂", "😮", "😢", "🙏"];
@@ -94,6 +95,10 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const [editingMsg, setEditingMsg] = useState<any>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
+  const scrollerRef = useRef<HTMLDivElement | null>(null);
+  const isAtBottomRef = useRef(true);
+  const [showJumpToBottom, setShowJumpToBottom] = useState(false);
+  const firstLoadRef = useRef(true);
   const pressStartRef = useRef<number>(0);
   const pressStartXYRef = useRef<{ x: number; y: number } | null>(null);
   const lockedRef = useRef(false);
@@ -105,6 +110,26 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const chatStyle = useThemeStore((s) => s.customization.chatStyle) || "classic";
   const retro = chatStyle === "retro";
   const { phase: callPhase, placeCall, watchConversation, stopWatching, setPeerMeta } = useCallStore();
+  const minimizedCall = useCallStore((s) => (s.minimized ? s.activeCall : null));
+  const activeCallConv = useCallStore((s) => s.activeCall?.conversationId || null);
+  const callMuted = useCallStore((s) => s.muted);
+  const toggleCallMute = useCallStore((s) => s.toggleMute);
+  const callHangup = useCallStore((s) => s.hangup);
+  const callActiveSince = useCallStore((s) => s.activeSince);
+  const callLivePhase = useCallStore((s) => s.phase);
+  const callSetMinimized = useCallStore((s) => s.setMinimized);
+  const [callTicker, setCallTicker] = useState(0);
+  useEffect(() => {
+    if (callLivePhase !== "active") return;
+    const iv = setInterval(() => setCallTicker((t) => t + 1), 1000);
+    return () => clearInterval(iv);
+  }, [callLivePhase]);
+  const callElapsed = useMemo(() => {
+    if (!callActiveSince || callLivePhase !== "active") return "";
+    const s = Math.max(0, Math.floor((Date.now() - callActiveSince) / 1000));
+    const m = Math.floor(s / 60);
+    return `${m}:${String(s % 60).padStart(2, "0")}`;
+  }, [callActiveSince, callLivePhase, callTicker]);
   const myProfileId = profile?.id || currentUser?.id || "";
   const {
     chats, messages, activeTyping, replyingToMessage, sendMessage, sendTypingSignal,
@@ -169,9 +194,43 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     return () => window.removeEventListener("relay:media-ready", onReady);
   }, [chatId]);
 
+  // Autoscroll — WhatsApp rule: only snap to the newest message when the user
+  // is ALREADY at (or near) the bottom, or on the first load. The old code
+  // scrollIntoView'd on EVERY store mutation (decrypt sweeps, typing signals,
+  // presence pings), which yanked the scroll position back down mid-read —
+  // the "scroll is buggy / doesn't work" report, worst with Retro rows.
   useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    const el = scrollerRef.current;
+    if (!el) {
+      messagesEndRef.current?.scrollIntoView({ behavior: "auto" });
+      return;
+    }
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    if (firstLoadRef.current || atBottom || isAtBottomRef.current) {
+      requestAnimationFrame(() => {
+        el.scrollTop = el.scrollHeight;
+        isAtBottomRef.current = true;
+        setShowJumpToBottom(false);
+      });
+    }
+    firstLoadRef.current = false;
   }, [chatMsgs, activeTypingUsers]);
+
+  const handleScroll = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    const atBottom = el.scrollHeight - el.scrollTop - el.clientHeight < 90;
+    isAtBottomRef.current = atBottom;
+    setShowJumpToBottom(!atBottom);
+  }, []);
+
+  const jumpToBottom = useCallback(() => {
+    const el = scrollerRef.current;
+    if (!el) return;
+    el.scrollTo({ top: el.scrollHeight, behavior: "smooth" });
+    isAtBottomRef.current = true;
+    setShowJumpToBottom(false);
+  }, []);
 
   // Session catch-up sweep: messages that failed to decrypt earlier (prekey /
   // session wasn't ready yet) get a silent second pass when the chat opens,
@@ -488,6 +547,15 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             <span className="text-[10.5px] font-semibold px-3 py-1 rounded-lg bg-white/90 dark:bg-white/10 text-slate-500 dark:text-slate-300 shadow-sm">{formatDayDivider(msgTs)}</span>
           </div>
         )}
+        {msg.type === "system" ? (
+          <CallSystemPill
+            label={bodyText}
+            onCallBack={!isGroup ? () => {
+              setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+              void placeCall(chatId, "voice", myProfileId);
+            } : undefined}
+          />
+        ) : (
         <SwipeableMessageItem messageId={String(msg.id || idx)} onSwipeToReply={() => !isPendingIncoming && setReplyingToMessage(msg)}>
           <div
             className={`flex ${mine ? "justify-end" : "justify-start"} ${isGroup && !mine ? "items-end gap-1.5" : "items-end"}`}
@@ -500,7 +568,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             )}
             <div
               className={`px-2 py-1.5 text-[13.5px] leading-snug font-medium max-w-[80%] [overflow-wrap:anywhere] text-left ${isDeletedMsg ? "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 italic" : mine ? "wa-bubble-mine" : "wa-bubble-other"} ${isVoice || mediaUrl ? "pb-1.5" : ""}`}
-              style={{ borderRadius: bubbleRadius, opacity: isDeletedMsg ? 0.85 : 1 }}
+              style={{ borderRadius: bubbleRadius, opacity: isDeletedMsg ? 0.85 : 1, touchAction: "pan-y" }}
               onPointerDown={(e) => onPressStart(e, msg)}
               onPointerMove={onPressMove}
               onPointerUp={onPressEnd}
@@ -547,6 +615,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
           </div>
           {!isDeletedMsg && <ReactionChips reactions={(msg as any).reactions} mine={mine} myId={myProfileId} onToggle={(emoji) => reactToMessage(String(msg.id), emoji)} />}
         </SwipeableMessageItem>
+        )}
       </React.Fragment>
     );
   };
@@ -555,10 +624,15 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     <div className="w-full h-full bg-slate-50 dark:bg-black text-slate-900 dark:text-slate-100 relative overflow-hidden select-none">
       <AmbientLiquidBackground />
 
+      {/* chat viewport wallpaper — the profile picker renders for real now */}
+      <ChatWallpaperLayer />
+
       {/* ---------- full-height scroller — content slides UNDER the glass bars ---------- */}
       <div
+        ref={scrollerRef}
+        onScroll={handleScroll}
         className="absolute inset-0 overflow-y-auto px-3 max-w-4xl w-full mx-auto"
-        style={{ paddingTop: headerPad, paddingBottom: bottomPad, overscrollBehavior: "contain" }}
+        style={{ paddingTop: headerPad, paddingBottom: bottomPad, overscrollBehavior: "contain", WebkitOverflowScrolling: "touch" }}
       >
         {chatMsgs.length === 0 ? (
           <div className="flex flex-col items-center justify-center opacity-60 gap-2" style={{ minHeight: `calc(100% - ${headerPad} - ${bottomPad})` }}>
@@ -577,6 +651,10 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             onContextMenu={onRowContextMenu}
             myId={myProfileId}
             onToggleReaction={reactToMessage}
+            onCallBack={() => {
+              setPeerMeta(headerDisplayName, recipientProfile?.avatar_url);
+              void placeCall(chatId, "voice", myProfileId);
+            }}
           />
         ) : (
           groupedMsgs.map(renderRow)
@@ -666,7 +744,62 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
             </span>
           </button>
         )}
+
+        {/* WhatsApp-style in-chat call banner — the call continues minimized;
+            live timer + mute + end, tap to restore the full-screen call */}
+        {minimizedCall && activeCallConv === chatId && callLivePhase !== "incoming_ringing" && (
+          <button
+            type="button"
+            onClick={() => callSetMinimized(false)}
+            className="liquid-glass-nav w-full mt-1.5 flex items-center gap-2.5 px-3 py-2 rounded-2xl text-left active:scale-[0.99] transition-transform"
+          >
+            <span className="relative flex items-center justify-center shrink-0">
+              <span className="absolute inset-0 rounded-full animate-ping" style={{ backgroundColor: "color-mix(in srgb, var(--primary-accent, #2563EB) 30%, transparent)" }} />
+              <Phone size={14} style={{ color: ACCENT }} />
+            </span>
+            <span className="min-w-0 flex-1">
+              <span className="block text-[9px] font-black uppercase tracking-wider" style={{ color: ACCENT }}>
+                {callLivePhase === "outgoing_ringing" ? "Ringing…" : callLivePhase === "connecting" ? "Connecting…" : "Ongoing call"}
+              </span>
+              <span className="block text-[11.5px] font-semibold text-slate-700 dark:text-slate-200 font-mono tabular-nums">
+                {headerDisplayName} {callElapsed ? `· ${callElapsed}` : ""}
+              </span>
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); toggleCallMute(); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); toggleCallMute(); } }}
+              className={`p-2 rounded-full shrink-0 ${callMuted ? "bg-white text-slate-900" : "bg-white/10 text-slate-700 dark:text-white"}`}
+              aria-label={callMuted ? "Unmute" : "Mute"}
+            >
+              {callMuted ? <MicIcon size={14} /> : <Mic size={14} />}
+            </span>
+            <span
+              role="button"
+              tabIndex={0}
+              onClick={(e) => { e.stopPropagation(); void callHangup(); }}
+              onKeyDown={(e) => { if (e.key === "Enter") { e.stopPropagation(); void callHangup(); } }}
+              className="p-2 rounded-full bg-rose-500 text-white shrink-0"
+              aria-label="End call"
+            >
+              <PhoneOff size={14} />
+            </span>
+          </button>
+        )}
       </div>
+
+      {/* jump to the newest message — WhatsApp bottom pill */}
+      {showJumpToBottom && (
+        <button
+          type="button"
+          onClick={jumpToBottom}
+          className="absolute z-20 right-3 bottom-[86px] w-10 h-10 rounded-full bg-white/95 dark:bg-slate-800/95 shadow-lg border border-slate-200/70 dark:border-white/10 flex items-center justify-center text-slate-600 dark:text-slate-200 active:scale-95 transition-transform"
+          aria-label="Scroll to latest messages"
+        >
+          <ChevronDown size={20} />
+        </button>
+      )}
 
       {/* ---------- floating composer — content refracts underneath ---------- */}
       <div className="absolute bottom-0 inset-x-0 z-20 max-w-4xl w-full mx-auto" style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}>
@@ -1058,7 +1191,7 @@ function VoiceBubble({
 
 function RetroMessageList({
   chatMsgs, isMineMsg, isGroup, onSwipeReply,
-  onPressStart, onPressMove, onPressEnd, onContextMenu, myId, onToggleReaction,
+  onPressStart, onPressMove, onPressEnd, onContextMenu, myId, onToggleReaction, onCallBack,
 }: {
   chatMsgs: any[];
   isMineMsg: (m: any) => boolean;
@@ -1070,6 +1203,7 @@ function RetroMessageList({
   onContextMenu: (e: React.MouseEvent, msg: any) => void;
   myId: string;
   onToggleReaction: (messageId: string, emoji: string) => Promise<void>;
+  onCallBack: () => void;
 }) {
   // grouping — same rhythm as Classic: runs of same-sender messages
   const rows: Array<{ msg: any; idx: number; mine: boolean; msgTs: string; showDay: boolean; firstOfGroup: boolean; lastOfGroup: boolean }> = chatMsgs.map((msg, idx) => {
@@ -1105,8 +1239,17 @@ function RetroMessageList({
               </div>
             )}
             <SwipeableMessageItem messageId={String(msg.id || idx)} onSwipeToReply={() => onSwipeReply(msg)}>
+              {msg.type === "system" ? (
+                <div style={{ touchAction: "pan-y" }}>
+                  <CallSystemPill
+                    label={bodyText}
+                    onCallBack={!isGroup ? () => onCallBack() : undefined}
+                  />
+                </div>
+              ) : (
               <div
                 className={`relative pl-4 pr-2 py-0.5 ${firstOfGroup ? "mt-1.5" : ""}`}
+                style={{ touchAction: "pan-y" }}
                 onPointerDown={(e) => onPressStart(e, msg)}
                 onPointerMove={onPressMove}
                 onPointerUp={onPressEnd}
@@ -1164,7 +1307,8 @@ function RetroMessageList({
                   </p>
                 )}
               </div>
-              {!isDeletedMsg && <ReactionChips reactions={(msg as any).reactions} mine={mine} myId={myId} onToggle={(emoji) => onToggleReaction(String(msg.id), emoji)} />}
+              )}
+              {!isDeletedMsg && msg.type !== "system" && <ReactionChips reactions={(msg as any).reactions} mine={mine} myId={myId} onToggle={(emoji) => onToggleReaction(String(msg.id), emoji)} />}
             </SwipeableMessageItem>
           </React.Fragment>
         );

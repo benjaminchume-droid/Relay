@@ -10,6 +10,7 @@ import { useCommunityStore } from '../store/communityStore';
 import { supabase } from '../lib/supabase/client';
 import { formatHandle } from '../lib/utils';
 import { getLetterAvatar } from '../lib/avatar';
+import { getCommunityInviteUrl } from '../lib/authRedirect';
 
 /** Downscale an image file in-browser and return a JPEG data URL (keeps RPC payloads small). */
 async function compressImage(file: File, maxDim: number, quality = 0.82): Promise<string> {
@@ -357,7 +358,7 @@ export const CreateCommunityScreen: React.FC<{
 
             {/* Generated Invite Preview */}
             <div className="p-3 bg-slate-100/80 rounded-2xl border border-slate-200/60 text-xs flex items-center justify-between dark:bg-slate-800">
-              <span className="text-[11px] text-slate-500 font-mono">relay.app/c/{handle || 'community'}</span>
+              <span className="text-[11px] text-slate-500 font-mono truncate max-w-[220px]">{getCommunityInviteUrl(handle || 'community')}</span>
               <span className="text-[10px] bg-white px-2 py-0.5 rounded-lg border border-slate-200 font-bold text-slate-700 dark:bg-slate-900">Auto-Generated</span>
             </div>
           </GlassCard>

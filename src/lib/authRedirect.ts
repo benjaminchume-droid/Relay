@@ -41,3 +41,8 @@ export function getChannelInviteUrl(tokenOrId: string): string {
 export function getGenericInviteUrl(token: string): string {
   return `${getPublicWebOrigin()}/invite/${encodeURIComponent(token)}`;
 }
+
+/** Shareable contact link — resolves on the real deployed origin (/u/:username). */
+export function getContactShareUrl(usernameOrId: string): string {
+  return `${getPublicWebOrigin()}/u/${encodeURIComponent(usernameOrId)}`;
+}

@@ -23,7 +23,12 @@ export type WallpaperStyle =
   | 'neon-mesh'
   | 'minimal-grid'
   | 'warm-clay'
-  | 'pure-slate';
+  | 'pure-slate'
+  | 'midnight-bloom'
+  | 'ocean-depths'
+  | 'sunset-dunes'
+  | 'snowfall'
+  | 'rainfall';
 
 export type UIDensity = 'compact' | 'comfortable' | 'spacious';
 

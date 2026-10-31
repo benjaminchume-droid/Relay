@@ -2,7 +2,9 @@
  * App update checker — progress + idempotent download.
  * Reads latest version from public JSON (Vercel) or GitHub releases.
  */
-const CURRENT = (import.meta as any).env?.VITE_APP_VERSION || "0.1.0";
+import { RELAY_WEB_VERSION } from "../lib/version";
+
+const CURRENT = (import.meta as any).env?.VITE_APP_VERSION || RELAY_WEB_VERSION;
 const CHECK_URL =
   (import.meta as any).env?.VITE_UPDATE_CHECK_URL ||
   "https://relay-sandy-seven.vercel.app/version.json";

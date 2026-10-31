@@ -20,6 +20,7 @@ import { UserProfile, MessageAttachment } from '../types';
 import { supabase } from '../lib/supabase/client';
 import { formatProfileRecord } from '../store/authStore';
 import { profileCache } from '../services/profileCache';
+import { getContactShareUrl } from '../lib/authRedirect';
 
 export interface ContactProfileScreenProps {
   targetUserId: string;
@@ -170,7 +171,8 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
 
   const handleShareContact = () => {
     if (navigator.clipboard) {
-      navigator.clipboard.writeText(`relay.app/u/${targetUser.username || resolvedUserId}`);
+      // REAL link — resolves to the /u/:username contact page on this origin.
+      navigator.clipboard.writeText(getContactShareUrl(targetUser.username || resolvedUserId));
       triggerToast('Contact link copied to clipboard');
     }
   };
