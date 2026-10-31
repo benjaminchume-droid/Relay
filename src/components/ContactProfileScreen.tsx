@@ -196,7 +196,10 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
   };
 
   return (
-    <div className="w-full min-h-screen bg-slate-50 text-slate-800 relative flex flex-col pb-28 select-none dark:bg-black">
+    // Self-scrolling: this screen mounts inside the chat context, where the
+    // app shell's page scroller is disabled (overflow-hidden) — without its
+    // own scroller the whole screen froze at the first viewport.
+    <div className="w-full h-full overflow-y-auto overscroll-contain bg-slate-50 text-slate-800 relative flex flex-col pb-28 select-none dark:bg-black">
       
       {/* Top Header Navigation */}
       <div className="sticky top-0 z-40 bg-white/80 backdrop-blur-2xl border-b border-slate-200/80 px-4 py-3 flex items-center justify-between shadow-xs dark:bg-slate-900/80">

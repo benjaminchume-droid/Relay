@@ -314,6 +314,10 @@ export async function sendConversationMessage(
       mime: envelopePayload.mime,
     });
     (msgFormatted as any)._mime = envelopePayload.mime;
+    // Decrypt our own media NOW — without this the just-sent voice note /
+    // photo points at the raw ciphertext blob and playback is broken until
+    // the next full refetch.
+    void import("./messageFetch").then(({ scheduleMediaDecrypt }) => scheduleMediaDecrypt(msgFormatted));
   }
 
   let targetName = "";

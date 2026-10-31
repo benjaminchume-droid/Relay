@@ -252,7 +252,11 @@ const ChatItem: React.FC<{ chat: Chat; onSelect: () => void }> = ({ chat, onSele
                 <Check size={14} className="text-slate-400 shrink-0" />
               )
             )}
-            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">{hasLastMessage ? (looksLikeEnvelope(chat.lastMessage!.text) ? CIPHER_PLACEHOLDER : chat.lastMessage!.text) : (isRequest ? 'Message request' : chat.type === 'direct' ? presenceLabel(peerPresence) : 'No messages yet')}</span>
+            <span className="truncate text-slate-600 dark:text-slate-300 font-normal">
+              {hasLastMessage
+                ? `${isOutgoing ? 'You: ' : ''}${looksLikeEnvelope(chat.lastMessage!.text) ? CIPHER_PLACEHOLDER : chat.lastMessage!.text}`
+                : (isRequest ? 'Message request' : chat.type === 'direct' ? presenceLabel(peerPresence) : 'No messages yet')}
+            </span>
           </div>
         </div>
       </div>

@@ -75,28 +75,54 @@ export function getDecryptedMediaUrl(messageId: string, url: string, keyB64u: st
 
   const task = new Promise<string>((resolve, reject) => {
     queue.push(() => {
-      fetch(url)
-        .then((r) => {
-          if (!r.ok) throw new Error(`media fetch ${r.status}`);
-          return r.arrayBuffer();
-        })
-        .then((buf) => decryptBytes(keyB64u, buf))
-        .then((pt) => {
-          const mime = (preferredMime && preferredMime !== "application/octet-stream" ? preferredMime : null)
-            || sniffMime(pt)
-            || "application/octet-stream";
-          const objUrl = URL.createObjectURL(new Blob([pt as unknown as BlobPart], { type: mime }));
-          blobUrls.set(cacheKey, objUrl);
-          resolve(objUrl);
-        })
-        .catch(reject)
-        .finally(settle);
+      // One queue slot = one settle, retries recurse inside the same chain.
+      const run = (u: string, allowResign: boolean): Promise<void> =>
+        fetch(u)
+          .then((r) => {
+            if (!r.ok) throw new Error(`media fetch ${r.status}`);
+            return r.arrayBuffer();
+          })
+          .then((buf) => decryptBytes(keyB64u, buf))
+          .then((pt) => {
+            const mime = (preferredMime && preferredMime !== "application/octet-stream" ? preferredMime : null)
+              || sniffMime(pt)
+              || "application/octet-stream";
+            const objUrl = URL.createObjectURL(new Blob([pt as unknown as BlobPart], { type: mime }));
+            blobUrls.set(cacheKey, objUrl);
+            resolve(objUrl);
+          })
+          .catch(async (e) => {
+            // Signed URLs expire after 7 days — old voice notes/attachments
+            // would be permanently unplayable. Re-sign the SAME storage path
+            // once and retry before giving up.
+            if (allowResign) {
+              const fresh = await reSignMediaUrl(u);
+              if (fresh) return run(fresh, false);
+            }
+            throw e;
+          });
+      run(url, true).catch(reject).finally(settle);
     });
     pump();
   });
   inflight.set(cacheKey, task);
   task.finally(() => inflight.delete(cacheKey)).catch(() => {});
   return task;
+}
+
+/** Extract the bucket path from a signed media URL and mint a fresh signature. */
+async function reSignMediaUrl(signedUrl: string): Promise<string | null> {
+  try {
+    const m = String(signedUrl).match(/\/object\/sign\/([^/]+)\/(.+?)\?/);
+    if (!m) return null;
+    const [, bucket, rawPath] = m;
+    const path = decodeURIComponent(rawPath);
+    const { supabase } = await import("../../lib/supabase/client");
+    const { data } = await supabase.storage.from(bucket).createSignedUrl(path, 60 * 60 * 24 * 7);
+    return data?.signedUrl || null;
+  } catch {
+    return null;
+  }
 }
 
 function sniffMime(b: Uint8Array): string | null {

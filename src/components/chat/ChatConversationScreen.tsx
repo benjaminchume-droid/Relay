@@ -308,10 +308,17 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
   const onRowContextMenu = useCallback((e: React.MouseEvent, msg: any) => {
     if (isPendingIncoming || (msg as any).isDeleted) return;
     e.preventDefault();
+    // our own long-press already opened the menu — Android fires a native
+    // contextmenu right after; re-opening here would remount + replay the
+    // pop animation (the "flash on and off" bug)
+    if (lpFiredRef.current) return;
     setMenu({ x: e.clientX, y: e.clientY, msg });
   }, [isPendingIncoming]);
 
-  const closeMenu = useCallback(() => setMenu(null), []);
+  const closeMenu = useCallback(() => {
+    lpFiredRef.current = false;
+    setMenu(null);
+  }, []);
 
   const menuAction = useCallback(async (action: string, arg?: any) => {
     const msg = menu?.msg;
@@ -1039,6 +1046,15 @@ function MessageContextMenu({ x, y, msg, isMine, isPinned, isText, onClose, onAc
   const openUp = y > (typeof window !== "undefined" ? window.innerHeight : 700) * 0.55;
   const top = openUp ? Math.max(8, y - EST_H) : Math.min(y + 6, (typeof window !== "undefined" ? window.innerHeight : 700) - EST_H - 8);
 
+  // The menu opens while the long-press finger is still down; the browser's
+  // native contextmenu (and any stray pointerdown from that same gesture)
+  // must NOT close it — that was the "menu flashes on and off" bug.
+  const openedAtRef = React.useRef(Date.now());
+  const guardClose = React.useCallback(() => {
+    if (Date.now() - openedAtRef.current < 350) return;
+    onClose();
+  }, [onClose]);
+
   const items: Array<{ key: string; label: string; icon: React.FC<{ size?: number }>; danger?: boolean; show: boolean }> = [
     { key: "reply", label: "Reply", icon: CornerUpLeft, show: true },
     { key: "copy", label: "Copy", icon: Copy, show: isText },
@@ -1050,8 +1066,8 @@ function MessageContextMenu({ x, y, msg, isMine, isPinned, isText, onClose, onAc
   return (
     <div
       className="fixed inset-0 z-50"
-      onPointerDown={onClose}
-      onContextMenu={(e) => { e.preventDefault(); onClose(); }}
+      onPointerDown={guardClose}
+      onContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); }}
     >
       <div
         className="absolute liquid-popover rounded-2xl overflow-hidden w-[216px] shadow-2xl"

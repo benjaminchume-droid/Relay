@@ -10,6 +10,7 @@ import {
   NotificationItem, UserSettings
 } from "../types";
 import { supabase } from "../lib/supabase/client";
+import { looksLikeEnvelope } from "./messageFetch";
 import { formatProfileRecord, createDefaultSettings } from "../lib/profileFormat";
 import { profileCache } from "./profileCache";
 import {
@@ -264,6 +265,49 @@ export const apiService = {
         }
       }
       chats.push(mapped);
+    }
+
+    // ---- last-message overlay: one batched fetch of every conversation's
+    // actual last message gives the list its REAL preview, timestamp and
+    // delivery tick. The static server preview alone renders "New message"
+    // placeholders on E2EE chats and hardcodes the tick to "sent".
+    const lastIds = chats
+      .map((c) => (c as any).lastMessage?.id)
+      .filter(Boolean) as string[];
+    if (lastIds.length) {
+      const { data: lastRows } = await supabase
+        .from("messages")
+        .select("id, sender_id, message_type, content, send_status, created_at")
+        .in("id", lastIds.slice(0, 60));
+      if (lastRows) {
+        const byId = new Map<string, any>(lastRows.map((r: any) => [r.id, r]));
+        for (const c of chats) {
+          const lmId = (c as any).lastMessage?.id;
+          const r = lmId ? byId.get(lmId) : null;
+          if (!r) continue;
+          const type = String(r.message_type || "text");
+          let text = String(r.content || "");
+          if (!text && !looksLikeEnvelope(text)) {
+            text =
+              type === "image" || type === "gif" ? "Photo"
+              : type === "voice_note" || type === "audio" ? "Voice note"
+              : type === "video" ? "Video"
+              : type === "sticker" ? "Sticker"
+              : type === "document" || type === "file" ? "Document"
+              : type === "location" ? "Location"
+              : type === "contact" ? "Contact"
+              : "";
+          }
+          c.lastMessage = {
+            id: r.id,
+            text,
+            timestamp: r.created_at || (c as any).lastMessage?.timestamp,
+            senderId: r.sender_id || "",
+            deliveryState: (r.send_status as any) || "sent",
+          };
+          if (r.created_at) (c as any).updatedAt = r.created_at;
+        }
+      }
     }
 
     chats.sort((a, b) => {

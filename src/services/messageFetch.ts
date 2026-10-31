@@ -365,12 +365,21 @@ export async function fetchConversationMessages(conversationId: string, myProfil
   });
 
   if (myProfileId) {
-    await decryptMessages(myProfileId, conversationId, formatted);
-    // fire-and-forget delivery receipt for everything not from me
-    void supabase.rpc("mark_messages_status", {
-      p_conversation_id: conversationId,
-      p_status: "delivered",
-    });
+    // fire-and-forget delivery receipt for everything not from me.
+    // MUST run even when decryption throws — a dead ratchet session used to
+    // skip the receipt entirely, freezing the sender on a single tick.
+    const hasInbound = formatted.some((m) => m.senderId && m.senderId !== myProfileId);
+    if (hasInbound) {
+      void supabase.rpc("mark_messages_status", {
+        p_conversation_id: conversationId,
+        p_status: "delivered",
+      });
+    }
+    try {
+      await decryptMessages(myProfileId, conversationId, formatted);
+    } catch (e) {
+      console.warn("[messageFetch] decrypt failed — messages stay placeholders", e);
+    }
   }
 
   // Final belt-and-braces: NOTHING leaves this function as ciphertext.

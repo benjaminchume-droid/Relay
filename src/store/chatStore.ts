@@ -852,13 +852,26 @@ export const useChatStore = create<ChatState>((set, get) => ({
     if (!status) return;
     set((state) => {
       const msgs = state.messages[row.conversation_id];
-      if (!msgs) return {};
-      const idx = msgs.findIndex((m) => m.id === row.id);
-      if (idx === -1 || !msgs[idx] || msgs[idx].deliveryState === status) return {};
-      const next = msgs.map((m) => (m.id === row.id ? { ...m, deliveryState: status as any } : m));
-      const messages = { ...state.messages, [row.conversation_id]: next };
-      chatCache.setMessages(messages);
-      return { messages };
+      const idx = msgs ? msgs.findIndex((m) => m.id === row.id) : -1;
+      const next = (msgs && idx !== -1 && msgs[idx] && msgs[idx].deliveryState !== status)
+        ? msgs.map((m) => (m.id === row.id ? { ...m, deliveryState: status as any } : m))
+        : msgs;
+      // keep the chat LIST row in sync too — the list renders the tick for the
+      // conversation's last message and used to stay stuck on a single tick
+      const chats = state.chats.map((c) => {
+        if (c.id !== row.conversation_id) return c;
+        const lm = c.lastMessage;
+        if (!lm || lm.id !== row.id) return c;
+        if (lm.deliveryState === status) return c;
+        return { ...c, lastMessage: { ...lm, deliveryState: status as any } };
+      });
+      if (next && next !== msgs) chatCache.setMessages({ ...state.messages, [row.conversation_id]: next });
+      if (chats.some((c, i) => c !== state.chats[i])) chatCache.setChats(chats);
+      if (next === msgs && chats.every((c, i) => c === state.chats[i])) return {};
+      return {
+        ...(next && next !== msgs ? { messages: { ...state.messages, [row.conversation_id]: next } } : {}),
+        ...(chats.some((c, i) => c !== state.chats[i]) ? { chats } : {}),
+      };
     });
   },
 

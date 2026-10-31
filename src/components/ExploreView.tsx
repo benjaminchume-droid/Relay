@@ -18,7 +18,7 @@ import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   Heart, MessageCircle, Send, X, Plus, UserPlus, Eye, Loader2,
   Text as TextIcon, Image as ImageIcon, Video as VideoIcon, Mic,
-  Play, Trash2, BarChart2, MoreHorizontal, Search,
+  Play, Trash2, BarChart2, MoreHorizontal, Search, UserX,
 } from "lucide-react";
 import { useChatStore } from "../store/chatStore";
 import { useAuthStore } from "../store/authStore";
@@ -69,7 +69,7 @@ export const ExploreView: React.FC<{
   const [tab, setTab] = useState<ExploreTab>("foryou");
   const [feed, setFeed] = useState<FeedPost[]>([]);
   const [stories, setStories] = useState<StoryItem[]>([]);
-  const [contacts, setContacts] = useState<Array<{ id: string; name: string; username?: string; avatarUrl?: string }>>([]);
+  const [contacts, setContacts] = useState<Array<{ id: string; name: string; username?: string; avatarUrl?: string; via?: "chat" | "group" | "contact" }>>([]);
   const [composer, setComposer] = useState("");
   const [postImage, setPostImage] = useState<{ file: File; url: string } | null>(null);
   const [showStoryComposer, setShowStoryComposer] = useState(false);
@@ -80,17 +80,37 @@ export const ExploreView: React.FC<{
   const [visibleCount, setVisibleCount] = useState(12);
 
   const { createDirectChat } = useChatStore();
-  const { currentUser } = useAuthStore();
+  const { currentUser, toggleBlockUser } = useAuthStore();
   const { enterImmersive, exitImmersive } = useUiStore();
+
+  // People tab: everyone you chat with, blocked users last
+  const blockedIds = currentUser?.blockedUsers || [];
+  const peopleList = [
+    ...contacts.filter((u) => !blockedIds.includes(u.id)),
+    ...contacts.filter((u) => blockedIds.includes(u.id)),
+  ];
 
   const loadExplore = useCallback(async () => {
     setLoadingFeed(true);
     setError(null);
     try {
-      const [f, s, c] = await Promise.all([fetchPublicFeed(30), fetchContactStories(), fetchMyContacts()]);
+      const [f, s, c, r] = await Promise.all([
+        fetchPublicFeed(30),
+        fetchContactStories(),
+        fetchMyContacts(),
+        // People tab = linked contacts ∪ everyone you chat with / share a
+        // group with — the linked-contacts table alone is usually empty.
+        fetchMessagingRoster(),
+      ]);
       setFeed(f);
       setStories(s);
-      setContacts(c);
+      const seen = new Set<string>();
+      setContacts([
+        ...c.filter((u) => (seen.has(u.id) ? false : (seen.add(u.id), true)))
+            .map((u) => ({ ...u, via: "contact" as const })),
+        ...r.filter((u) => (seen.has(u.id) ? false : (seen.add(u.id), true)))
+            .map((u) => ({ id: u.id, name: u.name, username: u.username, avatarUrl: u.avatarUrl, via: u.via })),
+      ]);
     } catch (e: any) {
       setError(e?.message || "Failed to load explore");
     } finally {
@@ -393,30 +413,47 @@ export const ExploreView: React.FC<{
           </div>
         )}
 
-        {/* ---------------- PEOPLE — your contacts ---------------- */}
+        {/* ---------------- PEOPLE — everyone you chat with + blocked ---------------- */}
         {tab === "people" && (
           <div className="space-y-2">
             {/* restricted search — only people you chat with / share groups with */}
             <PeopleSearchPanel onSelectChat={onSelectChat} placeholder="Find someone you chat with…" />
-            {contacts.map((u) => (
-              <div key={u.id} className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
-                <img src={u.avatarUrl || getLetterAvatar(u.name || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
-                <div className="min-w-0 flex-1">
-                  <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{u.name}</p>
-                  {u.username && <p className="text-[11px] text-slate-400 truncate">{formatHandle(u.username)}</p>}
+            {peopleList.map((u) => {
+              const blockedNow = (currentUser?.blockedUsers || []).includes(u.id);
+              return (
+                <div key={u.id} className="flex items-center gap-3 px-3.5 py-3 rounded-2xl bg-white/80 dark:bg-white/5 border border-slate-200 dark:border-white/10">
+                  <img src={u.avatarUrl || getLetterAvatar(u.name || "U")} alt="" className="w-10 h-10 rounded-full object-cover shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-[13px] font-bold text-slate-900 dark:text-white truncate">{u.name}</p>
+                    <p className="text-[11px] text-slate-400 truncate">
+                      {u.username ? `${formatHandle(u.username)} · ` : ""}
+                      {u.via === "contact" ? "Contact" : u.via === "group" ? "In a group with you" : "You're chatting"}
+                    </p>
+                  </div>
+                  {blockedNow ? (
+                    <button
+                      type="button"
+                      onClick={async () => { await toggleBlockUser(u.id); }}
+                      title="Tap to unblock"
+                      className="px-3 py-1.5 rounded-full text-[10.5px] font-bold flex items-center gap-1 border border-rose-300 text-rose-500 bg-rose-50 dark:bg-rose-500/10 dark:border-rose-500/30 active:scale-95 transition-transform cursor-pointer"
+                    >
+                      <UserX size={12} /> Blocked · tap to unblock
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => handleStartChat(u.id)}
+                      className="px-3.5 py-1.5 rounded-full text-[11px] font-bold text-white flex items-center gap-1"
+                      style={{ backgroundColor: ACCENT }}
+                    >
+                      <Send size={12} /> Message
+                    </button>
+                  )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => handleStartChat(u.id)}
-                  className="px-3.5 py-1.5 rounded-full text-[11px] font-bold text-white flex items-center gap-1"
-                  style={{ backgroundColor: ACCENT }}
-                >
-                  <Send size={12} /> Message
-                </button>
-              </div>
-            ))}
-            {contacts.length === 0 && (
-              <p className="text-xs text-slate-400 py-6 text-center">No contacts yet — find people above.</p>
+              );
+            })}
+            {peopleList.length === 0 && (
+              <p className="text-xs text-slate-400 py-6 text-center">No people yet — they appear here once you chat with someone.</p>
             )}
           </div>
         )}
