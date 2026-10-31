@@ -33,6 +33,18 @@ export async function encryptBytes(bytes: Uint8Array): Promise<{ ct: Uint8Array;
   return { ct: new Uint8Array(ct), iv, key };
 }
 
+/** Wire layout for encrypted attachments: iv (12) || ciphertext+tag.
+ *  The IV MUST be shipped with the blob — decryptBytes expects it there.
+ *  (Uploading the bare ct+tag used to make every attachment undecryptable:
+ *  voice notes and photos failed with OperationError on playback.) */
+export async function encryptToWire(bytes: Uint8Array): Promise<{ wire: Uint8Array; key: Uint8Array }> {
+  const { ct, iv, key } = await encryptBytes(bytes);
+  const wire = new Uint8Array(iv.length + ct.length);
+  wire.set(iv, 0);
+  wire.set(ct, iv.length);
+  return { wire, key };
+}
+
 export async function decryptBytes(
   keyB64u: string,
   data: ArrayBuffer

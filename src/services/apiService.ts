@@ -432,11 +432,13 @@ export const apiService = {
   uploadEncryptedFile: async (base64: string, fileName: string, mimeType: string) => {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) throw new Error("Not authenticated");
-    const { encryptBytes } = await import("./crypto/mediaDecryptor");
+    const { encryptToWire } = await import("./crypto/mediaDecryptor");
     const bytes = base64ToBytes(base64);
-    const { ct, key } = await encryptBytes(bytes);
+    // wire = iv || ct+tag — decryptBytes expects the IV at the head of the
+    // blob; without it every voice note / photo failed with OperationError.
+    const { wire, key } = await encryptToWire(bytes);
     const path = `${user.id}/${Date.now()}_${fileName}.enc`;
-    const { error } = await supabase.storage.from("chat-media").upload(path, ct as unknown as BlobPart, { contentType: "application/octet-stream", upsert: false });
+    const { error } = await supabase.storage.from("chat-media").upload(path, wire as unknown as BlobPart, { contentType: "application/octet-stream", upsert: false });
     if (error) throw error;
     const { data: signed } = await supabase.storage.from("chat-media").createSignedUrl(path, 60 * 60 * 24 * 7);
     return {
