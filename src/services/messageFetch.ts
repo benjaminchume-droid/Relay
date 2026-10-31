@@ -131,20 +131,60 @@ export function scheduleMediaDecrypt(msg: Message): void {
 // double delivery). Remember plaintext per message id so refetches stay readable.
 const PT_MEMO_KEY = 'relay_pt_memo_v1';
 
+// Memos are stored PER ACCOUNT ({ [profileId]: { [msgId]: text } }): logging
+// out used to wipe them wholesale, so the SAME user signing back in lost the
+// plaintext of their own history — bubbles became "can't be displayed" and
+// own voice notes/photos stopped playing. Per-account shape keeps re-login
+// readable while account SWITCHES still drop the previous account's data.
+// The flat pre-account shape is ignored for new writes and still readable.
+function memoActiveProfileId(): string {
+  try {
+    const raw = (window as any).__relayActiveProfileId;
+    if (raw) return String(raw);
+  } catch { /* noop */ }
+  return "";
+}
+
+function scopedLoad(key: string): Record<string, any> {
+  try {
+    const obj = JSON.parse(localStorage.getItem(key) || '{}');
+    const pid = memoActiveProfileId();
+    if (pid && obj && typeof obj === 'object' && pid in obj) return obj[pid] || {};
+    // legacy flat shape (single-account era) — only when no scope is known
+    if (obj && typeof obj === 'object' && !pid) return obj;
+    return {};
+  } catch { return {}; }
+}
+
+function scopedSave(key: string, data: Record<string, any>): void {
+  try {
+    const pid = memoActiveProfileId();
+    if (!pid) return; // no active scope — don't write ambiguous data
+    let root: Record<string, any> = {};
+    try { root = JSON.parse(localStorage.getItem(key) || '{}') || {}; } catch { root = {}; }
+    root[pid] = data;
+    localStorage.setItem(key, JSON.stringify(root));
+  } catch { /* storage optional */ }
+}
+
+function capEntries(all: Record<string, any>, max: number): void {
+  const ids = Object.keys(all);
+  if (ids.length > max) {
+    for (const k of ids.slice(0, ids.length - max)) delete all[k];
+  }
+}
+
 function ptMemoLoad(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(PT_MEMO_KEY) || '{}'); } catch { return {}; }
+  return scopedLoad(PT_MEMO_KEY);
 }
 
 function ptMemoRemember(messageId: string, text: string): void {
   try {
     if (!messageId || !text) return;
     const all = ptMemoLoad();
-    const ids = Object.keys(all);
-    if (ids.length > 500) {
-      for (const k of ids.slice(0, ids.length - 500)) delete all[k];
-    }
     all[messageId] = text;
-    localStorage.setItem(PT_MEMO_KEY, JSON.stringify(all));
+    capEntries(all, 500);
+    scopedSave(PT_MEMO_KEY, all);
   } catch { /* storage optional */ }
 }
 
@@ -160,36 +200,29 @@ const OWN_MEDIA_KEY = 'relay_own_media_v1';
 export function ownMediaRemember(messageId: string, media: { url: string; key: string; mime: string }): void {
   if (!messageId || !media?.url || !media?.key) return;
   try {
-    const all = JSON.parse(localStorage.getItem(OWN_MEDIA_KEY) || '{}');
+    const all = scopedLoad(OWN_MEDIA_KEY);
     all[messageId] = media;
-    const ids = Object.keys(all);
-    if (ids.length > 300) {
-      for (const k of ids.slice(0, ids.length - 300)) delete all[k];
-    }
-    localStorage.setItem(OWN_MEDIA_KEY, JSON.stringify(all));
+    capEntries(all, 300);
+    scopedSave(OWN_MEDIA_KEY, all);
   } catch { /* storage optional */ }
 }
 
 function ownMediaLookup(messageId: string): { url: string; key: string; mime: string } | null {
   try {
-    const all = JSON.parse(localStorage.getItem(OWN_MEDIA_KEY) || '{}');
-    return all[messageId] || null;
+    return scopedLoad(OWN_MEDIA_KEY)[messageId] || null;
   } catch { return null; }
 }
 
 function ownPlaintextLoad(): Record<string, string> {
-  try { return JSON.parse(localStorage.getItem(OWN_PT_KEY) || '{}'); } catch { return {}; }
+  return scopedLoad(OWN_PT_KEY);
 }
 
 export function ownPlaintextRemember(messageId: string, text: string): void {
   try {
     const all = ownPlaintextLoad();
-    const ids = Object.keys(all);
-    if (ids.length > 300) {
-      for (const k of ids.slice(0, ids.length - 300)) delete all[k];
-    }
     all[messageId] = text;
-    localStorage.setItem(OWN_PT_KEY, JSON.stringify(all));
+    capEntries(all, 300);
+    scopedSave(OWN_PT_KEY, all);
   } catch { /* storage optional */ }
 }
 
