@@ -1,44 +1,59 @@
 {
-  "updated": "2026-10-31T12:03:24Z",
+  "updated": "2026-10-31T18:19:45Z",
   "flutter": {
-    "tag": "v1.0.8",
+    "tag": "v1.0.9",
     "repo": "orubus-dev/relay-client",
     "assets": {
       "arm64-v8a": {
-        "name": "relay-1.0.8-android.apk",
-        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android.apk",
-        "size": 26509243
+        "name": "relay-1.0.9-android.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android.apk",
+        "size": 26794633
       },
       "armeabi-v7a": {
-        "name": "relay-1.0.8-android-armv7.apk",
-        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-armv7.apk",
-        "size": 23853357
+        "name": "relay-1.0.9-android-armv7.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-armv7.apk",
+        "size": 24138744
       },
       "x86_64": {
-        "name": "relay-1.0.8-android-x86_64.apk",
-        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-x86_64.apk",
-        "size": 28040066
+        "name": "relay-1.0.9-android-x86_64.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-x86_64.apk",
+        "size": 28325462
       },
       "universal": {
-        "name": "relay-1.0.8-android-universal.apk",
-        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-universal.apk",
-        "size": 64905326
+        "name": "relay-1.0.9-android-universal.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-universal.apk",
+        "size": 65190724
       },
-      "windows": {
-        "name": "relay-windows.zip",
-        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-windows.zip",
-        "size": 14910243
+      "aab": {
+        "name": "relay-1.0.9-android.aab",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android.aab",
+        "size": 64372078
       }
     }
   },
   "compiler": {
-    "tag": "v0.5.5.0",
-    "repo": "orubus-dev/Relay",
+    "tag": "v1.0.9",
+    "repo": "orubus-dev/relay-client",
     "assets": {
+      "arm64-v8a": {
+        "name": "relay-1.0.9-android.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android.apk",
+        "size": 26794633
+      },
+      "armeabi-v7a": {
+        "name": "relay-1.0.9-android-armv7.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-armv7.apk",
+        "size": 24138744
+      },
+      "x86_64": {
+        "name": "relay-1.0.9-android-x86_64.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-x86_64.apk",
+        "size": 28325462
+      },
       "universal": {
-        "name": "Relay-0.5.5.0-release.apk",
-        "url": "https://github.com/orubus-dev/Relay/releases/download/v0.5.5.0/Relay-0.5.5.0-release.apk",
-        "size": 4770521
+        "name": "relay-1.0.9-android-universal.apk",
+        "url": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.9/relay-1.0.9-android-universal.apk",
+        "size": 65190724
       }
     }
   }
