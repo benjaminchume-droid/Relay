@@ -387,49 +387,53 @@ export async function decryptFor(
   if (!identity || meId !== myProfileId) await ensureIdentity(myProfileId);
   const key = sKey(conversationId, peerProfileId);
   let state = sessionCache.get(key) || (await cryptoStore.getSession(myProfileId, conversationId, peerProfileId));
-  const hadExisting = !!state;
 
-  // Envelopes sealed to a PREVIOUS identity of this account (device rotated,
-  // logout wiped local keys) can never be opened here — and attempting to
-  // build a responder session from them used to persist garbage. Refuse early.
-  if (!state && env.pre && env.pre.spkId != null && env.pre.spkId !== identity!.spkId) {
-    throw new Error("prekey envelope targets a previous identity (spk mismatch)");
+  // Pristine copy of the persisted session. Failed decrypt attempts MUTATE the
+  // ratchet state in place (dh ratchet steps, skipped-key stores, chain
+  // advances) — a redecrypt sweep over old undecryptable messages used to
+  // corrupt the live session this way, after which EVERY new message failed
+  // with OperationError. Work on the live object, restore the snapshot on any
+  // failure; only successful decrypts commit.
+  const snapshot: RatchetState | null = state ? JSON.parse(JSON.stringify(state)) : null;
+
+  const envelopeTargetsCurrentIdentity =
+    !env.pre || env.pre.spkId == null || env.pre.spkId === identity!.spkId;
+
+  let candidate = state;
+  if (!candidate && env.pre) {
+    if (!envelopeTargetsCurrentIdentity) {
+      throw new Error("prekey envelope targets a previous identity (spk mismatch)");
+    }
+    candidate = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
   }
-  if (!state && env.pre) state = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
-  if (!state) throw new Error("No session for conversation");
+  if (!candidate) throw new Error("No session for conversation");
   try {
-    const pt = await ratchetDecrypt(state, conversationId, env);
-    // Verified good — only NOW touch the persisted session.
-    await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, state);
-    sessionCache.set(key, state);
+    const pt = await ratchetDecrypt(candidate, conversationId, env);
+    // Verified good — commit the evolved state.
+    await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, candidate);
+    sessionCache.set(key, candidate);
     return pt;
   } catch (err) {
+    // First restore the pristine persisted session — failed attempts leave no trace.
+    if (snapshot) {
+      await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, snapshot);
+      sessionCache.set(key, snapshot);
+    } else {
+      await cryptoStore.deleteSession(myProfileId, conversationId, peerProfileId).catch(() => {});
+      sessionCache.delete(key);
+    }
     const msg = String((err as any)?.message || '');
     // Replays of already-decrypted messages must NOT touch the session.
     if (msg.includes('replay/underflow')) throw err;
-    // A prekey (first-contact) message failing against any session state means
-    // the peer re-initiated (concurrent X3DH / our identity rotated on their
-    // side). Rebuild a candidate from the prekey header and try once — persist
-    // ONLY if it actually decrypts; otherwise keep/restore what was there.
-    if (env.pre) {
-      const backup = state;
-      try {
-        sessionCache.delete(key);
-        const fresh = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
-        const pt2 = await ratchetDecrypt(fresh, conversationId, env);
-        await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, fresh);
-        sessionCache.set(key, fresh);
-        return pt2;
-      } catch (err2) {
-        if (hadExisting) {
-          await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, backup);
-          sessionCache.set(key, backup);
-        } else {
-          await cryptoStore.deleteSession(myProfileId, conversationId, peerProfileId).catch(() => {});
-          sessionCache.delete(key);
-        }
-        throw err2;
-      }
+    // A prekey (first-contact) message that still fails means the peer
+    // re-initiated against our CURRENT identity (concurrent X3DH). Rebuild a
+    // candidate from the prekey header and try once.
+    if (env.pre && envelopeTargetsCurrentIdentity) {
+      const fresh = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
+      const pt2 = await ratchetDecrypt(fresh, conversationId, env);
+      await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, fresh);
+      sessionCache.set(key, fresh);
+      return pt2;
     }
     throw err;
   }
