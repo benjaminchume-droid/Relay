@@ -53,23 +53,23 @@ export function InvitePage({ kind, token }: Props) {
 
   if (!preview) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-sky-200 via-sky-100 to-blue-200">
+      <div className="min-h-screen flex items-center justify-center bg-gradient-to-b from-sky-200 via-sky-100 to-[color-mix(in_srgb,var(--primary-accent)_35%,transparent)]">
         <p className="text-sm text-slate-600">Loading invite…</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-sky-200 via-sky-100 to-blue-200">
+    <div className="min-h-screen flex items-center justify-center px-4 bg-gradient-to-b from-sky-200 via-sky-100 to-[color-mix(in_srgb,var(--primary-accent)_35%,transparent)]">
       <div className="w-full max-w-md rounded-3xl border border-white/70 bg-white/55 backdrop-blur-xl shadow-xl p-8 text-center">
         {preview.avatarUrl ? (
           <img src={preview.avatarUrl} alt="" className="mx-auto h-16 w-16 rounded-2xl object-cover" />
         ) : (
-          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-blue-600 text-2xl font-bold text-white">
+          <div className="mx-auto flex h-16 w-16 items-center justify-center rounded-2xl bg-[var(--primary-accent)] text-2xl font-bold text-white">
             {(preview.name || '?')[0]?.toUpperCase()}
           </div>
         )}
-        <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-blue-700">{preview.kind} invite</p>
+        <p className="mt-3 text-[10px] font-bold uppercase tracking-widest text-[var(--relay-accent-hover)]">{preview.kind} invite</p>
         <h1 className="mt-2 text-2xl font-bold text-slate-900">{preview.name}</h1>
         {preview.description && <p className="mt-2 text-sm text-slate-600">{preview.description}</p>}
         {typeof preview.memberCount === 'number' && (
@@ -85,7 +85,7 @@ export function InvitePage({ kind, token }: Props) {
               type="button"
               disabled={busy}
               onClick={() => void onJoin()}
-              className="w-full rounded-2xl bg-gradient-to-b from-sky-400 to-blue-500 py-3.5 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
+              className="w-full rounded-2xl bg-gradient-to-b from-sky-400 to-[var(--primary-accent)] py-3.5 text-sm font-semibold text-white shadow-lg disabled:opacity-50"
             >
               {busy ? 'Working…' : session ? 'Join' : 'Sign in to join'}
             </button>

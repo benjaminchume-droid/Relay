@@ -106,13 +106,13 @@ export const QuotedReplyBubble: React.FC<QuotedReplyBubbleProps> = ({
       className={`p-1 px-2 rounded-lg mb-1 cursor-pointer transition-all hover:brightness-105 active:scale-[0.99] flex items-center gap-1.5 border-l-2 ${
         isMine
           ? 'bg-white/15 border-white/90 text-white shadow-xs'
-          : 'bg-slate-100/90 dark:bg-slate-800/80 border-blue-600 text-slate-800 dark:text-slate-100 shadow-xs'
+          : 'bg-slate-100/90 dark:bg-slate-800/80 border-[var(--primary-accent)] text-slate-800 dark:text-slate-100 shadow-xs'
       }`}
       title="Click to view original message"
     >
-      <CornerUpLeft size={11} className={`shrink-0 ${isMine ? 'text-white/80' : 'text-blue-600'}`} />
+      <CornerUpLeft size={11} className={`shrink-0 ${isMine ? 'text-white/80' : 'text-[var(--primary-accent)]'}`} />
       <div className="min-w-0 flex-1">
-        <div className={`text-[10px] font-bold truncate ${isMine ? 'text-cyan-200' : 'text-blue-600 dark:text-blue-400'}`}>
+        <div className={`text-[10px] font-bold truncate ${isMine ? 'text-cyan-200' : 'text-[var(--primary-accent)] dark:text-[var(--primary-accent)]'}`}>
           {quotedMessage.senderName}
         </div>
         {renderContentPreview()}

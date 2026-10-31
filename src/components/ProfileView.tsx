@@ -297,7 +297,7 @@ export const ProfileView: React.FC = () => {
             <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Appearance Engine</span>
             <button 
               onClick={resetToDefaults}
-              className="text-xs text-blue-600 hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+              className="text-xs text-[var(--primary-accent)] hover:underline font-semibold flex items-center gap-1 cursor-pointer"
             >
               <RefreshCw size={12} />
               <span>Reset to Defaults</span>
@@ -377,7 +377,7 @@ export const ProfileView: React.FC = () => {
                     onClick={() => updateCustomization({ themeMode: tm.id })}
                     className={`p-3 rounded-2xl border text-xs font-semibold transition-all relative flex flex-col items-center justify-center gap-0.5 cursor-pointer ${
                       isSel
-                        ? 'bg-blue-600 text-white border-blue-600 shadow-md' 
+                        ? 'bg-[var(--primary-accent)] text-white border-[var(--primary-accent)] shadow-md' 
                         : 'bg-white/60 dark:bg-white/5 text-slate-700 dark:text-slate-200 border-slate-200 dark:border-white/10 hover:bg-white dark:hover:bg-white/10'
                     }`}
                   >
@@ -593,7 +593,7 @@ export const ProfileView: React.FC = () => {
                   type="checkbox" 
                   checked={!!currentUser.settings?.privacy?.readReceipts}
                   onChange={(e) => updatePrivacy({ readReceipts: e.target.checked })}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                  className="w-4 h-4 rounded text-[var(--primary-accent)] focus:ring-0 cursor-pointer"
                 />
               </label>
               <label className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-white cursor-pointer">
@@ -605,7 +605,7 @@ export const ProfileView: React.FC = () => {
                   type="checkbox" 
                   checked={!!currentUser.settings?.privacy?.lastSeen}
                   onChange={(e) => updatePrivacy({ lastSeen: e.target.checked })}
-                  className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                  className="w-4 h-4 rounded text-[var(--primary-accent)] focus:ring-0 cursor-pointer"
                 />
               </label>
             </div>
@@ -702,7 +702,7 @@ export const ProfileView: React.FC = () => {
                 type="checkbox"
                 checked={notifPrefs[key]}
                 onChange={(e) => patchNotifPrefs({ [key]: e.target.checked })}
-                className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+                className="w-4 h-4 rounded text-[var(--primary-accent)] focus:ring-0 cursor-pointer"
               />
             </label>
           ))}
@@ -759,7 +759,7 @@ export const ProfileView: React.FC = () => {
 
           <button
             onClick={() => setSubTab('LEGAL')}
-            className="w-full text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
+            className="w-full text-[11px] font-semibold text-[var(--primary-accent)] hover:underline cursor-pointer"
           >
             Privacy Policy · Community Guidelines · Terms of Service →
           </button>

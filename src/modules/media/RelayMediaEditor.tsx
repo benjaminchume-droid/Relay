@@ -308,7 +308,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
 
           <button
             onClick={handleExport}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-blue-600 hover:bg-blue-500 text-white font-bold text-xs shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95"
+            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-[var(--primary-accent)] hover:bg-[var(--primary-accent)] text-white font-bold text-xs shadow-lg cursor-pointer transition-transform hover:scale-105 active:scale-95"
           >
             <Send size={15} />
             <span>Send</span>
@@ -390,7 +390,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
                   onClick={() => setSelectedFilter(f)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold capitalize cursor-pointer shrink-0 border transition-all ${
                     selectedFilter === f
-                      ? 'bg-blue-600 border-blue-400 text-white shadow-md'
+                      ? 'bg-[var(--primary-accent)] border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)] text-white shadow-md'
                       : 'bg-white/10 border-white/20 text-slate-300 hover:bg-white/20'
                   }`}
                 >
@@ -444,7 +444,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
               />
               <button
                 onClick={handleAddText}
-                className="px-4 py-1.5 rounded-full bg-blue-600 hover:bg-blue-500 font-bold text-xs text-white cursor-pointer"
+                className="px-4 py-1.5 rounded-full bg-[var(--primary-accent)] hover:bg-[var(--primary-accent)] font-bold text-xs text-white cursor-pointer"
               >
                 Add
               </button>
@@ -498,7 +498,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'filter' ? null : 'filter')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'filter' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'filter' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
           >
             <Sparkles size={18} />
@@ -508,7 +508,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'adjust' ? null : 'adjust')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'adjust' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'adjust' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
           >
             <Sliders size={18} />
@@ -518,7 +518,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'draw' ? null : 'draw')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'draw' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'draw' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
           >
             <Edit3 size={18} />
@@ -528,7 +528,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'blur' ? null : 'blur')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'blur' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'blur' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
             title="Redact sensitive content"
           >
@@ -539,7 +539,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'text' ? null : 'text')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'text' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'text' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
           >
             <Type size={18} />
@@ -549,7 +549,7 @@ export const RelayMediaEditor: React.FC<RelayMediaEditorProps> = ({
           <button
             onClick={() => setActiveTab(activeTab === 'stickers' ? null : 'stickers')}
             className={`p-2 rounded-xl hover:bg-white/10 transition-all cursor-pointer flex flex-col items-center gap-1 text-[10px] ${
-              activeTab === 'stickers' ? 'text-blue-400 font-bold' : 'text-slate-300'
+              activeTab === 'stickers' ? 'text-[var(--primary-accent)] font-bold' : 'text-slate-300'
             }`}
           >
             <Smile size={18} />

@@ -17,7 +17,7 @@ import { OnboardingWizard } from './OnboardingWizard';
 
 export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: boolean }> = ({ onSuccess }) => {
   const { 
-    status, currentStep, setStep, signupDraft, unverifiedEmail, logout,
+    status, currentStep, setStep, signupDraft, unverifiedEmail, logout, notice,
     signUpWithEmail, verifyOtp, resendOtp, signInWithEmail, signInWithGoogle,
     resendVerificationEmail, sendForgotPasswordLink, updateNewPassword,
     saveDisplayNameStep, saveUsernameStep, completeAppearanceStep,
@@ -270,9 +270,9 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
             {/* Header Branding */}
             <div className="flex flex-col items-center justify-center space-y-2">
               <RelayLogoEmblem size={52} />
-              <div className="flex items-center gap-1.5 bg-blue-500/10 backdrop-blur-md px-3 py-1 rounded-full border border-blue-400/20">
-                <ShieldCheck size={13} className="text-blue-600" />
-                <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Relay Identity System</span>
+              <div className="flex items-center gap-1.5 bg-[var(--primary-accent)]/10 backdrop-blur-md px-3 py-1 rounded-full border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20">
+                <ShieldCheck size={13} className="text-[var(--primary-accent)]" />
+                <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--relay-accent-hover)]">Relay Identity System</span>
               </div>
             </div>
 
@@ -385,7 +385,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                     <button 
                       type="button"
                       onClick={() => setStep('SIGN_IN')}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-bold"
+                      className="text-xs text-[var(--primary-accent)] hover:text-[var(--relay-accent-hover)] font-bold"
                     >
                       Already have an account? Sign in
                     </button>
@@ -398,7 +398,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
             {currentStep === 'VERIFY_EMAIL' && (
               <div className="space-y-5 text-center py-2">
                 <div className="flex justify-center">
-                  <div className="w-16 h-16 rounded-3xl bg-blue-500/10 text-blue-600 flex items-center justify-center border border-blue-400/20 shadow-inner">
+                  <div className="w-16 h-16 rounded-3xl bg-[var(--primary-accent)]/10 text-[var(--primary-accent)] flex items-center justify-center border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 shadow-inner">
                     <KeyRound size={32} />
                   </div>
                 </div>
@@ -408,6 +408,11 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                   <p className="text-xs text-slate-600 leading-relaxed max-w-xs mx-auto">
                     We've sent a 6-digit code to <strong className="text-slate-800 font-semibold">{unverifiedEmail || email || signupDraft.email}</strong>.
                   </p>
+                  {notice && (
+                    <p className="text-[11.5px] font-semibold text-[var(--primary-accent)] bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] border border-[color-mix(in_srgb,var(--primary-accent)_30%,transparent)] rounded-xl px-3 py-2 leading-relaxed max-w-xs mx-auto">
+                      {notice}
+                    </p>
+                  )}
                   <p className="text-[11px] text-slate-500 leading-relaxed">
                     Enter the code below to confirm your email and build your identity.
                   </p>
@@ -426,7 +431,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                       onChange={(e) => handleOtpDigitChange(index, e.target.value)}
                       onKeyDown={(e) => handleOtpKeyDown(index, e)}
                       onPaste={index === 0 ? handleOtpPaste : undefined}
-                      className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 border border-slate-300/80 rounded-2xl shadow-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+                      className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 border border-slate-300/80 rounded-2xl shadow-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--relay-accent-ring)]/50 focus:border-[var(--primary-accent)] transition-all"
                       autoFocus={index === 0}
                     />
                   ))}
@@ -555,7 +560,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                             key={s}
                             type="button"
                             onClick={() => setUsername(s)}
-                            className="py-1 px-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 text-[11px] font-mono rounded-xl border border-blue-400/20 transition-all cursor-pointer"
+                            className="py-1 px-2.5 bg-[var(--primary-accent)]/10 hover:bg-[var(--primary-accent)]/20 text-[var(--relay-accent-hover)] text-[11px] font-mono rounded-xl border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 transition-all cursor-pointer"
                           >
                             @{s}
                           </button>
@@ -620,7 +625,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <div className="w-8 h-8 rounded-full bg-blue-500 text-white font-bold flex items-center justify-center text-xs">
+                      <div className="w-8 h-8 rounded-full bg-[var(--primary-accent)] text-white font-bold flex items-center justify-center text-xs">
                         {displayName ? displayName[0] : 'U'}
                       </div>
                       <div>
@@ -628,7 +633,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                         <span className="text-[10px] text-slate-400">Live Appearance Preview</span>
                       </div>
                     </div>
-                    <span className="px-2 py-0.5 bg-blue-500/20 text-blue-600 rounded-full text-[9px] font-bold">
+                    <span className="px-2 py-0.5 bg-[var(--primary-accent)]/20 text-[var(--primary-accent)] rounded-full text-[9px] font-bold">
                       {accentColor}
                     </span>
                   </div>
@@ -654,7 +659,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                           type="button"
                           onClick={() => setThemeMode(tm)}
                           className={`py-1.5 capitalize rounded-xl font-bold border transition-all cursor-pointer ${
-                            themeMode === tm ? 'bg-blue-600 text-white border-blue-600' : 'bg-white/80 text-slate-700 border-white'
+                            themeMode === tm ? 'bg-[var(--primary-accent)] text-white border-[var(--primary-accent)]' : 'bg-white/80 text-slate-700 border-white'
                           }`}
                         >
                           {tm}
@@ -765,7 +770,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                     <button 
                       type="button"
                       onClick={() => setStep('FORGOT_PASSWORD')}
-                      className="text-[11px] text-blue-600 hover:text-blue-800 font-medium"
+                      className="text-[11px] text-[var(--primary-accent)] hover:text-[var(--relay-accent-hover)] font-medium"
                     >
                       Forgot password?
                     </button>
@@ -808,7 +813,7 @@ export const AuthFlow: React.FC<{ onSuccess?: () => void; forceOnboarding?: bool
                     <button 
                       type="button"
                       onClick={() => setStep('CREATE_ACCOUNT')}
-                      className="text-xs text-blue-600 hover:text-blue-800 font-bold"
+                      className="text-xs text-[var(--primary-accent)] hover:text-[var(--relay-accent-hover)] font-bold"
                     >
                       Don't have an account? Create account
                     </button>

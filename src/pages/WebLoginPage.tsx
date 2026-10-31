@@ -219,6 +219,27 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         });
         if (err) throw err;
         try { localStorage.setItem('relay_pending_auth_email', email.trim()); } catch { /* ignore */ }
+
+        // Anti-enumeration: an EXISTING account (Google-created or previously
+        // signed up) comes back as an obfuscated user with an empty identities
+        // array — no session, and Supabase sends NO email. Without this branch
+        // the OTP screen dead-ends ("code never arrives"). Send a real 6-digit
+        // sign-in code instead — the same paste-a-code flow completes it.
+        const obfuscatedExisting = !!data.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0;
+        if (obfuscatedExisting) {
+          const { error: otpErr } = await supabase.auth.signInWithOtp({
+            email: email.trim(),
+            options: { shouldCreateUser: false, emailRedirectTo: getAuthRedirectUrl() },
+          });
+          if (otpErr) throw new Error('An account with this email already exists. Try Continue with Google, or sign in with a code.');
+          setOtpDigits(['', '', '', '', '', '']);
+          setOtpType('email');
+          setMode('otp-verify');
+          startResendCooldown();
+          setInfo(`You already have a Relay account — we sent a 6-digit sign-in code to ${email.trim()}. Enter it below.`);
+          return;
+        }
+
         if (data.session) {
           await finish(data.session.access_token, data.session.refresh_token);
         } else {
@@ -414,9 +435,9 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         {/* Branding */}
         <div className="flex flex-col items-center justify-center space-y-2">
           <RelayLogoEmblem size={52} />
-          <div className="flex items-center gap-1.5 bg-blue-500/10 backdrop-blur-md px-3 py-1 rounded-full border border-blue-400/20">
-            <ShieldCheck size={13} className="text-blue-600 dark:text-blue-400" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700 dark:text-blue-300">Relay Identity System</span>
+          <div className="flex items-center gap-1.5 bg-[var(--primary-accent)]/10 backdrop-blur-md px-3 py-1 rounded-full border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20">
+            <ShieldCheck size={13} className="text-[var(--primary-accent)] dark:text-[var(--primary-accent)]" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--relay-accent-hover)] dark:text-[var(--primary-accent)]">Relay Identity System</span>
           </div>
         </div>
 
@@ -426,7 +447,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         </div>
 
         {native && (
-          <p className="text-[11px] text-blue-700/80 dark:text-blue-300/80">
+          <p className="text-[11px] text-[var(--relay-accent-hover)]/80 dark:text-[var(--primary-accent)]/80">
             Opened from the Relay app · session returns to the app after sign-in
           </p>
         )}
@@ -448,7 +469,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         {isVerify ? (
           <div className="space-y-5 pt-1">
             <div className="flex justify-center">
-              <div className="w-16 h-16 rounded-3xl bg-blue-500/10 text-blue-600 dark:text-blue-400 flex items-center justify-center border border-blue-400/20 shadow-inner">
+              <div className="w-16 h-16 rounded-3xl bg-[var(--primary-accent)]/10 text-[var(--primary-accent)] dark:text-[var(--primary-accent)] flex items-center justify-center border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 shadow-inner">
                 <KeyRound size={30} />
               </div>
             </div>
@@ -467,7 +488,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
                   onChange={(e) => handleDigit(index, e.target.value)}
                   onKeyDown={(e) => handleBackspace(index, e)}
                   onPaste={index === 0 ? handlePaste : undefined}
-                  className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-600/80 rounded-2xl shadow-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all disabled:opacity-60"
+                  className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 dark:bg-slate-800/80 border border-slate-300/80 dark:border-slate-600/80 rounded-2xl shadow-sm text-slate-800 dark:text-slate-100 focus:outline-none focus:ring-2 focus:ring-[var(--relay-accent-ring)]/50 focus:border-[var(--primary-accent)] transition-all disabled:opacity-60"
                   autoFocus={index === 0}
                 />
               ))}
@@ -595,7 +616,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
                     <button
                       type="button"
                       onClick={() => { setMode('forgot'); setError(null); setInfo(null); }}
-                      className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline"
+                      className="text-[11px] font-medium text-[var(--primary-accent)] dark:text-[var(--primary-accent)] hover:underline"
                     >
                       Forgot password?
                     </button>
@@ -660,7 +681,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
                   type="button"
                   disabled={anyBusy}
                   onClick={() => { setMode('otp-send'); setError(null); setInfo(null); }}
-                  className="text-[11px] font-medium text-blue-600 dark:text-blue-400 hover:underline cursor-pointer"
+                  className="text-[11px] font-medium text-[var(--primary-accent)] dark:text-[var(--primary-accent)] hover:underline cursor-pointer"
                 >
                   Sign in with an email code instead
                 </button>
@@ -668,11 +689,11 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
               <p className="text-xs text-slate-500 dark:text-slate-400">
                 {mode === 'signup' ? (
                   <>Already have an account?{' '}
-                    <button type="button" disabled={anyBusy} onClick={() => { setMode('signin'); setError(null); setInfo(null); }} className="font-bold text-blue-600 dark:text-blue-400 hover:underline">Sign in</button>
+                    <button type="button" disabled={anyBusy} onClick={() => { setMode('signin'); setError(null); setInfo(null); }} className="font-bold text-[var(--primary-accent)] dark:text-[var(--primary-accent)] hover:underline">Sign in</button>
                   </>
                 ) : (
                   <>Don&apos;t have an account?{' '}
-                    <button type="button" disabled={anyBusy} onClick={() => { setMode('signup'); setError(null); setInfo(null); }} className="font-bold text-blue-600 dark:text-blue-400 hover:underline">Create account</button>
+                    <button type="button" disabled={anyBusy} onClick={() => { setMode('signup'); setError(null); setInfo(null); }} className="font-bold text-[var(--primary-accent)] dark:text-[var(--primary-accent)] hover:underline">Create account</button>
                   </>
                 )}
               </p>

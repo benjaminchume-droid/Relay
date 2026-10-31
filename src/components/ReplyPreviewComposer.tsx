@@ -36,7 +36,7 @@ export const ReplyPreviewComposer: React.FC<ReplyPreviewComposerProps> = ({
               className="w-9 h-9 object-cover rounded-lg border border-white/40 shrink-0"
             />
           ) : (
-            <ImageIcon size={15} className="text-blue-500 shrink-0" />
+            <ImageIcon size={15} className="text-[var(--primary-accent)] shrink-0" />
           )}
           <span className="truncate max-w-[200px]">{message.content || 'Photo'}</span>
         </div>
@@ -103,18 +103,18 @@ export const ReplyPreviewComposer: React.FC<ReplyPreviewComposerProps> = ({
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, y: 10, scale: 0.98 }}
       transition={{ duration: 0.2, ease: 'easeOut' }}
-      className="p-1.5 px-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-blue-500/30 dark:border-blue-400/20 shadow-md flex items-center justify-between gap-2 mb-1.5"
+      className="p-1.5 px-2.5 rounded-xl bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-[var(--primary-accent)]/30 dark:border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 shadow-md flex items-center justify-between gap-2 mb-1.5"
     >
       <div 
         onClick={() => onJumpToMessage?.(message.id)}
         className="flex items-center gap-2 min-w-0 flex-1 cursor-pointer group"
       >
-        <div className="w-1 h-6 rounded-full bg-blue-600 shrink-0" />
-        <CornerUpLeft size={14} className="text-blue-600 shrink-0 group-hover:scale-110 transition-transform" />
+        <div className="w-1 h-6 rounded-full bg-[var(--primary-accent)] shrink-0" />
+        <CornerUpLeft size={14} className="text-[var(--primary-accent)] shrink-0 group-hover:scale-110 transition-transform" />
         
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-1.5">
-            <span className="text-[10.5px] font-bold text-blue-600 dark:text-blue-400">
+            <span className="text-[10.5px] font-bold text-[var(--primary-accent)] dark:text-[var(--primary-accent)]">
               Replying to {message.senderName}
             </span>
           </div>

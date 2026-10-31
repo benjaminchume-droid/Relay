@@ -65,7 +65,7 @@ export const StickerCreatorModal: React.FC<StickerCreatorModalProps> = ({
         {/* Header */}
         <div className="flex items-center justify-between border-b border-white/10 pb-3">
           <span className="font-extrabold text-sm flex items-center gap-2">
-            <Wand2 size={16} className="text-blue-400" />
+            <Wand2 size={16} className="text-[var(--primary-accent)]" />
             Custom Sticker Creator Studio
           </span>
           <button onClick={onClose} className="text-slate-400 hover:text-white cursor-pointer">
@@ -79,7 +79,7 @@ export const StickerCreatorModal: React.FC<StickerCreatorModalProps> = ({
         <div
           onClick={() => fileInputRef.current?.click()}
           className={`relative h-48 rounded-2xl border-2 border-dashed flex flex-col items-center justify-center gap-2 cursor-pointer transition-all overflow-hidden ${
-            imageSrc ? 'border-blue-500 bg-slate-800' : 'border-white/20 hover:bg-white/5'
+            imageSrc ? 'border-[var(--primary-accent)] bg-slate-800' : 'border-white/20 hover:bg-white/5'
           }`}
         >
           {imageSrc ? (
@@ -99,7 +99,7 @@ export const StickerCreatorModal: React.FC<StickerCreatorModalProps> = ({
             </div>
           ) : (
             <>
-              <Upload size={32} className="text-blue-400" />
+              <Upload size={32} className="text-[var(--primary-accent)]" />
               <span className="text-xs font-bold text-slate-300">Upload Photo or Graphic</span>
               <span className="text-[10px] text-slate-400">Auto background removal simulation</span>
             </>
@@ -136,7 +136,7 @@ export const StickerCreatorModal: React.FC<StickerCreatorModalProps> = ({
               type="button"
               onClick={() => setBorderGlow(!borderGlow)}
               className={`w-10 h-5 rounded-full transition-colors relative cursor-pointer ${
-                borderGlow ? 'bg-blue-600' : 'bg-slate-700'
+                borderGlow ? 'bg-[var(--primary-accent)]' : 'bg-slate-700'
               }`}
             >
               <div
@@ -152,7 +152,7 @@ export const StickerCreatorModal: React.FC<StickerCreatorModalProps> = ({
         <button
           disabled={!imageSrc || isProcessing}
           onClick={handleSaveSticker}
-          className="w-full py-3 bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-extrabold rounded-2xl shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
+          className="w-full py-3 bg-[var(--primary-accent)] hover:bg-[var(--primary-accent)] disabled:opacity-50 text-white font-extrabold rounded-2xl shadow-xl transition-all cursor-pointer flex items-center justify-center gap-2"
         >
           {isProcessing ? (
             <span>Processing Sticker Outline...</span>

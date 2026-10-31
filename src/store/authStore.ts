@@ -81,6 +81,8 @@ interface AuthState {
   isLoadingProfile: boolean;
   unverifiedEmail: string | null;
   isLoading: boolean;
+  /** Informational (non-error) banner — e.g. "account existed, we sent a sign-in code instead" */
+  notice: string | null;
   error: string | null;
   signupDraft: SignupDraft;
   resendCooldown: number;
@@ -202,13 +204,14 @@ export const useAuthStore = create<AuthState>((set, get) => {
     unverifiedEmail: null,
     isLoading: true,
     error: null,
+    notice: null,
     signupDraft: DEFAULT_SIGNUP_DRAFT,
     resendCooldown: 0,
     isPasswordResetFlow: false,
 
-    setStep: (step) => set({ currentStep: step, error: null }),
+    setStep: (step) => set({ currentStep: step, error: null, notice: null }),
     updateSignupDraft: (updates) => set((s) => ({ signupDraft: { ...s.signupDraft, ...updates } })),
-    clearError: () => set({ error: null }),
+    clearError: () => set({ error: null, notice: null }),
 
     initializeSession: async () => {
       set({ isLoading: true, isLoadingProfile: true });
@@ -283,6 +286,38 @@ export const useAuthStore = create<AuthState>((set, get) => {
           options: { emailRedirectTo: getAuthRedirectUrl() },
         });
         if (error) throw error;
+
+        // Anti-enumeration: when the email ALREADY has an account (e.g. created
+        // via Google or a previous signup), Supabase returns an obfuscated user
+        // with an EMPTY identities array — no session, and it sends NO email.
+        // This was the "create account → no OTP ever arrives → no password is
+        // stored" trap. Handle it honestly: send a real 6-digit sign-in code
+        // (magic-link template) so the same paste-a-code screen completes
+        // sign-in; the user can then set a password in Settings → Privacy.
+        if (data.user && Array.isArray((data.user as any).identities) && (data.user as any).identities.length === 0) {
+          const { error: otpErr } = await supabase.auth.signInWithOtp({
+            email: cleanEmail,
+            options: { shouldCreateUser: false, emailRedirectTo: getAuthRedirectUrl() },
+          });
+          if (otpErr) {
+            set({
+              error: 'An account with this email already exists. Sign in with Google, or request a code from the sign-in screen.',
+              isLoading: false,
+            });
+            return false;
+          }
+          set((s) => ({
+            status: 'EMAIL_UNVERIFIED',
+            currentStep: 'VERIFY_EMAIL',
+            unverifiedEmail: cleanEmail,
+            signupDraft: { ...s.signupDraft, email: cleanEmail, password },
+            isLoading: false,
+            error: null,
+          }));
+          patch({ notice: 'You already have a Relay account — we sent a 6-digit sign-in code instead. Enter it below; you can add a password in Settings afterwards.' });
+          startCooldown(patch, get);
+          return true;
+        }
 
         if (data.session && data.user) {
           // Auto-confirm enabled or already verified — go straight to onboarding.

@@ -99,7 +99,7 @@ export const CommunitySettingsScreen: React.FC<Props> = ({ communityId, onBack, 
           {community?.description && <p className="mt-3 text-[12px] text-slate-600 dark:text-slate-300 leading-relaxed">{community.description}</p>}
           <div className="mt-3 flex items-center gap-4 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
             <span className="flex items-center gap-1"><Users size={12} /> {members.length} members</span>
-            {myRole && <span className="flex items-center gap-1">{myRole === "owner" ? <Crown size={12} className="text-amber-500" /> : myRole === "moderator" ? <Shield size={12} className="text-blue-500" /> : null} You are {myRole}</span>}
+            {myRole && <span className="flex items-center gap-1">{myRole === "owner" ? <Crown size={12} className="text-amber-500" /> : myRole === "moderator" ? <Shield size={12} className="text-[var(--primary-accent)]" /> : null} You are {myRole}</span>}
           </div>
         </LiquidPanel>
 
@@ -130,7 +130,7 @@ export const CommunitySettingsScreen: React.FC<Props> = ({ communityId, onBack, 
                   {m.username && <p className="text-[10px] text-slate-400 truncate">@{m.username}</p>}
                 </div>
                 {m.isOwner ? <span className="flex items-center gap-1 text-[9px] font-bold text-amber-600 dark:text-amber-400 shrink-0"><Crown size={10} /> owner</span>
-                  : m.isModerator ? <span className="flex items-center gap-1 text-[9px] font-bold text-blue-600 dark:text-blue-400 shrink-0"><Shield size={10} /> mod</span> : null}
+                  : m.isModerator ? <span className="flex items-center gap-1 text-[9px] font-bold text-[var(--primary-accent)] dark:text-[var(--primary-accent)] shrink-0"><Shield size={10} /> mod</span> : null}
               </div>
             ))}
             {filteredMembers.length === 0 && <p className="text-xs text-slate-400 py-2">No members found</p>}

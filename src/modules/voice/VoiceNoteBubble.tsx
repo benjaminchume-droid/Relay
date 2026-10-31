@@ -100,8 +100,8 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
           disabled={uploadStatus === 'uploading' || uploadStatus === 'failed'}
           className={`p-1.5 rounded-full shrink-0 transition-all cursor-pointer shadow-xs ${
             isMine
-              ? 'bg-white text-blue-600 hover:bg-blue-50 active:scale-95'
-              : 'bg-blue-600 text-white hover:bg-blue-700 active:scale-95'
+              ? 'bg-white text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] active:scale-95'
+              : 'bg-[var(--primary-accent)] text-white hover:bg-[var(--relay-accent-hover)] active:scale-95'
           } disabled:opacity-50 disabled:cursor-not-allowed`}
           title={isPlaying ? 'Pause' : 'Play voice note'}
         >
@@ -132,7 +132,7 @@ export const VoiceNoteBubble: React.FC<VoiceNoteBubbleProps> = ({
                   style={{ height: `${Math.max(15, Math.min(100, heightPercent))}%` }}
                   className={`w-0.5 rounded-full transition-all duration-75 ${
                     isPlayed
-                      ? isMine ? 'bg-white shadow-xs' : 'bg-blue-600 shadow-xs'
+                      ? isMine ? 'bg-white shadow-xs' : 'bg-[var(--primary-accent)] shadow-xs'
                       : isMine ? 'bg-white/40 group-hover:bg-white/60' : 'bg-slate-300 dark:bg-slate-700 group-hover:bg-slate-400'
                   }`}
                 />

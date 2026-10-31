@@ -178,7 +178,7 @@ export const MainNavigation: React.FC<{
                     {tab.badge && tab.badge > 0 ? (
                       <span
                         className={`absolute -top-1 -right-1 px-1 min-w-[15px] h-3.5 text-white text-[8px] font-mono font-bold rounded-full flex items-center justify-center border border-white shadow-2xs ${
-                          isActive ? 'bg-amber-500' : 'bg-blue-600'
+                          isActive ? 'bg-amber-500' : 'bg-[var(--primary-accent)]'
                         }`}
                       >
                         {tab.badge > 99 ? '99+' : tab.badge}

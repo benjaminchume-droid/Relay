@@ -173,7 +173,7 @@ export const GroupProfileScreen: React.FC<{
               alt={chat.name}
               className="w-20 h-20 rounded-full object-cover border-4 border-white shadow-md dark:border-white/10"
             />
-            <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-blue-600 text-white shadow-md">
+            <span className="absolute bottom-0 right-0 p-1.5 rounded-full bg-[var(--primary-accent)] text-white shadow-md">
               <Users size={12} />
             </span>
           </div>
@@ -184,7 +184,7 @@ export const GroupProfileScreen: React.FC<{
           </div>
 
           <div className="flex items-center gap-2 pt-1">
-            <span className="px-3 py-1 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold border border-blue-200 flex items-center gap-1">
+            <span className="px-3 py-1 rounded-full bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] text-[var(--relay-accent-hover)] text-[10px] font-bold border border-[color-mix(in_srgb,var(--primary-accent)_30%,transparent)] flex items-center gap-1">
               <Users size={11} /> {chat.participants.length} Members
             </span>
             <span className={`px-3 py-1 rounded-full text-[10px] font-bold border flex items-center gap-1 ${
@@ -202,7 +202,7 @@ export const GroupProfileScreen: React.FC<{
         <GlassCard className="p-4 space-y-3">
           <div className="flex items-center justify-between pb-3 border-b border-slate-100">
             <div className="flex items-center gap-2.5">
-              <div className="p-2 rounded-xl bg-blue-50 text-blue-600">
+              <div className="p-2 rounded-xl bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] text-[var(--primary-accent)]">
                 <Clock size={16} />
               </div>
               <div>
@@ -213,7 +213,7 @@ export const GroupProfileScreen: React.FC<{
             <select
               value={chat.disappearingMessages || 'off'}
               onChange={(e) => handleDisappearingChange(e.target.value as any)}
-              className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500 dark:bg-slate-900"
+              className="text-xs font-semibold bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--relay-accent-ring)] dark:bg-slate-900"
             >
               <option value="off">Off</option>
               <option value="24h">24 Hours</option>
@@ -290,7 +290,7 @@ export const GroupProfileScreen: React.FC<{
                         </span>
                       )}
                       {role === 'admin' && (
-                        <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[9px] font-extrabold border border-blue-200">
+                        <span className="px-2 py-0.5 rounded-full bg-[color-mix(in_srgb,var(--primary-accent)_15%,transparent)] text-[var(--relay-accent-hover)] text-[9px] font-extrabold border border-[color-mix(in_srgb,var(--primary-accent)_30%,transparent)]">
                           Admin
                         </span>
                       )}
@@ -348,7 +348,7 @@ export const GroupProfileScreen: React.FC<{
             >
               <div className="flex justify-between items-center pb-2 border-b border-slate-100">
                 <h3 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
-                  <Shield size={16} className="text-blue-600" /> Group Permissions
+                  <Shield size={16} className="text-[var(--primary-accent)]" /> Group Permissions
                 </h3>
                 <button onClick={() => setShowPermissionsModal(false)} className="text-slate-400 hover:text-slate-700">
                   <X size={16} />
@@ -360,14 +360,14 @@ export const GroupProfileScreen: React.FC<{
                     <h5 className="font-bold text-slate-800 dark:text-slate-100">Admin Approval</h5>
                     <p className="text-[10px] text-slate-500">Require approval to join via link</p>
                   </div>
-                  <input type="checkbox" checked={permissions.requiresApproval} onChange={handleToggleApproval} className="w-4 h-4 rounded text-blue-600 cursor-pointer" />
+                  <input type="checkbox" checked={permissions.requiresApproval} onChange={handleToggleApproval} className="w-4 h-4 rounded text-[var(--primary-accent)] cursor-pointer" />
                 </div>
                 <div className="flex items-center justify-between p-2.5 rounded-2xl bg-slate-50 border border-slate-200 dark:bg-black">
                   <div>
                     <h5 className="font-bold text-slate-800 dark:text-slate-100">Public Group</h5>
                     <p className="text-[10px] text-slate-500">Findable in explore & search</p>
                   </div>
-                  <input type="checkbox" checked={permissions.privacy === 'public'} onChange={handleTogglePrivacy} className="w-4 h-4 rounded text-blue-600 cursor-pointer" />
+                  <input type="checkbox" checked={permissions.privacy === 'public'} onChange={handleTogglePrivacy} className="w-4 h-4 rounded text-[var(--primary-accent)] cursor-pointer" />
                 </div>
               </div>
               <GlassButton onClick={() => setShowPermissionsModal(false)} variant="primary" className="w-full py-2.5 text-xs">Done</GlassButton>

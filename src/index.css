@@ -13,6 +13,20 @@
   height: 100dvh;
 }
 
+/* Mobile Chrome hardening: the app shell is exactly 100dvh and must never
+   scroll on the body. If anything accidentally overflows, the browser used to
+   scroll the whole page — top bar slid under the URL bar, composer floated
+   above the bottom ("doesn't fit the screen"). Kill body scroll + rubber-band
+   at the root; every screen manages its own internal scroller. */
+html, body {
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
+}
+body:has(.auth-scroll-page) {
+  overflow: auto;
+}
+
 :root {
   --primary-accent: #2563EB;
   --neutral-button: #F1F5F9;

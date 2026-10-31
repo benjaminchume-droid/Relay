@@ -179,7 +179,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
     return (
       <button
         onClick={() => startRecording()}
-        className="p-3 rounded-full bg-blue-600 text-white hover:bg-blue-700 active:scale-95 transition-all shadow-md cursor-pointer flex items-center justify-center shrink-0"
+        className="p-3 rounded-full bg-[var(--primary-accent)] text-white hover:bg-[var(--relay-accent-hover)] active:scale-95 transition-all shadow-md cursor-pointer flex items-center justify-center shrink-0"
         title="Start recording voice note"
       >
         <Mic size={18} />
@@ -194,7 +194,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
       onTouchMove={handleTouchMove}
       onTouchEnd={handleTouchEnd}
       style={{ transform: `translateX(-${swipeCancelOffset}px)` }}
-      className={`px-2 py-1 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-blue-500/30 shadow-md flex items-center justify-between gap-1.5 transition-transform animate-fade-in w-full min-w-0 overflow-hidden ${className}`}
+      className={`px-2 py-1 rounded-full bg-white/90 dark:bg-slate-900/90 backdrop-blur-xl border border-[var(--primary-accent)]/30 shadow-md flex items-center justify-between gap-1.5 transition-transform animate-fade-in w-full min-w-0 overflow-hidden ${className}`}
     >
       {/* Live Recording Indicator & Timer */}
       <div className="flex items-center gap-1.5 min-w-0 shrink-0 pl-1">
@@ -213,7 +213,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
           <div
             key={idx}
             style={{ height: `${Math.max(20, Math.min(100, amp))}%` }}
-            className="w-0.5 bg-blue-600 dark:bg-blue-400 rounded-full transition-all duration-100"
+            className="w-0.5 bg-[var(--primary-accent)] dark:bg-blue-400 rounded-full transition-all duration-100"
           />
         ))}
       </div>
@@ -222,7 +222,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
       {!isLocked && (
         <button
           onClick={lockRecording}
-          className="p-1 rounded-full text-slate-400 hover:text-blue-600 hover:bg-blue-50 dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
+          className="p-1 rounded-full text-slate-400 hover:text-[var(--primary-accent)] hover:bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] dark:hover:bg-slate-800 transition-colors cursor-pointer shrink-0"
           title="Lock recording"
         >
           <LockOpen size={13} />
@@ -230,7 +230,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
       )}
 
       {isLocked && (
-        <span className="px-1 py-0.5 rounded bg-blue-500/20 text-blue-600 dark:text-blue-400 text-[9px] font-bold flex items-center gap-0.5 shrink-0">
+        <span className="px-1 py-0.5 rounded bg-[var(--primary-accent)]/20 text-[var(--primary-accent)] dark:text-[var(--primary-accent)] text-[9px] font-bold flex items-center gap-0.5 shrink-0">
           <Lock size={10} /> Locked
         </span>
       )}
@@ -239,7 +239,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
       {status === 'paused' ? (
         <button
           onClick={resumeRecording}
-          className="p-1.5 rounded-full bg-blue-100 dark:bg-slate-800 text-blue-600 dark:text-blue-400 hover:bg-blue-200 transition-colors cursor-pointer shrink-0"
+          className="p-1.5 rounded-full bg-[color-mix(in_srgb,var(--primary-accent)_15%,transparent)] dark:bg-slate-800 text-[var(--primary-accent)] dark:text-[var(--primary-accent)] hover:bg-blue-200 transition-colors cursor-pointer shrink-0"
           title="Resume"
         >
           <Play size={12} className="fill-current" />
@@ -266,7 +266,7 @@ export const VoiceRecorderUI: React.FC<VoiceRecorderUIProps> = ({
       {/* Finish & Send Button */}
       <button
         onClick={handleFinishAndSend}
-        className="p-1.5 rounded-full bg-blue-600 text-white hover:bg-blue-700 active:scale-95 transition-all shadow-xs cursor-pointer shrink-0"
+        className="p-1.5 rounded-full bg-[var(--primary-accent)] text-white hover:bg-[var(--relay-accent-hover)] active:scale-95 transition-all shadow-xs cursor-pointer shrink-0"
         title="Send voice note"
       >
         <Send size={12} />

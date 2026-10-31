@@ -163,7 +163,7 @@ export const MediaViewerModal: React.FC<MediaViewerModalProps> = ({
           <button
             onClick={() => setShowInfoPanel(!showInfoPanel)}
             className={`p-2 rounded-full transition-all cursor-pointer ${
-              showInfoPanel ? 'bg-blue-600 text-white' : 'bg-white/10 hover:bg-white/20 text-white'
+              showInfoPanel ? 'bg-[var(--primary-accent)] text-white' : 'bg-white/10 hover:bg-white/20 text-white'
             }`}
             title="Media info"
           >
@@ -284,7 +284,7 @@ export const MediaViewerModal: React.FC<MediaViewerModalProps> = ({
                 </div>
                 <div>
                   <span className="text-slate-400 block">Sender:</span>
-                  <span className="text-blue-400 font-bold">{currentMsg.senderName}</span>
+                  <span className="text-[var(--primary-accent)] font-bold">{currentMsg.senderName}</span>
                 </div>
                 <div>
                   <span className="text-slate-400 block">Sent Date:</span>
@@ -329,11 +329,11 @@ export const MediaViewerModal: React.FC<MediaViewerModalProps> = ({
             placeholder={`Reply to ${currentMsg.senderName}...`}
             value={quickReplyText}
             onChange={(e) => setQuickReplyText(e.target.value)}
-            className="flex-1 bg-white/10 border border-white/20 rounded-full px-4 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="flex-1 bg-white/10 border border-white/20 rounded-full px-4 py-2 text-xs text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-[var(--relay-accent-ring)]"
           />
           <button
             type="submit"
-            className="w-8 h-8 rounded-full bg-blue-600 hover:bg-blue-500 text-white flex items-center justify-center shadow-lg cursor-pointer"
+            className="w-8 h-8 rounded-full bg-[var(--primary-accent)] hover:bg-[var(--primary-accent)] text-white flex items-center justify-center shadow-lg cursor-pointer"
           >
             <Send size={15} />
           </button>
@@ -352,7 +352,7 @@ export const MediaViewerModal: React.FC<MediaViewerModalProps> = ({
                     setCurrentIndex(idx);
                   }}
                   className={`w-10 h-10 rounded-lg overflow-hidden border-2 shrink-0 transition-all cursor-pointer ${
-                    idx === currentIndex ? 'border-blue-500 scale-110 shadow-lg' : 'border-white/20 opacity-60 hover:opacity-100'
+                    idx === currentIndex ? 'border-[var(--primary-accent)] scale-110 shadow-lg' : 'border-white/20 opacity-60 hover:opacity-100'
                   }`}
                 >
                   {att?.url ? (

@@ -157,7 +157,7 @@ export const CreateCommunityScreen: React.FC<{
       {/* Progress Indicator Bar */}
       <div className="w-full bg-slate-200/60 h-1.5 rounded-full overflow-hidden">
         <div 
-          className="bg-blue-600 h-full transition-all duration-300 rounded-full"
+          className="bg-[var(--primary-accent)] h-full transition-all duration-300 rounded-full"
           style={{ width: `${(step / 3) * 100}%` }}
         />
       </div>
@@ -167,7 +167,7 @@ export const CreateCommunityScreen: React.FC<{
         <form onSubmit={handleNextStep} className="space-y-4">
           <GlassCard className="p-6 space-y-4">
             <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2 dark:text-slate-100">
-              <Sparkles size={16} className="text-blue-500" />
+              <Sparkles size={16} className="text-[var(--primary-accent)]" />
               <span>Community Information</span>
             </h2>
 
@@ -250,7 +250,7 @@ export const CreateCommunityScreen: React.FC<{
               </div>
 
               <div className="flex items-center gap-3 pt-1">
-                <label className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer shadow-xs transition-all">
+                <label className="inline-flex items-center gap-2 px-3.5 py-1.5 rounded-xl bg-[var(--primary-accent)] hover:bg-[var(--relay-accent-hover)] text-white font-bold text-xs cursor-pointer shadow-xs transition-all">
                   <Upload size={14} /> Upload Banner from Gallery
                   <input type="file" accept="image/*" onChange={handleBannerUpload} className="hidden" />
                 </label>
@@ -336,17 +336,17 @@ export const CreateCommunityScreen: React.FC<{
                     onClick={() => setPrivacy(opt.id as any)}
                     className={`p-4 rounded-2xl border flex items-start gap-3.5 cursor-pointer transition-all ${
                       isSelected 
-                        ? 'bg-blue-50/80 border-blue-500/80 shadow-sm' 
+                        ? 'bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)]/80 border-[var(--primary-accent)]/80 shadow-sm' 
                         : 'bg-white/70 border-slate-200/80 hover:bg-white'
                     }`}
                   >
-                    <div className={`p-2 rounded-xl mt-0.5 ${isSelected ? 'bg-blue-600 text-white' : 'bg-slate-100 text-slate-600'}`}>
+                    <div className={`p-2 rounded-xl mt-0.5 ${isSelected ? 'bg-[var(--primary-accent)] text-white' : 'bg-slate-100 text-slate-600'}`}>
                       <IconComp size={16} />
                     </div>
                     <div className="min-w-0 flex-1">
                       <div className="flex items-center justify-between">
                         <h4 className="text-xs font-bold text-slate-800 dark:text-slate-100">{opt.title}</h4>
-                        {isSelected && <Check size={16} className="text-blue-600 font-bold" />}
+                        {isSelected && <Check size={16} className="text-[var(--primary-accent)] font-bold" />}
                       </div>
                       <p className="text-[11px] text-slate-500 mt-0.5 font-medium leading-relaxed">{opt.desc}</p>
                     </div>

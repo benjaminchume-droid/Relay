@@ -214,10 +214,10 @@ export const PermissionsView: React.FC = () => {
         })}
       </div>
 
-      <GlassCard className="p-5 space-y-4 border-blue-200/60 bg-blue-50/20 dark:bg-blue-950/20">
+      <GlassCard className="p-5 space-y-4 border-[color-mix(in_srgb,var(--primary-accent)_30%,transparent)]/60 bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)]/20 dark:bg-[color-mix(in_srgb,var(--primary-accent)_20%,transparent)]/20">
         <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-2">
-            <Smartphone size={18} className="text-blue-600" />
+            <Smartphone size={18} className="text-[var(--primary-accent)]" />
             <h4 className="text-xs font-bold text-slate-800 dark:text-white">Device diagnostics</h4>
           </div>
           {statuses.device_info_consent !== 'granted' && (

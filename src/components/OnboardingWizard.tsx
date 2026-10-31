@@ -233,7 +233,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
           <div key={s.num} className="flex items-center gap-2">
             <div className={`w-7 h-7 rounded-full text-xs font-bold flex items-center justify-center transition-all ${
               step === s.num 
-                ? 'bg-blue-600 text-white shadow-md shadow-blue-500/30 ring-2 ring-blue-400/40' 
+                ? 'bg-[var(--primary-accent)] text-white shadow-md shadow-blue-500/30 ring-2 ring-[var(--relay-accent-ring)]/40' 
                 : step > s.num 
                 ? 'bg-emerald-500 text-white' 
                 : 'bg-slate-200 text-slate-500'
@@ -253,9 +253,9 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
         {/* Header Branding */}
         <div className="flex flex-col items-center justify-center space-y-2">
           <RelayLogoEmblem size={48} />
-          <div className="flex items-center gap-1.5 bg-blue-500/10 backdrop-blur-md px-3 py-1 rounded-full border border-blue-400/20">
-            <ShieldCheck size={13} className="text-blue-600" />
-            <span className="text-[10px] font-bold uppercase tracking-wider text-blue-700">Relay Setup Wizard</span>
+          <div className="flex items-center gap-1.5 bg-[var(--primary-accent)]/10 backdrop-blur-md px-3 py-1 rounded-full border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20">
+            <ShieldCheck size={13} className="text-[var(--primary-accent)]" />
+            <span className="text-[10px] font-bold uppercase tracking-wider text-[var(--relay-accent-hover)]">Relay Setup Wizard</span>
           </div>
         </div>
 
@@ -339,7 +339,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                   {username.trim() && (
                     <div className="min-h-[20px] flex items-center">
                       {isCheckingUsername ? (
-                        <div className="text-[11px] font-medium text-blue-600 flex items-center gap-1.5">
+                        <div className="text-[11px] font-medium text-[var(--primary-accent)] flex items-center gap-1.5">
                           <RefreshCw size={13} className="animate-spin" />
                           <span>Checking availability...</span>
                         </div>
@@ -362,7 +362,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                             key={s}
                             type="button"
                             onClick={() => setUsername(s)}
-                            className="py-1 px-2.5 bg-blue-500/10 hover:bg-blue-500/20 text-blue-700 text-[11px] font-mono rounded-xl border border-blue-400/20 transition-all cursor-pointer"
+                            className="py-1 px-2.5 bg-[var(--primary-accent)]/10 hover:bg-[var(--primary-accent)]/20 text-[var(--relay-accent-hover)] text-[11px] font-mono rounded-xl border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 transition-all cursor-pointer"
                           >
                             @{s}
                           </button>
@@ -426,7 +426,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                 >
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2.5">
-                      <div className="w-9 h-9 rounded-full bg-blue-600 text-white font-bold flex items-center justify-center text-sm shadow-sm">
+                      <div className="w-9 h-9 rounded-full bg-[var(--primary-accent)] text-white font-bold flex items-center justify-center text-sm shadow-sm">
                         {displayName.trim() ? displayName.trim()[0].toUpperCase() : 'U'}
                       </div>
                       <div>
@@ -438,7 +438,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         </span>
                       </div>
                     </div>
-                    <span className="px-2.5 py-1 bg-blue-500/10 text-blue-600 rounded-full text-[10px] font-bold border border-blue-400/20 capitalize">
+                    <span className="px-2.5 py-1 bg-[var(--primary-accent)]/10 text-[var(--primary-accent)] rounded-full text-[10px] font-bold border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 capitalize">
                       {themeMode} Mode
                     </span>
                   </div>
@@ -468,7 +468,7 @@ export const OnboardingWizard: React.FC<OnboardingWizardProps> = ({
                         onClick={() => setThemeMode(mode)}
                         className={`py-3 px-2 rounded-2xl font-bold text-xs flex flex-col items-center justify-center gap-1.5 border transition-all cursor-pointer ${
                           themeMode === mode 
-                            ? 'bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20 ring-2 ring-blue-400/40' 
+                            ? 'bg-[var(--primary-accent)] text-white border-[var(--primary-accent)] shadow-md shadow-blue-500/20 ring-2 ring-[var(--relay-accent-ring)]/40' 
                             : 'bg-white/80 hover:bg-white text-slate-700 border-slate-200'
                         }`}
                       >

@@ -75,7 +75,7 @@ export const SwipeableMessageItem: React.FC<SwipeableMessageItemProps> = ({
           opacity: Math.min(1, dragX / SWIPE_THRESHOLD),
           transform: `scale(${Math.min(1.2, Math.max(0.6, dragX / SWIPE_THRESHOLD))})`
         }}
-        className="absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-blue-600 text-white shadow-md z-10 transition-transform duration-75 flex items-center justify-center pointer-events-none"
+        className="absolute left-1 top-1/2 -translate-y-1/2 p-2 rounded-full bg-[var(--primary-accent)] text-white shadow-md z-10 transition-transform duration-75 flex items-center justify-center pointer-events-none"
       >
         <CornerUpLeft size={16} />
       </div>

@@ -110,7 +110,7 @@ export const CreateGroupScreen: React.FC<{
 
       <div className="w-full bg-slate-200/60 dark:bg-slate-700 h-1.5 rounded-full overflow-hidden">
         <div
-          className="bg-blue-600 h-full transition-all duration-300 rounded-full"
+          className="bg-[var(--primary-accent)] h-full transition-all duration-300 rounded-full"
           style={{ width: `${(step / 3) * 100}%` }}
         />
       </div>
@@ -125,7 +125,7 @@ export const CreateGroupScreen: React.FC<{
         >
           <GlassCard className="p-6 space-y-4">
             <h2 className="text-sm font-bold text-slate-800 dark:text-white flex items-center gap-2">
-              <Users size={16} className="text-blue-500" />
+              <Users size={16} className="text-[var(--primary-accent)]" />
               <span>Group Identification</span>
             </h2>
             <GlassInput
@@ -185,7 +185,7 @@ export const CreateGroupScreen: React.FC<{
                 <p className="text-xs font-semibold text-slate-700 dark:text-slate-300">
                   Upload a photo or leave blank for initials.
                 </p>
-                <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white font-bold text-xs cursor-pointer shadow-xs transition-all">
+                <label className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[var(--primary-accent)] hover:bg-[var(--relay-accent-hover)] text-white font-bold text-xs cursor-pointer shadow-xs transition-all">
                   <ImageIcon size={14} /> Choose from Gallery
                   <input type="file" accept="image/*" onChange={handleImageUpload} className="hidden" />
                 </label>
@@ -239,7 +239,7 @@ export const CreateGroupScreen: React.FC<{
                       onClick={() => toggleUser(user.id)}
                       className={`p-3 rounded-2xl border flex items-center justify-between cursor-pointer transition-all ${
                         isSel
-                          ? 'bg-blue-50/80 dark:bg-blue-950/40 border-blue-500/80 shadow-xs'
+                          ? 'bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)]/80 dark:bg-[color-mix(in_srgb,var(--primary-accent)_20%,transparent)]/40 border-[var(--primary-accent)]/80 shadow-xs'
                           : 'bg-white/70 dark:bg-slate-800/50 border-slate-200/60 dark:border-white/10 hover:bg-white'
                       }`}
                     >
@@ -256,7 +256,7 @@ export const CreateGroupScreen: React.FC<{
                       </div>
                       <div
                         className={`w-5 h-5 rounded-full border flex items-center justify-center ${
-                          isSel ? 'bg-blue-600 border-blue-600 text-white' : 'border-slate-300'
+                          isSel ? 'bg-[var(--primary-accent)] border-[var(--primary-accent)] text-white' : 'border-slate-300'
                         }`}
                       >
                         {isSel && <Check size={12} />}

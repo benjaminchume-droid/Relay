@@ -85,7 +85,7 @@ export const EmailVerificationPendingScreen: React.FC = () => {
         </div>
 
         <div className="space-y-3">
-          <div className="w-16 h-16 mx-auto rounded-3xl bg-blue-500/10 text-blue-600 flex items-center justify-center border border-blue-400/20 shadow-inner">
+          <div className="w-16 h-16 mx-auto rounded-3xl bg-[var(--primary-accent)]/10 text-[var(--primary-accent)] flex items-center justify-center border border-[color-mix(in_srgb,var(--primary-accent)_45%,transparent)]/20 shadow-inner">
             <KeyRound size={32} />
           </div>
 
@@ -111,7 +111,7 @@ export const EmailVerificationPendingScreen: React.FC = () => {
               onChange={(e) => handleOtpDigitChange(index, e.target.value)}
               onKeyDown={(e) => handleOtpKeyDown(index, e)}
               onPaste={index === 0 ? handleOtpPaste : undefined}
-              className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 border border-slate-300/80 rounded-2xl shadow-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-blue-500/50 focus:border-blue-500 transition-all"
+              className="w-10 sm:w-11 h-12 sm:h-13 text-center text-lg sm:text-xl font-bold font-mono bg-white/80 border border-slate-300/80 rounded-2xl shadow-sm text-slate-800 focus:outline-none focus:ring-2 focus:ring-[var(--relay-accent-ring)]/50 focus:border-[var(--primary-accent)] transition-all"
               autoFocus={index === 0}
             />
           ))}

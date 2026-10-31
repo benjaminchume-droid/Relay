@@ -54,13 +54,13 @@ export const StickerPickerModal: React.FC<StickerPickerModalProps> = ({
           {/* Top Bar */}
           <div className="flex items-center justify-between border-b border-slate-200 dark:border-white/10 pb-2 shrink-0">
             <span className="font-extrabold text-sm flex items-center gap-2">
-              <Sparkles size={16} className="text-blue-600" />
+              <Sparkles size={16} className="text-[var(--primary-accent)]" />
               Sticker Store & Picker
             </span>
             <div className="flex items-center gap-2">
               <button
                 onClick={() => setIsCreatorOpen(true)}
-                className="px-2.5 py-1 rounded-full bg-blue-600 text-white font-bold text-xs flex items-center gap-1 shadow-md hover:bg-blue-500 transition-colors cursor-pointer"
+                className="px-2.5 py-1 rounded-full bg-[var(--primary-accent)] text-white font-bold text-xs flex items-center gap-1 shadow-md hover:bg-[var(--primary-accent)] transition-colors cursor-pointer"
               >
                 <Plus size={14} />
                 <span>Create Custom</span>

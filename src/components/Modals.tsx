@@ -116,14 +116,14 @@ export const ModalsOverlay: React.FC<{
                     onCloseNewChatModal();
                     onOpenCreateGroup();
                   }}
-                  className="w-full p-3.5 rounded-2xl bg-blue-50/80 hover:bg-blue-100/80 border border-blue-200/80 flex items-center gap-3 transition-all text-blue-900 cursor-pointer shadow-2xs group"
+                  className="w-full p-3.5 rounded-2xl bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)]/80 hover:bg-[color-mix(in_srgb,var(--primary-accent)_15%,transparent)]/80 border border-[color-mix(in_srgb,var(--primary-accent)_30%,transparent)]/80 flex items-center gap-3 transition-all text-[var(--relay-accent-hover)] cursor-pointer shadow-2xs group"
                 >
-                  <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
+                  <div className="w-9 h-9 rounded-xl bg-[var(--primary-accent)] text-white flex items-center justify-center font-bold shrink-0 shadow-xs group-hover:scale-105 transition-transform">
                     <Plus size={18} />
                   </div>
                   <div className="min-w-0 text-left">
                     <h4 className="text-xs font-bold">Create New Group</h4>
-                    <p className="text-[10px] text-blue-600 font-medium">Multi-user group with custom handles & controls</p>
+                    <p className="text-[10px] text-[var(--primary-accent)] font-medium">Multi-user group with custom handles & controls</p>
                   </div>
                 </button>
               )}
@@ -172,7 +172,7 @@ export const ModalsOverlay: React.FC<{
 
                   {searchStatus === 'loading' && (
                     <div className="text-center py-8 space-y-2">
-                      <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+                      <div className="w-5 h-5 border-2 border-[var(--primary-accent)] border-t-transparent rounded-full animate-spin mx-auto" />
                       <p className="text-xs font-medium text-slate-500">Searching...</p>
                     </div>
                   )}
@@ -228,7 +228,7 @@ export const ModalsOverlay: React.FC<{
                         />
                         <div className="min-w-0 text-left">
                           <h4 className="text-xs font-bold text-slate-800 truncate dark:text-slate-100">{user.name || user.username}</h4>
-                          <span className="text-[10px] text-blue-600 font-mono block truncate">{formatHandle(user.username)}</span>
+                          <span className="text-[10px] text-[var(--primary-accent)] font-mono block truncate">{formatHandle(user.username)}</span>
                           {user.bio && <p className="text-[10px] text-slate-400 truncate max-w-[200px]">{user.bio}</p>}
                         </div>
                       </div>
@@ -261,7 +261,7 @@ export const ModalsOverlay: React.FC<{
                 </button>
               </div>
 
-              <div className="p-3 bg-slate-100 rounded-2xl text-xs text-slate-700 font-medium italic border-l-2 border-blue-500 dark:bg-slate-800">
+              <div className="p-3 bg-slate-100 rounded-2xl text-xs text-slate-700 font-medium italic border-l-2 border-[var(--primary-accent)] dark:bg-slate-800">
                 "{forwardingMessage.content}"
               </div>
 
@@ -276,11 +276,11 @@ export const ModalsOverlay: React.FC<{
                         setForwardTargets((prev) => isSel ? prev.filter((id) => id !== c.id) : [...prev, c.id]);
                       }}
                       className={`p-2.5 rounded-xl border text-xs font-semibold flex items-center justify-between cursor-pointer ${
-                        isSel ? 'bg-blue-50 border-blue-300 text-blue-900' : 'bg-white border-slate-100 text-slate-700'
+                        isSel ? 'bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] border-[color-mix(in_srgb,var(--primary-accent)_35%,transparent)] text-[var(--relay-accent-hover)]' : 'bg-white border-slate-100 text-slate-700'
                       }`}
                     >
                       <span>{c.name}</span>
-                      {isSel && <Check size={14} className="text-blue-600" />}
+                      {isSel && <Check size={14} className="text-[var(--primary-accent)]" />}
                     </div>
                   );
                 })}

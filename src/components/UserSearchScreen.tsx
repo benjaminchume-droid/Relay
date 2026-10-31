@@ -133,7 +133,7 @@ export const UserSearchScreen: React.FC<{
 
         {searchStatus === 'loading' && (
           <GlassCard className="p-8 text-center text-slate-400 space-y-3">
-            <div className="w-6 h-6 border-2 border-blue-600 border-t-transparent rounded-full animate-spin mx-auto" />
+            <div className="w-6 h-6 border-2 border-[var(--primary-accent)] border-t-transparent rounded-full animate-spin mx-auto" />
             <p className="text-xs font-semibold text-slate-600">Searching...</p>
           </GlassCard>
         )}

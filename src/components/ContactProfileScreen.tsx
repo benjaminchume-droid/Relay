@@ -428,7 +428,7 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
             >
               <div className="flex items-center justify-between pb-2 border-b border-slate-100">
                 <div className="flex items-center gap-2 text-slate-800 dark:text-slate-100">
-                  <Clock size={18} className="text-blue-600" />
+                  <Clock size={18} className="text-[var(--primary-accent)]" />
                   <h3 className="text-sm font-bold">Disappearing Messages</h3>
                 </div>
                 <button onClick={() => setShowDisappearingModal(false)} className="text-slate-400 hover:text-slate-600 p-1">
@@ -453,13 +453,13 @@ export const ContactProfileScreen: React.FC<ContactProfileScreenProps> = ({
                     onClick={() => handleDisappearingChange(opt.id as any)}
                     className={`w-full p-3 rounded-2xl border text-xs font-bold flex items-center justify-between transition-all cursor-pointer ${
                       (foundChat?.disappearingMessages || 'off') === opt.id
-                        ? 'bg-blue-50 border-blue-500 text-blue-700'
+                        ? 'bg-[color-mix(in_srgb,var(--primary-accent)_9%,transparent)] border-[var(--primary-accent)] text-[var(--relay-accent-hover)]'
                         : 'bg-slate-50/60 border-slate-200/80 text-slate-700 hover:bg-slate-100'
                     }`}
                   >
                     <span>{opt.label}</span>
                     {(foundChat?.disappearingMessages || 'off') === opt.id && (
-                      <Check size={16} className="text-blue-600" />
+                      <Check size={16} className="text-[var(--primary-accent)]" />
                     )}
                   </button>
                 ))}

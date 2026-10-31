@@ -92,16 +92,39 @@ export const App: React.FC = () => {
   useEffect(() => {
     initializeSession();
     try {
+      const SETTINGS_VERSION = 2;
       const raw = localStorage.getItem('relay_theme_customization');
+      const seenVersion = Number(localStorage.getItem('relay_theme_settings_v') || '1');
       if (raw) {
         const parsed = JSON.parse(raw);
+        // v2 migration: chat screen defaults to WhatsApp-style Classic bubbles.
+        // Retro remains available in Profile → Chat Style — this only resets the
+        // one-time state where the early Retro experiment stuck for everyone.
+        if (seenVersion < 2) parsed.chatStyle = 'classic';
         useThemeStore.getState().updateCustomization(parsed);
       } else {
         applyThemeVars(customization);
       }
+      localStorage.setItem('relay_theme_settings_v', String(SETTINGS_VERSION));
     } catch {
       applyThemeVars(customization);
     }
+  }, []);
+
+  // Android Chrome: when the soft keyboard closes, the visual viewport grows
+  // back but the page can stay scrolled (residual scrollY) — that pushed the
+  // top bar under the URL bar and left the composer floating above the
+  // bottom. The shell is exactly 100dvh now so the body can't scroll, and
+  // this resets any residual scroll the keyboard round-trip left behind.
+  useEffect(() => {
+    const resetScroll = () => { if (window.scrollY !== 0) window.scrollTo(0, 0); };
+    const vv = (window as any).visualViewport;
+    vv?.addEventListener('resize', resetScroll);
+    window.addEventListener('focusout', resetScroll);
+    return () => {
+      vv?.removeEventListener('resize', resetScroll);
+      window.removeEventListener('focusout', resetScroll);
+    };
   }, []);
 
   useEffect(() => {
@@ -195,7 +218,7 @@ export const App: React.FC = () => {
 
   if ((status === 'BOOTSTRAPPING' || status === 'AUTH_LOADING') && !profile && !currentUser) {
     return (
-      <div className="min-h-screen w-full relative flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="min-h-[100dvh] w-full relative flex flex-col items-center justify-center bg-slate-50 dark:bg-slate-950">
         <AmbientLiquidBackground />
         <div className="flex flex-col items-center gap-4 z-10">
           <RelayLogoEmblem size={56} className="animate-pulse" />
@@ -219,17 +242,29 @@ export const App: React.FC = () => {
     activeProfile?.onboardingCompleted === true;
 
   if (status === 'UNAUTHENTICATED') {
-    return <AuthFlow />;
+    return (
+      <div className="app-h w-full overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ overscrollBehavior: 'contain' }}>
+        <AuthFlow />
+      </div>
+    );
   }
 
   if (status === 'EMAIL_UNVERIFIED') {
-    return <EmailVerificationPendingScreen />;
+    return (
+      <div className="app-h w-full overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ overscrollBehavior: 'contain' }}>
+        <EmailVerificationPendingScreen />
+      </div>
+    );
   }
 
   // Password-recovery handoff: user arrived via the emailed reset link — show
   // the "set new password" screen before anything else.
   if (isPasswordResetFlow && isAuthedStatus(status)) {
-    return <AuthFlow />;
+    return (
+      <div className="app-h w-full overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ overscrollBehavior: 'contain' }}>
+        <AuthFlow />
+      </div>
+    );
   }
 
   if (
@@ -239,23 +274,31 @@ export const App: React.FC = () => {
   ) {
     if (setupFlag && !activeProfile) {
       return (
-        <div className="min-h-screen w-full flex items-center justify-center bg-slate-50 dark:bg-slate-950">
+        <div className="min-h-[100dvh] w-full flex items-center justify-center bg-slate-50 dark:bg-slate-950">
           <AmbientLiquidBackground />
           <span className="text-xs font-bold text-slate-600 dark:text-slate-300 z-10">Restoring session…</span>
         </div>
       );
     }
     if (!isSetupDone) {
-      return <AuthFlow forceOnboarding />;
+      return (
+        <div className="app-h w-full overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ overscrollBehavior: 'contain' }}>
+          <AuthFlow forceOnboarding />
+        </div>
+      );
     }
   }
 
   if (!activeProfile && !setupFlag) {
-    return <AuthFlow />;
+    return (
+      <div className="app-h w-full overflow-y-auto bg-slate-50 dark:bg-slate-950" style={{ overscrollBehavior: 'contain' }}>
+        <AuthFlow />
+      </div>
+    );
   }
 
   return (
-    <div className="min-h-screen w-full relative bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
+    <div className="app-h w-full relative overflow-hidden bg-slate-50 dark:bg-slate-950 text-slate-900 dark:text-slate-100">
       <AmbientLiquidBackground />
       <MainNavigation
         activeTab={tab}
