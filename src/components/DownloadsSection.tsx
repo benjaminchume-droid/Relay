@@ -29,19 +29,20 @@ interface RelAsset { name: string; url: string; size: number }
 interface RelInfo { tag: string; assets: Record<string, RelAsset> }
 
 const FALLBACK_FLUTTER: RelInfo = {
-  tag: 'v1.0.5',
+  tag: 'v1.0.6',
   assets: {
-    'arm64-v8a': { name: 'relay-1.0.5-android.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.5/relay-1.0.5-android.apk', size: 0 },
-    'armeabi-v7a': { name: 'relay-1.0.5-android-armv7.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.5/relay-1.0.5-android-armv7.apk', size: 0 },
-    'x86_64': { name: 'relay-1.0.5-android-x86_64.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.5/relay-1.0.5-android-x86_64.apk', size: 0 },
-    'windows': { name: 'relay-windows.zip', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.5/relay-windows.zip', size: 0 },
+    'arm64-v8a': { name: 'relay-1.0.6-android.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android.apk', size: 26466295 },
+    'armeabi-v7a': { name: 'relay-1.0.6-android-armv7.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-armv7.apk', size: 23810403 },
+    'x86_64': { name: 'relay-1.0.6-android-x86_64.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-x86_64.apk', size: 27997119 },
+    'universal': { name: 'relay-1.0.6-android-universal.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-universal.apk', size: 64861699 },
+    'windows': { name: 'relay-windows.zip', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-windows.zip', size: 14905124 },
   },
 };
 
 const FALLBACK_COMPILER: RelInfo = {
-  tag: 'v0.5.3.1',
+  tag: 'v0.5.5.0',
   assets: {
-    'universal': { name: 'Relay-0.5.3.1-release.apk', url: 'https://github.com/orubus-dev/Relay/releases/download/v0.5.3.1/Relay-0.5.3.1-release.apk', size: 0 },
+    'universal': { name: 'Relay-0.5.5.0-release.apk', url: 'https://github.com/orubus-dev/Relay/releases/download/v0.5.5.0/Relay-0.5.5.0-release.apk', size: 4770521 },
   },
 };
 
@@ -87,6 +88,21 @@ export const DownloadsSection: React.FC = () => {
     let dead = false;
     (async () => {
       try {
+        // Primary source: the same-origin release manifest (public/releases.json,
+        // refreshed with each release). Same-origin = never rate-limited, always
+        // cached, instant. The GitHub API is only a best-effort live refresh on
+        // top — unauthenticated API quotas make it unreliable as the sole source.
+        const manifest = await fetch('/releases.json?_=' + Date.now())
+          .then((r) => (r.ok ? r.json() : null))
+          .catch(() => null);
+        if (!dead && manifest) {
+          if (manifest.flutter?.tag && manifest.flutter?.assets) {
+            setFlutterRel({ tag: manifest.flutter.tag, assets: manifest.flutter.assets });
+          }
+          if (manifest.compiler?.tag && manifest.compiler?.assets) {
+            setCompilerRel({ tag: manifest.compiler.tag, assets: manifest.compiler.assets });
+          }
+        }
         const [fr, cr] = await Promise.all([
           fetch('https://api.github.com/repos/orubus-dev/relay-client/releases/latest', { headers: { Accept: 'application/vnd.github+json' } }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
           fetch('https://api.github.com/repos/orubus-dev/Relay/releases/latest', { headers: { Accept: 'application/vnd.github+json' } }).then((r) => (r.ok ? r.json() : null)).catch(() => null),
