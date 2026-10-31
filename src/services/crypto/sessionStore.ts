@@ -10,9 +10,10 @@
 import type { LocalIdentity, RatchetState } from "./signalProtocol";
 
 const DB_NAME = "relay-e2ee";
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 const STORE_IDENTITY = "identity";
 const STORE_SESSIONS = "sessions";
+const STORE_SENDERKEYS = "senderkeys";
 
 let dbPromise: Promise<IDBDatabase> | null = null;
 
@@ -24,6 +25,7 @@ function openDb(): Promise<IDBDatabase> {
       const db = req.result;
       if (!db.objectStoreNames.contains(STORE_IDENTITY)) db.createObjectStore(STORE_IDENTITY);
       if (!db.objectStoreNames.contains(STORE_SESSIONS)) db.createObjectStore(STORE_SESSIONS);
+      if (!db.objectStoreNames.contains(STORE_SENDERKEYS)) db.createObjectStore(STORE_SENDERKEYS);
     };
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
@@ -67,6 +69,21 @@ export const cryptoStore = {
   getLegacySession: (profileId: string, conversationId: string): Promise<RatchetState | undefined> =>
     tx<RatchetState | undefined>(STORE_SESSIONS, "readonly", (s) =>
       s.get(sessionKey(profileId, conversationId)) as IDBRequest<RatchetState | undefined>),
+
+  // ---- R3 sender keys -----------------------------------------------------
+  /** MY sending chain for a conversation (epoch-bound). */
+  getSenderChain: (profileId: string, conversationId: string): Promise<any | undefined> =>
+    tx(STORE_SENDERKEYS, "readonly", (s) =>
+      s.get(`${profileId}:sk-mine:${conversationId}`) as IDBRequest<any | undefined>),
+  setSenderChain: (profileId: string, conversationId: string, state: any): Promise<IDBValidKey> =>
+    tx(STORE_SENDERKEYS, "readwrite", (s) => s.put(state, `${profileId}:sk-mine:${conversationId}`)),
+
+  /** Received chain for a (conversation, sender identity) pair. */
+  getPeerChain: (profileId: string, conversationId: string, senderIk: string): Promise<any | undefined> =>
+    tx(STORE_SENDERKEYS, "readonly", (s) =>
+      s.get(`${profileId}:sk-peer:${conversationId}:${senderIk}`) as IDBRequest<any | undefined>),
+  setPeerChain: (profileId: string, conversationId: string, senderIk: string, state: any): Promise<IDBValidKey> =>
+    tx(STORE_SENDERKEYS, "readwrite", (s) => s.put(state, `${profileId}:sk-peer:${conversationId}:${senderIk}`)),
 };
 
 /* ---------------------------------------------------------------------------

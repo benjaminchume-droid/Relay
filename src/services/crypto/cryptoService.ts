@@ -483,6 +483,13 @@ export async function decryptFor(
   }
 }
 
+/** Sender identity pubkey (b64u) — binds R3 group envelopes to the sender's
+ *  identity so recipients resolve the right chain + pairwise session. */
+export function getSenderIk(): string {
+  if (!identity) throw new Error("identity not ready — call ensureIdentity first");
+  return b64u.enc(identity.ik.publicKey);
+}
+
 export function resetForTests() {
   sessionCache.clear();
   identity = null;

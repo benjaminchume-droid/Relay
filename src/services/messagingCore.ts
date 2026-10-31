@@ -7,6 +7,7 @@ import { profileCache } from "./profileCache";
 import { formatProfileRecord } from "../lib/profileFormat";
 import type { Chat, Message } from "../types";
 import { encryptFor, encryptFanout, isEnvelope } from "./crypto/cryptoService";
+import { encryptGroup } from "./crypto/senderKeys";
 import { ownPlaintextRemember, ownMediaRemember } from "./messageFetch";
 import { encodePayload, type MsgPayload } from "./crypto/mediaDecryptor";
 
@@ -265,9 +266,15 @@ export async function sendConversationMessage(
         // DM — single envelope, R1 (compact, unchanged wire format)
         wireContent = await encryptFor(profileId, targetConvId, peerId, encodePayload(envelopePayload));
       } else {
-        // Group / community / channel — R2 fan-out: one envelope per recipient so
-        // EVERY member can decrypt (not just one .limit(1) pick).
-        wireContent = await encryptFanout(profileId, targetConvId, peerIds, encodePayload(envelopePayload));
+        // Group / community / channel — R3 sender keys: ONE envelope per message
+        // regardless of member count (WhatsApp-style, scales to big rosters).
+        // Falls back to R2 fan-out only if the sender-key layer can't run.
+        try {
+          wireContent = await encryptGroup(profileId, targetConvId, peerIds, encodePayload(envelopePayload));
+        } catch (e3) {
+          console.warn("[e2ee] R3 unavailable — R2 fan-out fallback", e3);
+          wireContent = await encryptFanout(profileId, targetConvId, peerIds, encodePayload(envelopePayload));
+        }
       }
     } catch (e) {
       console.error("[e2ee] encrypt failed — message NOT sent (refusing plaintext fallback)", e);
@@ -419,7 +426,7 @@ export async function editMessageEncrypted(
   const wireContent =
     peerIds.length <= 1
       ? await encryptFor(profileId, targetConvId, peerIds[0], encodePayload({ k: "t", t: newText } as MsgPayload))
-      : await encryptFanout(profileId, targetConvId, peerIds, encodePayload({ k: "t", t: newText } as MsgPayload));
+      : await encryptGroup(profileId, targetConvId, peerIds, encodePayload({ k: "t", t: newText } as MsgPayload));
 
   // remember our own plaintext for this row so refetches stay readable
   ownPlaintextRemember(String(messageId), newText);

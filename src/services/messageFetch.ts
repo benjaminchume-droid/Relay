@@ -7,6 +7,7 @@ import { formatMessageRecord } from "./messagingCore";
 import {
   decryptFor, deleteSessionFor, ensureSession, encryptFor, isEnvelope, isFanout, parseEnvelope, parseFanout,
 } from "./crypto/cryptoService";
+import { decryptGroup, isGroupEnvelope, parseGroupEnvelope } from "./crypto/senderKeys";
 import { decodePayload, getDecryptedMediaUrl } from "./crypto/mediaDecryptor";
 import type { Message } from "../types";
 
@@ -19,7 +20,7 @@ import type { Message } from "../types";
 export function looksLikeEnvelope(s: unknown): boolean {
   if (typeof s !== "string") return false;
   const t = s.trimStart();
-  if (t.startsWith("R1:") || t.startsWith("R2:")) return true;
+  if (t.startsWith("R1:") || t.startsWith("R2:") || t.startsWith("R3:")) return true;
   if (t.startsWith("e2ee:v1:")) return true;
   // envelope JSON that somehow lost its prefix — check the Signal header shape
   if (t.startsWith("{") && /"(v|dh|ct|iv|pre|ek|spkId|opkId)"\s*:/.test(t.slice(0, 400))) return true;
@@ -238,7 +239,7 @@ export async function decryptMessages(
 ): Promise<void> {
   for (const msg of msgs) {
     const raw = (msg as any).content;
-    if (!isEnvelope(raw) && !isFanout(raw)) continue;
+    if (!isEnvelope(raw) && !isFanout(raw) && !isGroupEnvelope(raw)) continue;
     (msg as any)._encrypted = true;
     // Own outgoing messages: NEVER run the ratchet on them (no receiving chain for
     // self — it would corrupt the session state). Recall the stored plaintext.
@@ -262,16 +263,24 @@ export async function decryptMessages(
       continue;
     }
     try {
+      // R3 sender-key envelope: one envelope for ALL group members — decrypt
+      // against the SENDER's distributed chain (fetch + unwrap on first miss).
       // R2 fan-out: pick the envelope addressed to ME, decrypt against the SENDER.
       // R1: single envelope (DMs / legacy). Sessions are per conversation+peer.
-      const env = isFanout(raw)
-        ? (parseFanout(raw).to.find((t) => t.p === myProfileId)?.e ?? null)
-        : parseEnvelope(raw);
-      if (!env) {
-        msg.content = CIPHER_PLACEHOLDER;
-        continue;
+      let payload: any;
+      if (isGroupEnvelope(raw)) {
+        payload = decodePayload(await decryptGroup(myProfileId, conversationId, msg.senderId, parseGroupEnvelope(raw)));
+      } else {
+        const env = isFanout(raw)
+          ? (parseFanout(raw).to.find((t) => t.p === myProfileId)?.e ?? null)
+          : parseEnvelope(raw);
+        if (!env) {
+          msg.content = CIPHER_PLACEHOLDER;
+          (msg as any)._undecryptable = true;
+          continue;
+        }
+        payload = decodePayload(await decryptFor(myProfileId, conversationId, msg.senderId, env));
       }
-      const payload = decodePayload(await decryptFor(myProfileId, conversationId, msg.senderId, env));
       if (!payload) throw new Error("bad payload");
       if (payload.k === "r") {
         // Session-reset control message — protocol plumbing, never render it.
@@ -296,6 +305,9 @@ export async function decryptMessages(
     } catch (e: any) {
       console.warn("[e2ee] decrypt failed for message", msg.id, e);
       msg.content = CIPHER_PLACEHOLDER;
+      // Locked-bubble feature: undecryptable rows render as a distinct locked
+      // bubble (never ciphertext) — the sender always sees their own message.
+      (msg as any)._undecryptable = true;
       // Bare envelope we can't open → the shared session is gone on one side.
       // Kick the reset protocol so BOTH devices converge instead of failing
       // forever — but at most ONCE per dead message (memoized), otherwise
@@ -313,9 +325,23 @@ export async function decryptMessages(
   for (const msg of msgs) {
     if (looksLikeEnvelope(msg.content)) {
       msg.content = CIPHER_PLACEHOLDER;
+      (msg as any)._undecryptable = true;
+    }
+    // Monthly remnant clear: undecryptable rows older than 30 days stop
+    // rendering entirely (per user spec — remnants are purged monthly).
+    if ((msg as any)._undecryptable) {
+      const ts = Date.parse(msg.timestamp || "");
+      if (Number.isFinite(ts) && Date.now() - ts > REMNANT_TTL_MS) {
+        (msg as any)._systemControl = true; // filtered from the UI
+        msg.content = "";
+        (msg as any)._undecryptable = false;
+      }
     }
   }
 }
+
+/** Remnant (undecryptable) messages auto-clear 30 days after they were sent. */
+export const REMNANT_TTL_MS = 30 * 24 * 3600 * 1000;
 
 export async function fetchConversationMessages(conversationId: string, myProfileId?: string): Promise<Message[]> {
   if (!conversationId) return [];

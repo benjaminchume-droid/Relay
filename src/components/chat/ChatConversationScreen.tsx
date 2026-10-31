@@ -541,6 +541,9 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
     const mime = (msg as any)._mime || (msg as any).attachments?.[0]?.mimeType;
     const decryptFailed = (msg as any)._encrypted && !mediaUrl;
     const isDeletedMsg = !!(msg as any).isDeleted;
+    // Locked-bubble feature: a row we genuinely can't decrypt renders as a
+    // distinct dashed "locked" bubble — never ciphertext, never plain fake text.
+    const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !isDeletedMsg;
     // ABSOLUTE UI GATE — raw ciphertext can never be rendered, even if a
     // future code path forgets to decrypt. The store sweep repairs it.
     const bodyText = looksLikeEnvelope(msg.content) ? "This message can't be displayed on this device" : String(msg.content ?? "");
@@ -574,7 +577,7 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
               </span>
             )}
             <div
-              className={`px-2 py-1.5 text-[13.5px] leading-snug font-medium max-w-[80%] [overflow-wrap:anywhere] text-left ${isDeletedMsg ? "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 italic" : mine ? "wa-bubble-mine" : "wa-bubble-other"} ${isVoice || mediaUrl ? "pb-1.5" : ""}`}
+              className={`px-2 py-1.5 text-[13.5px] leading-snug font-medium max-w-[80%] [overflow-wrap:anywhere] text-left ${isDeletedMsg ? "bg-slate-100 dark:bg-white/5 text-slate-400 dark:text-slate-500 italic" : isLocked ? "bg-transparent border border-dashed border-slate-300 dark:border-white/20 text-slate-400 dark:text-slate-500 italic" : mine ? "wa-bubble-mine" : "wa-bubble-other"} ${isVoice || mediaUrl ? "pb-1.5" : ""}`}
               style={{ borderRadius: bubbleRadius, opacity: isDeletedMsg ? 0.85 : 1, touchAction: "pan-y" }}
               onPointerDown={(e) => onPressStart(e, msg)}
               onPointerMove={onPressMove}
@@ -614,7 +617,13 @@ export const ChatConversationScreen: React.FC<{ chatId: string; onBack: () => vo
                 </div>
               ) : (
                 <>
-                  <span className="whitespace-pre-wrap">{bodyText}</span>
+                  {isLocked ? (
+                    <span className="inline-flex items-center gap-1.5 whitespace-pre-wrap">
+                      <Lock size={11} className="shrink-0" aria-hidden /> {bodyText}
+                    </span>
+                  ) : (
+                    <span className="whitespace-pre-wrap">{bodyText}</span>
+                  )}
                   <MetaRow isMine={mine} ts={msgTs ? formatChatTimestamp(msgTs) : ""} state={(msg as any).deliveryState} inline edited={!!(msg as any).isEdited} />
                 </>
               )}
@@ -1244,6 +1253,7 @@ function RetroMessageList({
         const isVoice = msg.type === "voice" || (msg as any).attachments?.[0]?.mimeType?.startsWith?.("audio");
         const decryptFailed = (msg as any)._encrypted && !mediaUrl;
         const isDeletedMsg = !!(msg as any).isDeleted;
+        const isLocked = !!(msg as any)._undecryptable && !mediaUrl && !isVoice && !isDeletedMsg;
         const bodyText = looksLikeEnvelope(msg.content) ? "This message can't be displayed on this device" : String(msg.content ?? "");
         return (
           <React.Fragment key={msg.id || idx}>
@@ -1314,7 +1324,8 @@ function RetroMessageList({
                 ) : mediaUrl && ((msg.type as string) === "image" || (msg.type as string) === "photo") ? (
                   <img src={mediaUrl} alt="" className="rounded-2xl max-w-[75%] max-h-64 object-cover border border-slate-200 dark:border-white/10" />
                 ) : (
-                  <p className="text-[14px] font-medium text-slate-800 dark:text-slate-100 whitespace-pre-wrap [overflow-wrap:anywhere] pr-8 text-left">
+                  <p className={`text-[14px] font-medium whitespace-pre-wrap [overflow-wrap:anywhere] pr-8 text-left ${isLocked ? "italic text-slate-400 dark:text-slate-500" : "text-slate-800 dark:text-slate-100"}`}>
+                    {isLocked && <Lock size={11} className="inline mr-1 -mt-0.5" aria-hidden />}
                     {bodyText}
                     <span className="float-right ml-2 mt-1 text-[9px] text-slate-400 dark:text-slate-500 flex items-center gap-1">
                       {(msg as any).isEdited && <span className="italic">edited</span>}

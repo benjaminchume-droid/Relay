@@ -251,8 +251,19 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
           setInfo(`Account created. We emailed a 6-digit code to ${email.trim()}.`);
         }
       } else {
+        // Username login: "@handle" / bare handle resolves to the auth email
+        // via a SECURITY DEFINER RPC, then the normal password sign-in runs.
+        let identifier = email.trim();
+        if (identifier && !identifier.includes('@')) {
+          const { data: lookup, error: lErr } = await supabase
+            .rpc('relay_lookup_login', { p_username: identifier.replace(/^@+/, '') });
+          if (lErr || !lookup) {
+            throw new Error('No Relay account found for that handle.');
+          }
+          identifier = String(lookup);
+        }
         const { data, error: err } = await supabase.auth.signInWithPassword({
-          email: email.trim(),
+          email: identifier,
           password,
         });
         if (err) {
@@ -383,6 +394,10 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         provider: 'google',
         options: {
           redirectTo,
+          // Genjutsu pattern: never let supabase-js trigger its own navigation —
+          // we assign the URL ourselves so the ENTIRE flow (Google consent →
+          // callback) stays inside the app WebView when running there.
+          skipBrowserRedirect: true,
           queryParams: { access_type: 'offline', prompt: 'select_account' },
         },
       });
@@ -564,13 +579,15 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
               <form onSubmit={onPassword} className="space-y-3.5 text-left">
                 {mode !== 'new-password' && (
                   <GlassInput
-                    type="email"
+                    type={mode === 'signup' ? 'email' : 'text'}
+                    inputMode={mode === 'signup' ? 'email' : 'email'}
+                    autoCapitalize={mode === 'signup' ? 'none' : 'none'}
                     label={mode === 'signup' ? 'Email' : 'Email or @handle'}
-                    placeholder="you@example.com"
+                    placeholder={mode === 'signup' ? 'you@example.com' : 'you@example.com or @handle'}
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                     icon={<Mail size={15} />}
-                    autoComplete="email"
+                    autoComplete="username"
                     required
                   />
                 )}

@@ -148,13 +148,34 @@ function friendlyAuthError(msg: string): string {
   return msg || 'Something went wrong. Please try again.';
 }
 
+// Profile cache: lets the app bootstrap OFFLINE (network down must never
+// look like "logged out"). Written on every successful load.
+const PROFILE_CACHE_KEY = 'relay_profile_cache_v1';
+function cacheProfile(profile: any): void {
+  try {
+    if (!profile?.id) return;
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[profile.id] = profile;
+    localStorage.setItem(PROFILE_CACHE_KEY, JSON.stringify(map));
+  } catch { /* storage unavailable — bootstrapping just won't be offline-safe */ }
+}
+function cachedProfileForUser(userId: string): UserProfile | null {
+  try {
+    const raw = localStorage.getItem(PROFILE_CACHE_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    return (map[userId] as UserProfile) || null;
+  } catch { return null; }
+}
+
 async function loadProfileForUser(sbUser: any): Promise<UserProfile | null> {
   if (!sbUser?.id) return null;
-  const { data } = await supabase
+  const { data, error } = await supabase
     .from('profiles')
     .select('*')
     .or(`id.eq.${sbUser.id},auth_user_id.eq.${sbUser.id}`)
     .maybeSingle();
+  if (error) throw new Error(error.message);
   if (!data) {
     // No profile row yet (fresh signup) — DO NOT fabricate an onboarded profile
     // from the email handle, otherwise onboarding is skipped/flashed.
@@ -164,7 +185,9 @@ async function loadProfileForUser(sbUser: any): Promise<UserProfile | null> {
     (fresh as any).name = '';
     return fresh;
   }
-  return formatProfileRecord(data, sbUser);
+  const profile = formatProfileRecord(data, sbUser);
+  cacheProfile(profile);
+  return profile;
 }
 
 function profileIsOnboarded(p: UserProfile | null): boolean {
@@ -241,7 +264,23 @@ export const useAuthStore = create<AuthState>((set, get) => {
           });
           return;
         }
-        const profile = await loadProfileForUser(session.user);
+        let profile: UserProfile | null;
+        try {
+          profile = await loadProfileForUser(session.user);
+        } catch (profileErr) {
+          // OFFLINE / transient network failure is NOT a logout. Land the user
+          // in the app with their last cached profile; it refetches when the
+          // connection returns. (This exact path used to set status ERROR and
+          // kick people out whenever they opened Relay without internet.)
+          console.warn('[auth] profile load failed (offline?) — using cached profile', profileErr);
+          profile = cachedProfileForUser(session.user.id);
+          if (!profile) {
+            profile = formatProfileRecord({ id: session.user.id, email: session.user.email }, session.user);
+            (profile as any).onboardingCompleted = false;
+            (profile as any).username = '';
+            (profile as any).name = '';
+          }
+        }
         const onboarded = profileIsOnboarded(profile);
         set({
           status: onboarded ? 'READY' : 'AUTHENTICATED',
