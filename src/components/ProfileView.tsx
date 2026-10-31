@@ -4,9 +4,10 @@
  */
 
 import React, { useState, useEffect } from 'react';
-import { 
-  Palette, Shield, Lock, User, RefreshCw, LogOut, ShieldCheck, Check, Camera, Upload,
-  Bell, HardDrive, HelpCircle, AlertTriangle, Trash2, Smartphone, Eye, Sparkles, Sliders, KeyRound
+import {
+  Palette, Shield, Lock, User, RefreshCw, LogOut, Check, Camera, Upload,
+  Bell, HardDrive, HelpCircle, AlertTriangle, KeyRound, Scale, FileText, Users,
+  Volume2, Vibrate, Eye, BellRing
 } from 'lucide-react';
 import { GlassCard, GlassButton, GlassInput, GlassSlider } from './GlassUI';
 import { supabase } from '../lib/supabase/client';
@@ -17,13 +18,78 @@ import { AccentColor, BubbleStyle, WallpaperStyle, ThemeMode, StoriesLayout } fr
 import { relayCacheManager } from '../services/cacheManager';
 import { getLetterAvatar } from '../lib/avatar';
 import { ThemePresetsSection } from './ThemePresetsSection';
+import { notificationService, type NotificationPrefs } from '../services/notificationService';
+
+type LegalDoc = 'privacy' | 'guidelines' | 'terms';
+
+/* -----------------------------------------------------------------------
+ * Legal Center — plain-language, user-facing documents.
+ * ----------------------------------------------------------------------- */
+const LEGAL_CONTENT: Record<LegalDoc, { title: string; icon: React.FC<any>; body: React.ReactNode }> = {
+  privacy: {
+    title: 'Privacy Policy',
+    icon: Shield,
+    body: (
+      <>
+        <p><strong>What we collect.</strong> Relay collects the minimum needed to run the service: your account email, the display name and @handle you choose, your avatar if you upload one, and technical records (device type, app version) used to keep you signed in and deliver notifications.</p>
+        <p><strong>Your conversations.</strong> Personal and group messages are end-to-end encrypted on your device. They reach our servers only as ciphertext and are stored that way — Relay cannot read them, and neither can anyone who obtains our database. Voice notes, photos and files are encrypted before upload and decrypted only on the devices of the people in that conversation.</p>
+        <p><strong>What we can see.</strong> Metadata required to deliver messages — which conversations exist, who is in them, and delivery timestamps. We do not sell data, run ad trackers, or build advertising profiles. Ever.</p>
+        <p><strong>Your controls.</strong> You can export or delete your account at any time from Settings. Deleting your account removes your profile, keys and message records from our systems. Read receipts and last-seen can be turned off in Privacy settings.</p>
+        <p><strong>Changes.</strong> If this policy changes materially, we will notify you in-app before it takes effect.</p>
+      </>
+    ),
+  },
+  guidelines: {
+    title: 'Community Guidelines',
+    icon: Users,
+    body: (
+      <>
+        <p>Relay exists so people can talk freely and safely. These rules keep it that way.</p>
+        <p><strong>Be human.</strong> No harassment, hate speech, threats, or targeted abuse. Disagreement is fine; demeaning people is not.</p>
+        <p><strong>No illegal content or activity.</strong> Do not use Relay to distribute unlawful material, sexual content involving minors, or to coordinate harm.</p>
+        <p><strong>No spam or manipulation.</strong> No bulk unsolicited invites, scam messages, impersonation of other people or brands, or automated flooding.</p>
+        <p><strong>Respect spaces.</strong> Community hosts set extra rules for their spaces. Follow them, and follow moderators' decisions within these guidelines.</p>
+        <p><strong>Enforcement.</strong> Because messages are end-to-end encrypted, Relay only acts on reports about public community content, profiles, or behavior patterns we can observe — not on private conversations we cannot read. Violations can lead to content removal, suspension, or a permanent ban. Report issues to a community moderator or contact support.</p>
+      </>
+    ),
+  },
+  terms: {
+    title: 'Terms of Service',
+    icon: FileText,
+    body: (
+      <>
+        <p><strong>Your account.</strong> You must provide accurate registration information and keep your credentials secure. You are responsible for activity under your account. Minimum age: 13 (or higher where local law requires).</p>
+        <p><strong>The service.</strong> Relay provides end-to-end encrypted messaging, calling, stories and communities "as is." We work hard on reliability but do not guarantee uninterrupted service, and we may change or discontinue features over time.</p>
+        <p><strong>Your content.</strong> You keep ownership of everything you send or post. By using Relay you grant us only the limited technical right to transmit, store (in encrypted form), and display your content within the service as you intend.</p>
+        <p><strong>Acceptable use.</strong> Don't reverse-engineer the encryption, attack the infrastructure, scrape the service, or use Relay to break the law or these guidelines.</p>
+        <p><strong>Termination.</strong> You can stop using Relay and delete your account whenever you like. We may suspend accounts that violate these terms, with notice when practicable.</p>
+        <p><strong>Liability.</strong> To the maximum extent permitted by law, Relay is not liable for indirect or consequential damages arising from your use of the service.</p>
+      </>
+    ),
+  },
+};
+
+const ABOUT_MISSION = `Relay started with a simple belief: private conversation is a right, not a premium feature. We build one app where your messages, calls, stories and communities are protected by end-to-end encryption by default — not as a settings toggle, not as a paid tier.
+
+We want Relay to feel effortless. Everything sensitive stays sealed between you and the people you talk to; everything else gets out of the way. No ads, no data mining, no dark patterns — our only customer is you.
+
+Where we're going: making encrypted communication available to everyone, on every device, with the polish of the best consumer apps in the world. Relay is built by Glassline — a small, independent company that answers to its users, not to advertisers.`;
 
 export const ProfileView: React.FC = () => {
-  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'HELP'>('APPEARANCE');
+  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'HELP' | 'LEGAL'>('APPEARANCE');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cacheCleared, setCacheCleared] = useState(false);
+  const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
+  const [notifPrefs, setNotifPrefsState] = useState(notificationService.getPrefs());
+  const [notifPerm, setNotifPerm] = useState(notificationService.permission());
+
+  // password card — accounts created via email code or Google have no password yet
+  const [newPw, setNewPw] = useState('');
+  const [confirmPw, setConfirmPw] = useState('');
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState<{ ok: boolean; text: string } | null>(null);
   
-  const { currentUser, updateProfile, uploadAvatarOrBanner, updatePrivacy, revokeSession, revokeAllOtherSessions, logout, deleteAccount } = useAuthStore();
+  const { currentUser, updateProfile, uploadAvatarOrBanner, updatePrivacy, revokeSession, revokeAllOtherSessions, logout, deleteAccount, setAccountPassword } = useAuthStore();
   const { 
     customization, 
     setAccentColor, 
@@ -41,6 +107,11 @@ export const ProfileView: React.FC = () => {
   const [bio, setBio] = useState(currentUser?.bio || '');
   const [statusMessage, setStatusMessage] = useState(currentUser?.statusMessage || '');
   const [saveSuccess, setSaveSuccess] = useState(false);
+
+  useEffect(() => {
+    setNotifPrefsState(notificationService.getPrefs());
+    setNotifPerm(notificationService.permission());
+  }, []);
   const [saveError, setSaveError] = useState<string | null>(null);
   const [usernameCheck, setUsernameCheck] = useState<{ checking: boolean; available: boolean | null; message: string }>({ checking: false, available: null, message: '' });
 
@@ -108,6 +179,30 @@ export const ProfileView: React.FC = () => {
     setTimeout(() => setCacheCleared(false), 2500);
   };
 
+  const handleEnableSystemNotifications = async () => {
+    const result = await notificationService.requestPermission();
+    setNotifPerm(result);
+    setNotifPrefsState(notificationService.getPrefs());
+  };
+
+  const patchNotifPrefs = (patch: Partial<NotificationPrefs>) => {
+    setNotifPrefsState(notificationService.setPrefs(patch));
+  };
+
+  const handleSetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPwMsg(null);
+    setPwBusy(true);
+    const ok = await setAccountPassword(newPw, confirmPw);
+    setPwBusy(false);
+    if (ok) {
+      setPwMsg({ ok: true, text: 'Password saved. You can now sign in with it on any device.' });
+      setNewPw(''); setConfirmPw('');
+    } else {
+      setPwMsg({ ok: false, text: useAuthStore.getState().error || 'Could not set the password.' });
+    }
+  };
+
   const accentList: AccentColor[] = ['liquid-azure', 'emerald-frost', 'neon-violet', 'rose-gold', 'midnight', 'amber-glow'];
   const bubbleStyles: BubbleStyle[] = ['edge-glow', 'classic', 'gradient', 'minimal'];
   const wallpapers: WallpaperStyle[] = ['glass-gradient', 'dark-aurora', 'neon-mesh', 'minimal-grid', 'warm-clay', 'pure-slate'];
@@ -168,7 +263,8 @@ export const ProfileView: React.FC = () => {
           { id: 'PERMISSIONS', label: 'Permissions & Devices', icon: KeyRound },
           { id: 'NOTIFICATIONS', label: 'Notifications', icon: Bell },
           { id: 'STORAGE', label: 'Storage', icon: HardDrive },
-          { id: 'HELP', label: 'Help & About', icon: HelpCircle }
+          { id: 'HELP', label: 'About', icon: HelpCircle },
+          { id: 'LEGAL', label: 'Legal', icon: Scale }
         ].map((tab) => {
           const isActive = subTab === tab.id;
           const IconComp = tab.icon;
@@ -514,15 +610,102 @@ export const ProfileView: React.FC = () => {
               </label>
             </div>
           </GlassCard>
+
+          <GlassCard className="p-5 space-y-4">
+            <div className="flex items-center gap-2">
+              <KeyRound size={15} className="text-slate-600" />
+              <span className="text-xs font-bold text-slate-800 block">Account Security</span>
+            </div>
+            <p className="text-[11px] text-slate-500 leading-relaxed">
+              Signed up with an email code or Google? Your account may not have a password yet.
+              Set one here and you'll be able to sign in with it on any device.
+            </p>
+            <form onSubmit={handleSetPassword} className="space-y-3">
+              <GlassInput
+                type="password"
+                label="New password"
+                placeholder="Minimum 8 characters"
+                value={newPw}
+                onChange={(e) => setNewPw(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+              <GlassInput
+                type="password"
+                label="Confirm password"
+                placeholder="Repeat password"
+                value={confirmPw}
+                onChange={(e) => setConfirmPw(e.target.value)}
+                autoComplete="new-password"
+                required
+              />
+              {pwMsg && (
+                <div className={`p-2.5 rounded-xl text-xs font-medium ${pwMsg.ok ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-600'}`}>
+                  {pwMsg.text}
+                </div>
+              )}
+              <GlassButton type="submit" variant="primary" disabled={pwBusy || newPw.length < 8} className="py-2.5 px-5 text-xs">
+                {pwBusy ? 'Saving…' : 'Save password'}
+              </GlassButton>
+            </form>
+          </GlassCard>
         </div>
       )}
 
       {subTab === 'PERMISSIONS' && <PermissionsView />}
 
       {subTab === 'NOTIFICATIONS' && (
-        <GlassCard className="p-5 space-y-3">
-          <span className="text-xs font-bold text-slate-800 block">Notification Preferences</span>
-          <p className="text-[11px] text-slate-500">Device registration runs automatically on login (Phase 5). Push tokens are stored when Capacitor PushNotifications is available.</p>
+        <GlassCard className="p-5 space-y-4">
+          <div className="flex items-center gap-2">
+            <BellRing size={15} style={{ color: 'var(--primary-accent, #2563EB)' }} />
+            <span className="text-xs font-bold text-slate-800 block">Notification Engine</span>
+          </div>
+          <p className="text-[11px] text-slate-500 leading-relaxed">
+            Relay alerts you the moment a message lands — in-app banners, sound, vibration and system
+            notifications. Unread badges show on the Chats tab and the browser tab title.
+          </p>
+
+          {notifPerm !== 'unsupported' && (
+            <div className="p-3 bg-white/80 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3">
+              <div>
+                <span className="font-bold text-slate-800 block text-xs">System notifications</span>
+                <span className="text-[10px] text-slate-500">
+                  {notifPerm === 'granted' ? 'Enabled — alerts appear even when Relay is in the background'
+                    : notifPerm === 'denied' ? 'Blocked in your browser settings — re-enable site notifications to use this'
+                    : 'Allow Relay to notify you outside the app'}
+                </span>
+              </div>
+              {notifPerm === 'granted' ? (
+                <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2.5 py-1 rounded-full border border-emerald-200">ON</span>
+              ) : (
+                <GlassButton onClick={handleEnableSystemNotifications} variant="primary" className="py-2 px-3.5 text-xs" disabled={notifPerm === 'denied'}>
+                  Enable
+                </GlassButton>
+              )}
+            </div>
+          )}
+
+          {([
+            { key: 'sound' as const, label: 'In-app sound', desc: 'Soft pop when a message arrives', icon: Volume2 },
+            { key: 'vibration' as const, label: 'Vibration', desc: 'Short buzz on supported devices', icon: Vibrate },
+            { key: 'showPreview' as const, label: 'Message previews', desc: 'Show message text in alerts', icon: Eye },
+          ]).map(({ key, label, desc, icon: Icon }) => (
+            <label key={key} className="flex items-center justify-between p-3 bg-white/80 rounded-2xl border border-slate-200/80 cursor-pointer">
+              <div className="flex items-center gap-2.5">
+                <Icon size={14} className="text-slate-500" />
+                <div>
+                  <span className="font-bold text-slate-800 block text-xs">{label}</span>
+                  <span className="text-[10px] text-slate-500">{desc}</span>
+                </div>
+              </div>
+              <input
+                type="checkbox"
+                checked={notifPrefs[key]}
+                onChange={(e) => patchNotifPrefs({ [key]: e.target.checked })}
+                className="w-4 h-4 rounded text-blue-600 focus:ring-0 cursor-pointer"
+              />
+            </label>
+          ))}
         </GlassCard>
       )}
 
@@ -536,13 +719,105 @@ export const ProfileView: React.FC = () => {
       )}
 
       {subTab === 'HELP' && (
-        <GlassCard className="p-5 space-y-4">
-          <span className="text-xs font-bold text-slate-800 block">About RELAY</span>
-          <div className="space-y-2 text-xs text-slate-600">
-            <p className="font-semibold text-slate-800">RELAY v0.5.2 Liquid Glass Engine</p>
-            <p>Phase 5: device registration, push tokens, TURN-ready ICE, and one-tap look packs.</p>
-          </div>
-        </GlassCard>
+        <div className="space-y-4">
+          <GlassCard heavy className="p-6 space-y-4">
+            <div className="flex items-center gap-3">
+              <img src="/relay-logo.png" alt="" className="w-12 h-12 rounded-2xl object-cover shadow-md" onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }} />
+              <div>
+                <h3 className="text-lg font-bold text-slate-800">Relay</h3>
+                <p className="text-[11px] text-slate-500 font-semibold">Private by default. Effortless by design.</p>
+              </div>
+            </div>
+            <div className="space-y-3 text-[12.5px] leading-relaxed text-slate-600">
+              {ABOUT_MISSION.split('\n\n').map((para, i) => (
+                <p key={i}>{para}</p>
+              ))}
+            </div>
+            <div className="flex flex-wrap gap-2 pt-1">
+              {[
+                { icon: Lock, label: 'End-to-end encrypted' },
+                { icon: Bell, label: 'No ads, ever' },
+                { icon: Users, label: 'Yours, not ours' },
+              ].map(({ icon: Icon, label }) => (
+                <span key={label} className="inline-flex items-center gap-1.5 text-[10px] font-bold text-slate-600 bg-slate-100/90 px-2.5 py-1.5 rounded-full border border-slate-200/70">
+                  <Icon size={11} /> {label}
+                </span>
+              ))}
+            </div>
+          </GlassCard>
+
+          <GlassCard className="p-5 space-y-2 text-xs">
+            <div className="flex items-center justify-between">
+              <span className="font-bold text-slate-800">Version</span>
+              <span className="font-mono text-slate-500">Relay 0.5.2 · Liquid Glass</span>
+            </div>
+            <div className="flex items-center justify-between pt-2 border-t border-slate-200/70 dark:border-white/10">
+              <span className="font-bold text-slate-800">Company</span>
+              <span className="text-slate-500">Built by Glassline</span>
+            </div>
+          </GlassCard>
+
+          <button
+            onClick={() => setSubTab('LEGAL')}
+            className="w-full text-[11px] font-semibold text-blue-600 hover:underline cursor-pointer"
+          >
+            Privacy Policy · Community Guidelines · Terms of Service →
+          </button>
+        </div>
+      )}
+
+      {subTab === 'LEGAL' && (
+        <div className="space-y-4">
+          <GlassCard className="p-5 space-y-1">
+            <div className="flex items-center gap-2 mb-2">
+              <Scale size={15} className="text-slate-600" />
+              <span className="text-xs font-bold text-slate-800">Legal Center</span>
+            </div>
+            <p className="text-[11px] text-slate-500 mb-3">The rules and promises that keep Relay safe — written in plain language.</p>
+            <div className="space-y-2">
+              {(Object.keys(LEGAL_CONTENT) as LegalDoc[]).map((doc) => {
+                const conf = LEGAL_CONTENT[doc];
+                const Icon = conf.icon;
+                return (
+                  <button
+                    key={doc}
+                    type="button"
+                    onClick={() => setLegalDoc(doc)}
+                    className="w-full flex items-center justify-between p-3.5 bg-white/80 hover:bg-white rounded-2xl border border-slate-200/80 dark:border-white/10 dark:bg-slate-800/60 text-left cursor-pointer transition-colors"
+                  >
+                    <span className="flex items-center gap-3">
+                      <span className="p-2 rounded-xl" style={{ backgroundColor: 'color-mix(in srgb, var(--primary-accent, #2563EB) 10%, transparent)', color: 'var(--primary-accent, #2563EB)' }}>
+                        <Icon size={15} />
+                      </span>
+                      <span className="text-xs font-bold text-slate-800 dark:text-slate-100">{conf.title}</span>
+                    </span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Read</span>
+                  </button>
+                );
+              })}
+            </div>
+          </GlassCard>
+
+          {legalDoc && (
+            <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-md flex items-center justify-center p-4" onClick={() => setLegalDoc(null)}>
+              <div className="w-full max-w-lg" onClick={(e) => e.stopPropagation()}>
+                <GlassCard heavy className="max-h-[80vh] overflow-y-auto p-6 space-y-4 text-left">
+                  <div className="flex items-center justify-between sticky top-0">
+                    <h3 className="text-sm font-bold text-slate-800 dark:text-slate-100 flex items-center gap-2">
+                      {React.createElement(LEGAL_CONTENT[legalDoc].icon, { size: 16 })}
+                      {LEGAL_CONTENT[legalDoc].title}
+                    </h3>
+                    <button onClick={() => setLegalDoc(null)} className="p-1.5 rounded-full hover:bg-slate-200/60 dark:hover:bg-slate-700/60 text-slate-500 cursor-pointer font-bold" aria-label="Close">✕</button>
+                  </div>
+                  <div className="space-y-3 text-[12px] leading-relaxed text-slate-600 dark:text-slate-300 [&_strong]:text-slate-800 dark:[&_strong]:text-slate-100">
+                    {LEGAL_CONTENT[legalDoc].body}
+                  </div>
+                  <p className="text-[10px] text-slate-400">Last updated: October 31, 2026 · Relay by Glassline</p>
+                </GlassCard>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       <div className="pt-8 border-t border-slate-200/80 dark:border-white/10">

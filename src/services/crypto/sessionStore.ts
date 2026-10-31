@@ -68,3 +68,30 @@ export const cryptoStore = {
     tx<RatchetState | undefined>(STORE_SESSIONS, "readonly", (s) =>
       s.get(sessionKey(profileId, conversationId)) as IDBRequest<RatchetState | undefined>),
 };
+
+/* ---------------------------------------------------------------------------
+ * localStorage mirror of the private identity.
+ * Browsers evict IndexedDB (Safari ITP, storage pressure, "clear site data"
+ * on sign-out flows) — when IDB comes back empty the identity would otherwise
+ * rotate and EVERY past message becomes undecryptable. The mirror survives
+ * sign-out/sign-in on the same device, so logout → login keeps history.
+ * --------------------------------------------------------------------------- */
+const LS_IDENTITY_KEY = "relay_e2ee_identity_mirror_v1";
+
+export function mirrorIdentityToLocalStorage(profileId: string, identity: LocalIdentity): void {
+  try {
+    const raw = localStorage.getItem(LS_IDENTITY_KEY);
+    const map = raw ? JSON.parse(raw) : {};
+    map[profileId] = identity;
+    localStorage.setItem(LS_IDENTITY_KEY, JSON.stringify(map));
+  } catch { /* storage unavailable — IDB remains the source of truth */ }
+}
+
+export function getMirroredIdentity(profileId: string): LocalIdentity | undefined {
+  try {
+    const raw = localStorage.getItem(LS_IDENTITY_KEY);
+    if (!raw) return undefined;
+    const map = JSON.parse(raw);
+    return map?.[profileId] as LocalIdentity | undefined;
+  } catch { return undefined; }
+}

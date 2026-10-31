@@ -40,11 +40,21 @@ function toWebNotification(n: RelayNotification) {
     if (typeof window === "undefined" || !("Notification" in window)) return;
     if (document.visibilityState === "visible") return; // in-app is enough when visible
     if (Notification.permission !== "granted") return;
-    new Notification(n.title || "Relay", {
-      body: n.body || "New message",
+    if (!notificationService.getPrefs().systemEnabled) return;
+    const notif = new Notification(n.title || "Relay", {
+      body: notificationService.getPrefs().showPreview ? (n.body || "New message") : "New message",
       tag: n.id,
       icon: "/icon-192.png",
     });
+    notif.onclick = () => {
+      try {
+        window.focus();
+        if (n.conversationId) {
+          window.dispatchEvent(new CustomEvent("relay:open-chat", { detail: { chatId: n.conversationId } }));
+        }
+        notif.close();
+      } catch { /* ignore */ }
+    };
   } catch { /* notifications optional */ }
 }
 
@@ -121,6 +131,9 @@ export const useNotificationStore = create<NotificationState>((set, get) => ({
             items: [n, ...s.items.filter((i) => i.id !== n.id)].slice(0, 60),
             unread: s.unread + (n.isRead ? 0 : 1),
           }));
+          notificationService.playPop();
+          notificationService.vibrate();
+          notificationService.setTitleUnread(get().unread);
           toWebNotification(n);
         }
       )
@@ -149,3 +162,101 @@ export async function requestWebNotificationPermission(): Promise<NotificationPe
     return "unsupported";
   }
 }
+
+/* ---------------------------------------------------------------------------
+ * User-facing notification engine controls (Settings → Notifications).
+ * Wraps permission, in-app sound/vibration, previews and the tab-title badge.
+ * --------------------------------------------------------------------------- */
+export type NotificationPrefs = {
+  systemEnabled: boolean;
+  sound: boolean;
+  vibration: boolean;
+  showPreview: boolean;
+};
+
+const PREFS_KEY = "relay_notification_prefs_v1";
+
+const DEFAULT_PREFS: NotificationPrefs = {
+  systemEnabled: false,
+  sound: true,
+  vibration: true,
+  showPreview: true,
+};
+
+let prefs: NotificationPrefs = loadPrefs();
+let lastSoundAt = 0;
+
+function loadPrefs(): NotificationPrefs {
+  try {
+    const raw = localStorage.getItem(PREFS_KEY);
+    if (raw) return { ...DEFAULT_PREFS, ...JSON.parse(raw) };
+  } catch { /* ignore */ }
+  return { ...DEFAULT_PREFS };
+}
+
+export const notificationService = {
+  getPrefs(): NotificationPrefs {
+    return { ...prefs };
+  },
+
+  setPrefs(patch: Partial<NotificationPrefs>): NotificationPrefs {
+    prefs = { ...prefs, ...patch };
+    try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+    return { ...prefs };
+  },
+
+  permission(): "granted" | "denied" | "default" | "unsupported" {
+    if (typeof window === "undefined" || !("Notification" in window)) return "unsupported";
+    return Notification.permission;
+  },
+
+  /** Must be called from a user gesture (Settings toggle). */
+  async requestPermission(): Promise<"granted" | "denied" | "default" | "unsupported"> {
+    const result = await requestWebNotificationPermission();
+    if (result === "granted") {
+      prefs = { ...prefs, systemEnabled: true };
+      try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)); } catch { /* ignore */ }
+    }
+    return result;
+  },
+
+  /** Soft two-note pop — WebAudio, no asset, throttled to one per 1.5s. */
+  playPop(): void {
+    if (!prefs.sound) return;
+    const now = Date.now();
+    if (now - lastSoundAt < 1500) return;
+    lastSoundAt = now;
+    try {
+      const AudioCtor = (window as any).AudioContext || (window as any).webkitAudioContext;
+      if (!AudioCtor) return;
+      const ctx = new AudioCtor();
+      const nowT = ctx.currentTime;
+      const gain = ctx.createGain();
+      gain.gain.setValueAtTime(0.0001, nowT);
+      gain.gain.exponentialRampToValueAtTime(0.09, nowT + 0.02);
+      gain.gain.exponentialRampToValueAtTime(0.0001, nowT + 0.28);
+      gain.connect(ctx.destination);
+      [880, 1174.66].forEach((freq, i) => {
+        const osc = ctx.createOscillator();
+        osc.type = "sine";
+        osc.frequency.value = freq;
+        osc.connect(gain);
+        osc.start(nowT + i * 0.09);
+        osc.stop(nowT + i * 0.09 + 0.16);
+      });
+      setTimeout(() => { try { ctx.close(); } catch { /* ignore */ } }, 800);
+    } catch { /* audio unavailable */ }
+  },
+
+  vibrate(pattern: number | number[] = [18, 60, 18]): void {
+    if (!prefs.vibration) return;
+    try { navigator.vibrate?.(pattern); } catch { /* ignore */ }
+  },
+
+  /** WhatsApp-style unread counter in the browser tab title. */
+  setTitleUnread(total: number): void {
+    try {
+      document.title = total > 0 ? `(${total}) Relay` : "Relay";
+    } catch { /* ignore */ }
+  },
+};

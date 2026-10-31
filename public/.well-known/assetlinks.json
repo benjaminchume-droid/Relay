@@ -1,0 +1,8 @@
+[{
+  "relation": ["delegate_permission/common.handle_all_urls"],
+  "target": {
+    "namespace": "android_app",
+    "package_name": "com.glassline.relay",
+    "sha256_cert_fingerprints": ["60:66:EE:BC:9C:99:A9:28:CD:D3:B8:EA:1A:8E:2A:55:A1:58:F2:C6:51:9A:C8:48:33:84:D5:82:98:45:15:98"]
+  }
+}]

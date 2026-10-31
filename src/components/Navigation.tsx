@@ -19,8 +19,10 @@ export const MainNavigation: React.FC<{
   hideBottomNav?: boolean;
   /** App.tsx compatibility alias */
   hideNav?: boolean;
+  /** When false, main does not page-scroll — full-screen views (chat) manage their own scroll */
+  pageScroll?: boolean;
   children: React.ReactNode;
-}> = ({ activeTab, onSelectTab, hideBottomNav = false, hideNav = false, children }) => {
+}> = ({ activeTab, onSelectTab, hideBottomNav = false, hideNav = false, pageScroll = true, children }) => {
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const { currentUser, logout } = useAuthStore();
@@ -141,7 +143,10 @@ export const MainNavigation: React.FC<{
       )}
 
       <div className="flex-1 app-h overflow-hidden flex flex-col relative">
-        <main className="w-full flex-1 overflow-y-auto overflow-x-hidden relative" style={{ overscrollBehavior: 'contain' }}>{children}</main>
+        <main
+          className={`w-full flex-1 relative overflow-x-hidden ${pageScroll ? "overflow-y-auto" : "overflow-hidden flex flex-col"}`}
+          style={{ overscrollBehavior: 'contain' }}
+        >{children}</main>
 
         {currentUser && !shouldHideBottomNav && (
           <div className="md:hidden fixed bottom-4 left-1/2 -translate-x-1/2 z-50 pointer-events-auto">

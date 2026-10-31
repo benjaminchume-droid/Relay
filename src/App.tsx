@@ -177,6 +177,16 @@ export const App: React.FC = () => {
     if (chatId) navigate(`/chat/${encodeURIComponent(chatId)}`);
     else navigate('/messaging');
   };
+
+  // Notification engine → system-notification click lands back in the conversation
+  useEffect(() => {
+    const open = (e: Event) => {
+      const id = (e as CustomEvent).detail?.chatId;
+      if (id) openChat(id);
+    };
+    window.addEventListener('relay:open-chat', open);
+    return () => window.removeEventListener('relay:open-chat', open);
+  }, []);
   const selectTab = (t: 'chats' | 'communities' | 'explore' | 'profile') => {
     navigate(t === 'chats' ? '/messaging' : `/${t}`);
   };
@@ -250,6 +260,7 @@ export const App: React.FC = () => {
       <MainNavigation
         activeTab={tab}
         hideNav={!!activeChatId || !!activeSubRoute}
+        pageScroll={!activeChatId}
         onSelectTab={selectTab}
       >
         {activeSubRoute === 'notifications' ? (

@@ -16,7 +16,7 @@ import {
   initRatchetAsResponder, ratchetEncrypt, ratchetDecrypt,
   type LocalIdentity, type PrekeyBundle, type RatchetState, type Envelope,
 } from "./signalProtocol";
-import { cryptoStore } from "./sessionStore";
+import { cryptoStore, mirrorIdentityToLocalStorage, getMirroredIdentity } from "./sessionStore";
 
 export const E2EE_PREFIX = "R1:";
 export const FANOUT_PREFIX = "R2:";
@@ -62,6 +62,87 @@ let inflightIdentity: Promise<LocalIdentity> | null = null;
 /** Ensure this device has a local identity and it is registered server-side.
  *  Concurrent callers share ONE generation — two parallel runs would register
  *  different bundles and desync the device's private keys from the server. */
+/* ---------------------------------------------------------------------------
+ * Account-scoped encrypted identity backup (server side).
+ *
+ * WHY: a private identity lives in device storage only. After sign-out the
+ * browser can evict it (or the user signs in on a fresh device) — without a
+ * backup that ROTATES the identity and every historical message becomes
+ * undecryptable forever. The identity bundle is mirrored to
+ * `signal_identity_backup` encrypted with a key derived from the account's
+ * own identifiers (auth user id + profile id). Anyone without the account
+ * session cannot derive it from the DB row alone. Documented trade-off:
+ * account-scoped escrow, prioritizing "sign out anywhere, sign back in,
+ * history still decrypts" over forward secrecy of the local identity key.
+ * --------------------------------------------------------------------------- */
+const BACKUP_INFO = "relay-e2ee-identity-backup-v1";
+
+async function deriveBackupKey(): Promise<CryptoKey | null> {
+  try {
+    const { data: { user } } = await supabase.auth.getUser();
+    if (!user?.id) return null;
+    const enc = new TextEncoder();
+    const baseKey = await crypto.subtle.importKey(
+      "raw", enc.encode(`${user.id}:${meId || ""}`), "HKDF", false, ["deriveKey"]
+    );
+    return await crypto.subtle.deriveKey(
+      { name: "HKDF", hash: "SHA-256", salt: enc.encode(BACKUP_INFO), info: enc.encode(BACKUP_INFO) },
+      baseKey,
+      { name: "AES-GCM", length: 256 },
+      false,
+      ["encrypt", "decrypt"]
+    );
+  } catch { return null; }
+}
+
+async function uploadIdentityBackup(profileId: string, id: LocalIdentity): Promise<void> {
+  try {
+    const key = await deriveBackupKey();
+    if (!key) return;
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(id));
+    const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
+    const b64 = (buf: ArrayBuffer | Uint8Array) => {
+      const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
+      let s = "";
+      for (const b of bytes) s += String.fromCharCode(b);
+      return btoa(s);
+    };
+    await supabase.from("signal_identity_backup").upsert(
+      { profile_id: profileId, blob: `${b64(iv)}:${b64(ct)}`, updated_at: new Date().toISOString() },
+      { onConflict: "profile_id" }
+    );
+  } catch { /* backup is best-effort — never block identity registration */ }
+}
+
+async function restoreIdentityBackup(profileId: string): Promise<LocalIdentity | null> {
+  try {
+    const key = await deriveBackupKey();
+    if (!key) return null;
+    const { data } = await supabase
+      .from("signal_identity_backup")
+      .select("blob")
+      .eq("profile_id", profileId)
+      .maybeSingle();
+    if (!data?.blob?.includes(":")) return null;
+    const [ivB64, ctB64] = data.blob.split(":");
+    const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+    const pt = await crypto.subtle.decrypt(
+      { name: "AES-GCM", iv: fromB64(ivB64) },
+      key,
+      fromB64(ctB64)
+    );
+    const parsed = JSON.parse(new TextDecoder().decode(pt));
+    if (!parsed?.ik?.publicKey || !parsed?.spk) return null;
+    return parsed as LocalIdentity;
+  } catch { return null; }
+}
+
+/** Ensure this device has a local identity and it is registered server-side.
+ *  Concurrent callers share ONE generation — two parallel runs would register
+ *  different bundles and desync the device's private keys from the server.
+ *  Restore order: IDB → localStorage mirror → encrypted account backup.
+ *  Only when ALL are missing do we mint a fresh identity. */
 export async function ensureIdentity(profileId: string): Promise<LocalIdentity> {
   if (identity && meId === profileId) return identity;
   if (inflightIdentity) return inflightIdentity;
@@ -74,18 +155,43 @@ export async function ensureIdentity(profileId: string): Promise<LocalIdentity> 
       .eq("profile_id", profileId)
       .maybeSingle();
 
+    // Tier 2: IDB evicted but the localStorage mirror still has it (same device)
+    if (!local) {
+      const mirrored = getMirroredIdentity(profileId);
+      if (mirrored?.ik?.publicKey) {
+        local = mirrored;
+        await cryptoStore.setIdentity(profileId, local);
+      }
+    }
+
+    // Tier 3: fresh device / cleared storage — restore the encrypted account
+    // backup so historical messages stay decryptable after re-login.
+    if (!local) {
+      const restored = await restoreIdentityBackup(profileId);
+      if (restored?.ik?.publicKey) {
+        local = restored;
+        await cryptoStore.setIdentity(profileId, local);
+        mirrorIdentityToLocalStorage(profileId, local);
+      }
+    }
+
     if (local && reg && reg.ik_pub === b64u.enc(local.ik.publicKey)) {
       identity = local;
+      mirrorIdentityToLocalStorage(profileId, local);
+      void uploadIdentityBackup(profileId, local); // keep escrow fresh
       return local;
     }
-    // fresh device / lost IDB — new identity, replace server bundle
+
+    // Tier 4: genuinely new identity — replace server bundle.
     local = generateIdentity();
     // Persist the PRIVATE identity BEFORE registering, and definitely before any
     // session use. (Missing persistence used to silently rotate the identity on
     // every page load, orphaning the server bundle and breaking all decryption.)
     await cryptoStore.setIdentity(profileId, local);
+    mirrorIdentityToLocalStorage(profileId, local);
     await registerIdentity(profileId, local);
     identity = local;
+    void uploadIdentityBackup(profileId, local);
     return local;
   })();
   try {

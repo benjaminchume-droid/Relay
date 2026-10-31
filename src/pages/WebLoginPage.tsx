@@ -21,8 +21,9 @@ import { getAuthRedirectUrl, getPublicWebOrigin } from '../services/googleAuth';
 import { useThemeStore, applyThemeVars } from '../store/themeStore';
 import { GlassCard, GlassInput, GlassButton, AmbientLiquidBackground, RelayLogoEmblem } from '../components/GlassUI';
 
-type Mode = 'signin' | 'signup' | 'otp-send' | 'otp-verify' | 'forgot';
+type Mode = 'signin' | 'signup' | 'otp-send' | 'otp-verify' | 'forgot' | 'new-password';
 type BusyKey = null | 'password' | 'google' | 'otp-send' | 'otp-verify' | 'resend' | 'forgot';
+type OtpType = 'signup' | 'email' | 'recovery';
 
 const Spinner: React.FC<{ size?: number; className?: string }> = ({ size = 16, className = '' }) => (
   <svg className={`animate-spin shrink-0 ${className}`} width={size} height={size} viewBox="0 0 24 24" fill="none" aria-label="Loading">
@@ -58,9 +59,10 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
   const [confirm, setConfirm] = useState('');
   const [showPw, setShowPw] = useState(false);
 
-  // OTP state — shared by signup confirmation + email-code sign-in
+  // OTP state — shared by signup confirmation, email-code sign-in AND the
+  // password-reset code (the recovery email now carries a 6-digit code).
   const [otpDigits, setOtpDigits] = useState<string[]>(['', '', '', '', '', '']);
-  const [otpType, setOtpType] = useState<'signup' | 'email'>('signup');
+  const [otpType, setOtpType] = useState<OtpType>('signup');
   const [resendIn, setResendIn] = useState(0);
   const otpRefs = useRef<(HTMLInputElement | null)[]>([]);
 
@@ -76,19 +78,23 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
 
   const title = useMemo(() => {
     if (mode === 'signup') return 'Create Relay Account';
-    if (mode === 'otp-verify') return 'Enter Verification Code';
+    if (mode === 'otp-verify') return otpType === 'recovery' ? 'Enter Reset Code' : 'Enter Verification Code';
     if (mode === 'otp-send') return 'Sign in with email code';
     if (mode === 'forgot') return 'Reset your password';
+    if (mode === 'new-password') return 'Set a new password';
     return 'Sign In to Relay';
-  }, [mode]);
+  }, [mode, otpType]);
 
   const subtitle = useMemo(() => {
     if (mode === 'signup') return 'Sign up with email to build your secure identity.';
-    if (mode === 'otp-verify') return `Paste the 6-digit code sent to ${pendingEmail || 'your email'}.`;
+    if (mode === 'otp-verify') return otpType === 'recovery'
+      ? `Paste the 6-digit reset code we emailed to ${pendingEmail || 'your email'}.`
+      : `Paste the 6-digit code sent to ${pendingEmail || 'your email'}.`;
     if (mode === 'otp-send') return "We'll email you a one-time code — no password needed.";
-    if (mode === 'forgot') return "We'll email you a secure link to set a new password.";
+    if (mode === 'forgot') return "We'll email you a 6-digit reset code. Enter it here to set a new password.";
+    if (mode === 'new-password') return 'Choose a new password for your account (min 8 characters).';
     return 'Enter your email or handle and password.';
-  }, [mode, pendingEmail]);
+  }, [mode, pendingEmail, otpType]);
 
   // Theme boot — mirror the app's saved light/dark/accent before first paint.
   useEffect(() => {
@@ -160,12 +166,12 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
     try { localStorage.removeItem('relay_pending_auth_email'); } catch { /* ignore */ }
     notifyNativeSession({ access_token, refresh_token });
     if (native) {
+      // Hand the session back to the app. Custom-scheme navigation can fail
+      // (ERR_UNKNOWN_URL_SCHEME) when the app is not installed on this device,
+      // so we NEVER hard-navigate: try it, then leave a clean, token-free
+      // return screen the user can act on.
       setInfo('Signed in. Return to the Relay app — session was handed off.');
-      try {
-        window.location.href = `relay://login#access_token=${encodeURIComponent(access_token)}&refresh_token=${encodeURIComponent(refresh_token)}`;
-      } catch {
-        /* ignore */
-      }
+      try { window.location.replace(`relay://login#access_token=${encodeURIComponent(access_token)}&refresh_token=${encodeURIComponent(refresh_token)}`); } catch { /* ignore */ }
       return;
     }
     setInfo('Signed in. Taking you into Relay…');
@@ -193,6 +199,16 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
     setError(null); setInfo(null);
     setBusy('password');
     try {
+      if (mode === 'new-password') {
+        if (password.length < 8) throw new Error('Password must be at least 8 characters.');
+        if (password !== confirm) throw new Error('Passwords do not match.');
+        const { data: upd, error: upErr } = await supabase.auth.updateUser({ password });
+        if (upErr) throw upErr;
+        if (upd?.user) {
+          await finish(upd.user.id ? (await supabase.auth.getSession()).data.session!.access_token : '', (await supabase.auth.getSession()).data.session!.refresh_token);
+        }
+        return;
+      }
       if (mode === 'signup') {
         if (password.length < 8) throw new Error('Password must be at least 8 characters.');
         if (password !== confirm) throw new Error('Passwords do not match.');
@@ -271,12 +287,19 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
       const target = (pendingEmail || email).trim();
       let session: any = null;
       let lastErr: any = null;
-      for (const type of [otpType, otpType === 'signup' ? 'email' : 'signup'] as const) {
+      const types: OtpType[] = otpType === 'recovery' ? ['recovery'] : [otpType, otpType === 'signup' ? 'email' : 'signup'];
+      for (const type of types) {
         const { data, error: err } = await supabase.auth.verifyOtp({ email: target, token: code, type });
         if (!err && data?.session) { session = data; break; }
         lastErr = err;
       }
       if (!session) throw lastErr || new Error('Invalid code');
+      if (otpType === 'recovery') {
+        // recovery code verified — session is live, now set the new password
+        setMode('new-password');
+        setInfo('Code verified. Choose your new password.');
+        return;
+      }
       await finish(session.session.access_token, session.session.refresh_token);
     } catch (err: any) {
       setError(friendly(err?.message));
@@ -295,7 +318,9 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
       const target = (pendingEmail || email).trim();
       const { error: err } = otpType === 'email'
         ? await supabase.auth.signInWithOtp({ email: target, options: { shouldCreateUser: false, emailRedirectTo: getAuthRedirectUrl() } })
-        : await supabase.auth.resend({ type: 'signup', email: target });
+        : otpType === 'recovery'
+          ? await supabase.auth.resetPasswordForEmail(target, { redirectTo: `${getPublicWebOrigin()}/auth?type=recovery` })
+          : await supabase.auth.resend({ type: 'signup', email: target });
       if (err) throw err;
       startResendCooldown();
       setInfo('A new code is on its way.');
@@ -315,7 +340,12 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
         redirectTo: `${getPublicWebOrigin()}/auth?type=recovery`,
       });
       if (err) throw err;
-      setInfo(`Reset link sent to ${email.trim()}. Open it on this device to set a new password.`);
+      try { localStorage.setItem('relay_pending_auth_email', email.trim()); } catch { /* ignore */ }
+      setOtpDigits(['', '', '', '', '', '']);
+      setOtpType('recovery');
+      setMode('otp-verify');
+      startResendCooldown();
+      setInfo(`Reset code sent to ${email.trim()}. Enter the 6-digit code to set a new password.`);
     } catch (err: any) {
       setError(friendly(err?.message));
     } finally {
@@ -511,26 +541,28 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
               </form>
             ) : mode !== 'otp-send' ? (
               <form onSubmit={onPassword} className="space-y-3.5 text-left">
-                <GlassInput
-                  type="email"
-                  label={mode === 'signup' ? 'Email' : 'Email or @handle'}
-                  placeholder="you@example.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  icon={<Mail size={15} />}
-                  autoComplete="email"
-                  required
-                />
+                {mode !== 'new-password' && (
+                  <GlassInput
+                    type="email"
+                    label={mode === 'signup' ? 'Email' : 'Email or @handle'}
+                    placeholder="you@example.com"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    icon={<Mail size={15} />}
+                    autoComplete="email"
+                    required
+                  />
+                )}
 
                 <div className="relative">
                   <GlassInput
                     type={showPw ? 'text' : 'password'}
-                    label="Password"
-                    placeholder={mode === 'signup' ? 'Minimum 8 characters' : 'Your password'}
+                    label={mode === 'new-password' ? 'New password' : 'Password'}
+                    placeholder={mode === 'signup' || mode === 'new-password' ? 'Minimum 8 characters' : 'Your password'}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     icon={<Lock size={15} />}
-                    autoComplete={mode === 'signup' ? 'new-password' : 'current-password'}
+                    autoComplete={mode === 'signup' || mode === 'new-password' ? 'new-password' : 'current-password'}
                     className="pr-10"
                     required
                   />
@@ -545,7 +577,7 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
                   </button>
                 </div>
 
-                {mode === 'signup' && (
+                {(mode === 'signup' || mode === 'new-password') && (
                   <GlassInput
                     type={showPw ? 'text' : 'password'}
                     label="Confirm password"
@@ -573,14 +605,14 @@ export default function WebLoginPage({ initialMode }: { initialMode?: 'signin' |
                 <GlassButton
                   type="submit"
                   variant="primary"
-                  disabled={anyBusy || !email || !password}
+                  disabled={anyBusy || !password || (mode !== 'new-password' && !email)}
                   className="w-full py-3 text-xs font-bold"
                 >
                   {busy === 'password' ? (
                     <Spinner />
                   ) : (
                     <span className="flex items-center justify-center gap-2">
-                      {mode === 'signup' ? 'Create Account' : 'Sign In'} <ArrowRight size={15} />
+                      {mode === 'signup' ? 'Create Account' : mode === 'new-password' ? 'Update Password' : 'Sign In'} <ArrowRight size={15} />
                     </span>
                   )}
                 </GlassButton>

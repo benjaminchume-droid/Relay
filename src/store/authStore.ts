@@ -100,6 +100,7 @@ interface AuthState {
   resendVerificationEmail: (email?: string) => Promise<boolean>;
   sendForgotPasswordLink: (email: string) => Promise<boolean>;
   updateNewPassword: (password: string, confirmPassword?: string) => Promise<boolean>;
+  setAccountPassword: (password: string, confirmPassword?: string) => Promise<boolean>;
   saveDisplayNameStep: (name: string) => Promise<boolean>;
   saveUsernameStep: (username: string) => Promise<boolean>;
   checkUsernameAvailable: (username: string) => Promise<UsernameCheckResult>;
@@ -122,7 +123,7 @@ interface AuthState {
 function friendlyAuthError(msg: string): string {
   const m = (msg || '').toLowerCase();
   if (m.includes('user already registered') || m.includes('already been registered')) {
-    return 'An account with this email already exists. Try signing in instead.';
+    return 'An account with this email already exists. Sign in with your password, use an email code, or tap "Forgot password" to set a new one.';
   }
   if (m.includes('invalid login credentials') || m.includes('invalid_credentials')) {
     return 'Wrong email or password. Please try again.';
@@ -544,6 +545,31 @@ export const useAuthStore = create<AuthState>((set, get) => {
           isLoading: false,
           error: null,
         });
+        return true;
+      } catch (e: any) {
+        set({ error: friendlyAuthError(e?.message), isLoading: false });
+        return false;
+      }
+    },
+
+    /** Set or change the account password from ANY authenticated session
+     *  (password, OTP-code or Google). Accounts created via email code or
+     *  Google have NO password — this is how they get one, and afterwards
+     *  password sign-in works on every device. */
+    setAccountPassword: async (password, confirmPassword) => {
+      if (!password || password.length < 8) {
+        set({ error: 'Password must be at least 8 characters.', isLoading: false });
+        return false;
+      }
+      if (confirmPassword !== undefined && confirmPassword !== null && password !== confirmPassword) {
+        set({ error: 'Passwords do not match.', isLoading: false });
+        return false;
+      }
+      set({ isLoading: true, error: null });
+      try {
+        const { error } = await supabase.auth.updateUser({ password });
+        if (error) throw error;
+        set({ isLoading: false, error: null });
         return true;
       } catch (e: any) {
         set({ error: friendlyAuthError(e?.message), isLoading: false });
