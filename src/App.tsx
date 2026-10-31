@@ -173,6 +173,39 @@ export const App: React.FC = () => {
     presenceService.stop();
   }, [status]);
 
+  // Live profile updates: avatar/banner/name changes propagate to every open
+  // client instantly (profile pictures used to stay stale until a full refetch).
+  const authedForProfileLive = isAuthedStatus(status);
+  useEffect(() => {
+    if (!authedForProfileLive) return;
+    const clientRef: { s: any } = { s: null };
+    let channel: any = null;
+    (async () => {
+      const { supabase } = await import('./lib/supabase/client');
+      const { formatProfileRecord } = await import('./lib/profileFormat');
+      const { profileCache } = await import('./services/profileCache');
+      clientRef.s = supabase;
+      channel = supabase
+        .channel('relay-profiles-cache')
+        .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'profiles' }, (payload: any) => {
+          const row = payload?.new;
+          if (!row?.id) return;
+          try {
+            const formatted = formatProfileRecord(row);
+            profileCache.set(formatted);
+            const mine = useAuthStore.getState().profile || useAuthStore.getState().currentUser;
+            if (mine && row.id === mine.id) {
+              useAuthStore.setState({ profile: formatted, currentUser: formatted });
+            }
+          } catch { /* ignore malformed rows */ }
+        })
+        .subscribe();
+    })();
+    return () => {
+      try { clientRef.s?.removeChannel(channel); } catch { /* noop */ }
+    };
+  }, [authedForProfileLive]);
+
   // keep the chat store's activeChatId mirroring the URL (back/forward safe)
   useEffect(() => {
     setActiveChat(activeChatId);

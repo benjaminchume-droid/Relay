@@ -789,6 +789,10 @@ function StoryViewer({
   const [paused, setPaused] = useState(false);
   const touchStart = useRef<{ x: number; y: number; t: number } | null>(null);
   const [replies, setReplies] = useState<StoryReply[]>([]);
+  // Sequential pop-in: the FIRST batch of comments loaded for a story reveals
+  // pill-by-pill (staggered), so they never all pop at once. Comments arriving
+  // later (live poll, your own send) pop immediately.
+  const [initialBatchIds, setInitialBatchIds] = useState<string[]>([]);
   const [replyText, setReplyText] = useState("");
   const [replySending, setReplySending] = useState(false);
   const [viewsOpen, setViewsOpen] = useState(false);
@@ -810,11 +814,19 @@ function StoryViewer({
     let alive = true;
     const load = () => {
       fetchStoryReplies(story.id)
-        .then((r) => { if (alive) setReplies(r); })
+        .then((r) => {
+          if (!alive) return;
+          setReplies(r);
+          setInitialBatchIds((prev) => {
+            if (prev.length > 0) return prev; // first batch already revealed
+            return r.map((x) => x.id);
+          });
+        })
         .catch(() => {});
     };
     fetchRepliesRef.current = load;
     setReplies([]);
+    setInitialBatchIds([]);
     recordStoryView(story.id).catch(() => {});
     load();
     // retry once shortly after mount — a reply written a moment ago is often
@@ -968,15 +980,19 @@ function StoryViewer({
       <div className="absolute bottom-0 left-0 right-0 z-20 px-3 pt-3 bg-gradient-to-t from-black/85 via-black/45 to-transparent" style={{ paddingBottom: "max(1.25rem, env(safe-area-inset-bottom))" }}>
         {replies.length > 0 && (
           <div ref={repliesScrollRef} className="mb-2.5 max-h-40 overflow-y-auto space-y-2 px-0.5 no-scrollbar">
-            {replies.slice(-6).map((r) => (
-              <div key={r.id} className="story-pop flex items-start gap-2 w-fit max-w-[92%] px-2.5 py-1.5 rounded-2xl rounded-bl-md bg-white/12 backdrop-blur-md border border-white/10">
+            {replies.slice(-6).map((r) => {
+              const bi = initialBatchIds.indexOf(r.id);
+              const popDelay = bi >= 0 ? bi * 260 : 0; // one-by-one reveal
+              return (
+              <div key={r.id} className="story-pop flex items-start gap-2 w-fit max-w-[92%] px-2.5 py-1.5 rounded-2xl rounded-bl-md bg-white/12 backdrop-blur-md border border-white/10" style={{ animationDelay: `${popDelay}ms`, animationFillMode: "backwards" }}>
                 <img src={r.authorAvatar || getLetterAvatar(r.authorName || "U")} alt="" className="w-6 h-6 rounded-full object-cover mt-0.5 shrink-0 border border-white/20" />
                 <p className="text-[12px] text-white leading-snug">
                   <span className="font-bold mr-1.5">{r.authorName}</span>
                   <span className="text-white/85 [overflow-wrap:anywhere]">{r.content}</span>
                 </p>
               </div>
-            ))}
+              );
+            })}
           </div>
         )}
         <div className="flex items-center gap-2">
