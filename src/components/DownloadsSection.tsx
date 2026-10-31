@@ -29,13 +29,13 @@ interface RelAsset { name: string; url: string; size: number }
 interface RelInfo { tag: string; assets: Record<string, RelAsset> }
 
 const FALLBACK_FLUTTER: RelInfo = {
-  tag: 'v1.0.6',
+  tag: 'v1.0.8',
   assets: {
-    'arm64-v8a': { name: 'relay-1.0.6-android.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android.apk', size: 26466295 },
-    'armeabi-v7a': { name: 'relay-1.0.6-android-armv7.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-armv7.apk', size: 23810403 },
-    'x86_64': { name: 'relay-1.0.6-android-x86_64.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-x86_64.apk', size: 27997119 },
-    'universal': { name: 'relay-1.0.6-android-universal.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-1.0.6-android-universal.apk', size: 64861699 },
-    'windows': { name: 'relay-windows.zip', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.6/relay-windows.zip', size: 14905124 },
+    'arm64-v8a': { name: 'relay-1.0.8-android.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android.apk', size: 26509243 },
+    'armeabi-v7a': { name: 'relay-1.0.8-android-armv7.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-armv7.apk', size: 23853357 },
+    'x86_64': { name: 'relay-1.0.8-android-x86_64.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-x86_64.apk', size: 28040066 },
+    'universal': { name: 'relay-1.0.8-android-universal.apk', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-1.0.8-android-universal.apk', size: 64905326 },
+    'windows': { name: 'relay-windows.zip', url: 'https://github.com/orubus-dev/relay-client/releases/download/v1.0.8/relay-windows.zip', size: 14910243 },
   },
 };
 
@@ -232,7 +232,8 @@ export const DownloadsSection: React.FC = () => {
       <GlassCard className="p-4 flex items-start gap-3">
         <ShieldCheck size={16} className="text-emerald-500 mt-0.5 shrink-0" />
         <p className="text-[11px] text-slate-600 dark:text-slate-300 leading-relaxed">
-          Every APK is signed with the official Relay release key and built by CI from the public source. If a download prompts you to replace an existing Relay app, verify the app id — the Flutter client is <span className="font-mono">app.orubus.relay</span>, the compiler shell is <span className="font-mono">com.glassline.relay</span>.
+          Every APK is signed with the official Relay release key and built by CI from the public source. If a download prompts you to replace an existing Relay app, verify the app id — the Flutter client is <span className="font-mono">app.orubus.relay</span>, the compiler shell is <span className="font-mono">com.glassline.relay</span>.{" "}
+          <a href="https://github.com/orubus-dev/relay-client/releases/latest/download/SHA256SUMS.txt" target="_blank" rel="noreferrer" className="underline font-semibold" style={{ color: "var(--primary-accent, #2563EB)" }}>Verify your download (SHA-256)</a> — if an installer reports "unsigned or corrupted", the file was truncated in transit; re-download and compare the hash.
         </p>
       </GlassCard>
     </div>
