@@ -53,6 +53,22 @@ const sessionResetInflight = new Set<string>();
 const RESET_COOLDOWN_MS = 45_000;
 const resetCooldownUntil = new Map<string, number>();
 
+// Dead-letter memo: a message that failed with RelaySessionDead will fail
+// FOREVER (ratchet chains can't move backward). Memoize per message id so
+// redecrypt sweeps don't re-trigger reset rounds eternally — each round
+// re-initiates the session and would keep breaking the converged state.
+const DEAD_MEMO_KEY = 'relay_dead_memo_v1';
+function deadMemoLoad(): Record<string, 1> {
+  try { return JSON.parse(localStorage.getItem(DEAD_MEMO_KEY) || '{}'); } catch { return {}; }
+}
+function deadMemoRemember(messageId: string): void {
+  try {
+    const m = deadMemoLoad();
+    m[messageId] = 1;
+    localStorage.setItem(DEAD_MEMO_KEY, JSON.stringify(m));
+  } catch { /* ignore */ }
+}
+
 /** Fire-and-forget re-sync after a RelaySessionDead failure. */
 export async function sendSessionReset(
   myProfileId: string,
@@ -249,10 +265,14 @@ export async function decryptMessages(
       msg.content = CIPHER_PLACEHOLDER;
       // Bare envelope we can't open → the shared session is gone on one side.
       // Kick the reset protocol so BOTH devices converge instead of failing
-      // forever. (Prekey-envelope failures re-initiate on the sender side via
-      // the rebuild path; a dead one still lands here — same recovery.)
+      // forever — but at most ONCE per dead message (memoized), otherwise
+      // every sweep would re-initiate the session endlessly.
       if ((e as any)?.name === "RelaySessionDead") {
-        void sendSessionReset(myProfileId, conversationId, msg.senderId);
+        const mid = String(msg.id || "");
+        if (mid && !deadMemoLoad()[mid]) {
+          deadMemoRemember(mid);
+          void sendSessionReset(myProfileId, conversationId, msg.senderId);
+        }
       }
     }
   }
