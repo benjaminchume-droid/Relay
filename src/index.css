@@ -365,6 +365,47 @@ html.dark .glass-button-secondary,
 ::-webkit-scrollbar-thumb { background: rgba(0, 0, 0, 0.1); border-radius: 99px; }
 html.dark ::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.15); }
 
+/* GlassSlider — visible, grabbable thumb. `appearance-none` with no thumb CSS
+   makes the handle INVISIBLE in Chrome (the "sliders don't work" bug): the
+   track renders but there is nothing to drag. Explicit thumb + tall hit area. */
+input[type="range"].glass-range {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 100%;
+  height: 28px;
+  background: transparent;
+  cursor: pointer;
+}
+input[type="range"].glass-range::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(100, 116, 139, 0.25);
+}
+input[type="range"].glass-range::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 20px;
+  height: 20px;
+  margin-top: -7px;
+  border-radius: 50%;
+  background: var(--slider-accent, var(--primary-accent, #2563EB));
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+}
+input[type="range"].glass-range::-moz-range-track {
+  height: 6px;
+  border-radius: 99px;
+  background: rgba(100, 116, 139, 0.25);
+}
+input[type="range"].glass-range::-moz-range-thumb {
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--slider-accent, var(--primary-accent, #2563EB));
+  border: 2px solid #fff;
+  box-shadow: 0 1px 4px rgba(15, 23, 42, 0.35);
+}
+
 .noise-overlay {
   position: fixed;
   inset: 0;

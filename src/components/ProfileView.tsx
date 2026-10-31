@@ -7,9 +7,9 @@ import React, { useState, useEffect } from 'react';
 import {
   Palette, Shield, Lock, User, RefreshCw, LogOut, Check, Camera, Upload,
   Bell, HardDrive, HelpCircle, AlertTriangle, KeyRound, Scale, FileText, Users,
-  Volume2, Vibrate, Eye, BellRing
+  Volume2, Vibrate, Eye, BellRing, Download, Cpu, Smartphone, Monitor, Layers
 } from 'lucide-react';
-import { GlassCard, GlassButton, GlassInput, GlassSlider } from './GlassUI';
+import { GlassCard, GlassButton, GlassInput } from './GlassUI';
 import { supabase } from '../lib/supabase/client';
 import { PermissionsView } from './PermissionsView';
 import { useAuthStore } from '../store/authStore';
@@ -17,7 +17,9 @@ import { useThemeStore, ACCENT_COLOR_CONFIG, GLASS_PRESETS } from '../store/them
 import { AccentColor, BubbleStyle, WallpaperStyle, ThemeMode, StoriesLayout } from '../types';
 import { relayCacheManager } from '../services/cacheManager';
 import { getLetterAvatar } from '../lib/avatar';
+import { isInAppWebView } from '../lib/nativeBridge';
 import { ThemePresetsSection } from './ThemePresetsSection';
+import { DownloadsSection } from './DownloadsSection';
 import { notificationService, type NotificationPrefs } from '../services/notificationService';
 
 type LegalDoc = 'privacy' | 'guidelines' | 'terms';
@@ -76,7 +78,8 @@ We want Relay to feel effortless. Everything sensitive stays sealed between you 
 Where we're going: making encrypted communication available to everyone, on every device, with the polish of the best consumer apps in the world. Relay is built by Glassline — a small, independent company that answers to its users, not to advertisers.`;
 
 export const ProfileView: React.FC = () => {
-  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'HELP' | 'LEGAL'>('APPEARANCE');
+  const inApp = isInAppWebView();
+  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'DOWNLOADS' | 'HELP' | 'LEGAL'>('APPEARANCE');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cacheCleared, setCacheCleared] = useState(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
@@ -93,8 +96,6 @@ export const ProfileView: React.FC = () => {
   const { 
     customization, 
     setAccentColor, 
-    setBlurIntensity, 
-    setCornerRadius, 
     setBubbleStyle, 
     setWallpaper, 
     applyPreset,
@@ -263,6 +264,8 @@ export const ProfileView: React.FC = () => {
           { id: 'PERMISSIONS', label: 'Permissions & Devices', icon: KeyRound },
           { id: 'NOTIFICATIONS', label: 'Notifications', icon: Bell },
           { id: 'STORAGE', label: 'Storage', icon: HardDrive },
+          // Downloads live on the website only — the native apps ARE the download.
+          ...(inApp ? [] : [{ id: 'DOWNLOADS', label: 'Downloads', icon: Download }]),
           { id: 'HELP', label: 'About', icon: HelpCircle },
           { id: 'LEGAL', label: 'Legal', icon: Scale }
         ].map((tab) => {
@@ -386,38 +389,6 @@ export const ProfileView: React.FC = () => {
                 );
               })}
             </div>
-          </GlassCard>
-
-          {/* Glass Engine Sliders */}
-          <GlassCard className="p-5 space-y-5">
-            <span className="text-xs font-bold text-slate-800 block">Liquid Glass Engine Controls</span>
-            
-            <GlassSlider 
-              label="Glass Blur Intensity" 
-              value={customization.blurIntensity} 
-              min={0} 
-              max={40} 
-              unit="px"
-              onChange={setBlurIntensity}
-            />
-
-            <GlassSlider 
-              label="Corner Radius Presets & Manual Slider" 
-              value={customization.cornerRadius} 
-              min={0} 
-              max={32} 
-              unit="px"
-              onChange={setCornerRadius}
-            />
-
-            <GlassSlider 
-              label="Glass Refraction & Depth" 
-              value={customization.glassDepth || 40} 
-              min={0} 
-              max={100} 
-              unit="%"
-              onChange={(val) => updateCustomization({ glassDepth: val })}
-            />
           </GlassCard>
 
           {/* Accent Color System */}
@@ -718,6 +689,8 @@ export const ProfileView: React.FC = () => {
         </GlassCard>
       )}
 
+      {subTab === 'DOWNLOADS' && !inApp && <DownloadsSection />}
+
       {subTab === 'HELP' && (
         <div className="space-y-4">
           <GlassCard heavy className="p-6 space-y-4">
@@ -749,7 +722,7 @@ export const ProfileView: React.FC = () => {
           <GlassCard className="p-5 space-y-2 text-xs">
             <div className="flex items-center justify-between">
               <span className="font-bold text-slate-800">Version</span>
-              <span className="font-mono text-slate-500">Relay 0.5.2 · Liquid Glass</span>
+              <span className="font-mono text-slate-500">Relay 0.5.5 · Liquid Glass</span>
             </div>
             <div className="flex items-center justify-between pt-2 border-t border-slate-200/70 dark:border-white/10">
               <span className="font-bold text-slate-800">Company</span>

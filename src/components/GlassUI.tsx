@@ -173,8 +173,8 @@ export const GlassSlider: React.FC<{
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        style={{ accentColor: accent.primary }}
-        className="w-full h-2 bg-slate-200/60 rounded-lg appearance-none cursor-pointer"
+        style={{ accentColor: accent.primary, ['--slider-accent' as any]: accent.primary }}
+        className="glass-range w-full cursor-pointer"
       />
     </div>
   );
