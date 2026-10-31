@@ -426,9 +426,13 @@ export async function decryptFor(
     // Replays of already-decrypted messages must NOT touch the session.
     if (msg.includes('replay/underflow')) throw err;
     // A prekey (first-contact) message that still fails means the peer
-    // re-initiated against our CURRENT identity (concurrent X3DH). Rebuild a
-    // candidate from the prekey header and try once.
-    if (env.pre && envelopeTargetsCurrentIdentity) {
+    // re-initiated. Deterministic convergence: the peer with the GREATER
+    // profile id is the reset authority — its initiation is always the
+    // survivor. The lower side ADOPTS the peer's fresh session (rebuild);
+    // the greater side IGNORES the peer's reset and re-initiates its own
+    // (the caller's session-reset protocol sends it). Without the tie-break
+    // two crossed resets keep replacing each other and never converge.
+    if (env.pre && envelopeTargetsCurrentIdentity && peerProfileId > myProfileId) {
       const fresh = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
       const pt2 = await ratchetDecrypt(fresh, conversationId, env);
       await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, fresh);

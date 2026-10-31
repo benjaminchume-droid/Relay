@@ -47,6 +47,11 @@ export const CIPHER_PLACEHOLDER = "This message can't be displayed on this devic
 // ---------------------------------------------------------------------------
 
 const sessionResetInflight = new Set<string>();
+// Per-(conversation,peer) cooldown — repeated sweeps over old undecryptable
+// rows must not re-trigger reset rounds forever (each round re-initiates the
+// session; the converged state needs time to settle).
+const RESET_COOLDOWN_MS = 45_000;
+const resetCooldownUntil = new Map<string, number>();
 
 /** Fire-and-forget re-sync after a RelaySessionDead failure. */
 export async function sendSessionReset(
@@ -57,6 +62,9 @@ export async function sendSessionReset(
   if (!myProfileId || !conversationId || !peerProfileId || peerProfileId === myProfileId) return;
   const key = `${conversationId}:${peerProfileId}`;
   if (sessionResetInflight.has(key)) return;
+  const now = Date.now();
+  if (now < (resetCooldownUntil.get(key) || 0)) return;
+  resetCooldownUntil.set(key, now + RESET_COOLDOWN_MS);
   sessionResetInflight.add(key);
   try {
     // Drop the stale/poisoned session so ensureSession initiates a fresh X3DH.
