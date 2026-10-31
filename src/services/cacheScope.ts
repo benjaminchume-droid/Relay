@@ -67,25 +67,14 @@ export function ensureCacheScope(profileId: string): { cleared: boolean } {
   }
 }
 
-/** Call on explicit logout so the next sign-in starts clean. */
+/** Call on explicit logout so the next sign-in starts clean.
+ *  NOTE: the per-account memo roots are deliberately LEFT ALONE here —
+ *  deleting the signing-out account's entries would destroy its own history
+ *  plaintext (own bubbles unreadable + own media unplayable after re-login).
+ *  A DIFFERENT account signing in prunes the roots down to itself instead. */
 export function clearCacheScope(): void {
   try {
-    const current = localStorage.getItem(SCOPE_KEY);
     for (const k of SCOPED_KEYS) localStorage.removeItem(k);
-    // drop ONLY the signing-out account's memo entries — other accounts that
-    // may still be stored keep their data (pruned again on their next login)
-    if (current) {
-      for (const k of MEMO_ROOTS) {
-        try {
-          const obj = JSON.parse(localStorage.getItem(k) || "{}");
-          if (obj && typeof obj === "object" && current in obj) {
-            delete obj[current];
-            if (Object.keys(obj).length) localStorage.setItem(k, JSON.stringify(obj));
-            else localStorage.removeItem(k);
-          }
-        } catch { /* optional */ }
-      }
-    }
     localStorage.removeItem(SCOPE_KEY);
     (window as any).__relayActiveProfileId = "";
   } catch { /* storage optional */ }
