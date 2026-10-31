@@ -438,9 +438,11 @@ export async function decryptFor(
     // Unrecoverable locally (bare continuation of a session we don't share, or
     // an envelope sealed to an identity we no longer hold). The session-reset
     // protocol on the caller side re-syncs both devices.
-    if (err instanceof Error) err.name = 'RelaySessionDead';
-    else err = new Error('RelaySessionDead');
-    throw err;
+    // NOTE: DOMException (OperationError) has a read-only `name` — construct a
+    // fresh tagged Error instead of mutating the original.
+    const dead = new Error(`RelaySessionDead: ${msg || 'session unrecoverable'}`);
+    dead.name = 'RelaySessionDead';
+    throw dead;
   }
 }
 
