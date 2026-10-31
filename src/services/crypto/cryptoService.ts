@@ -100,7 +100,17 @@ async function uploadIdentityBackup(profileId: string, id: LocalIdentity): Promi
     const key = await deriveBackupKey();
     if (!key) return;
     const iv = crypto.getRandomValues(new Uint8Array(12));
-    const plaintext = new TextEncoder().encode(JSON.stringify(id));
+    // v2 blob: identity + the sender-side plaintext memos. Own outgoing
+    // messages can never be ratchet-decrypted locally (no receiving chain for
+    // self) — they rely on device-local memos which a logout wipes. Escrowing
+    // them with the identity keeps OWN history readable after re-login too.
+    const blob = {
+      v: 2,
+      id,
+      pt: safeLocalJson("relay_own_plaintext_v1"),
+      md: safeLocalJson("relay_own_media_v1"),
+    };
+    const plaintext = new TextEncoder().encode(JSON.stringify(blob));
     const ct = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, plaintext);
     const b64 = (buf: ArrayBuffer | Uint8Array) => {
       const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
@@ -113,6 +123,10 @@ async function uploadIdentityBackup(profileId: string, id: LocalIdentity): Promi
       { onConflict: "profile_id" }
     );
   } catch { /* backup is best-effort — never block identity registration */ }
+}
+
+function safeLocalJson(key: string): Record<string, unknown> {
+  try { return JSON.parse(localStorage.getItem(key) || "{}") || {}; } catch { return {}; }
 }
 
 async function restoreIdentityBackup(profileId: string): Promise<LocalIdentity | null> {
@@ -133,8 +147,27 @@ async function restoreIdentityBackup(profileId: string): Promise<LocalIdentity |
       fromB64(ctB64)
     );
     const parsed = JSON.parse(new TextDecoder().decode(pt));
-    if (!parsed?.ik?.publicKey || !parsed?.spk) return null;
-    return parsed as LocalIdentity;
+    // v2 blob { v, id, pt, md } — v1 blobs were the bare identity.
+    const identity = (parsed?.id?.ik ? parsed.id : parsed) as LocalIdentity | null;
+    if (!identity?.ik?.publicKey || !identity?.spk) return null;
+    // Restore sender-side memos (local entries win — they are newer).
+    try {
+      const localPt = safeLocalJson("relay_own_plaintext_v1");
+      const backupPt = (parsed?.pt || {}) as Record<string, string>;
+      let merged = false;
+      for (const [mid, text] of Object.entries(backupPt)) {
+        if (localPt[mid] == null) { localPt[mid] = text; merged = true; }
+      }
+      if (merged) localStorage.setItem("relay_own_plaintext_v1", JSON.stringify(localPt));
+      const localMd = safeLocalJson("relay_own_media_v1");
+      const backupMd = (parsed?.md || {}) as Record<string, unknown>;
+      let mergedMd = false;
+      for (const [mid, media] of Object.entries(backupMd)) {
+        if (localMd[mid] == null) { localMd[mid] = media; mergedMd = true; }
+      }
+      if (mergedMd) localStorage.setItem("relay_own_media_v1", JSON.stringify(localMd));
+    } catch { /* memo restore is best-effort */ }
+    return identity;
   } catch { return null; }
 }
 
