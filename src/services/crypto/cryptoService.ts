@@ -306,7 +306,14 @@ export async function ensureSession(myProfileId: string, conversationId: string,
   }
 }
 
-/** Build a session from an incoming prekey message (responder side). */
+/** Build a session from an incoming prekey message (responder side).
+ *  NOTE: this does NOT persist the built session — the caller must only
+ *  persist it after ratchetDecrypt actually succeeds. Persisting an
+ *  unverified responder session POISONED the session store whenever the
+ *  envelope was sealed to a previous identity (opk/spk mismatch): the wrong
+ *  shared secret got stored, every later send from that device reused the
+ *  broken session (bare envelopes, no `pre` block) and the peer could never
+ *  decrypt them again. */
 async function sessionFromPrekeyMessage(
   myProfileId: string,
   conversationId: string,
@@ -330,8 +337,6 @@ async function sessionFromPrekeyMessage(
   );
   const state = initRatchetAsResponder(shared, id.spk);
   if (env.s) state.peerIk = env.s;
-  await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, state);
-  sessionCache.set(sKey(conversationId, peerProfileId), state);
   return state;
 }
 
@@ -383,10 +388,18 @@ export async function decryptFor(
   const key = sKey(conversationId, peerProfileId);
   let state = sessionCache.get(key) || (await cryptoStore.getSession(myProfileId, conversationId, peerProfileId));
   const hadExisting = !!state;
+
+  // Envelopes sealed to a PREVIOUS identity of this account (device rotated,
+  // logout wiped local keys) can never be opened here — and attempting to
+  // build a responder session from them used to persist garbage. Refuse early.
+  if (!state && env.pre && env.pre.spkId != null && env.pre.spkId !== identity!.spkId) {
+    throw new Error("prekey envelope targets a previous identity (spk mismatch)");
+  }
   if (!state && env.pre) state = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
   if (!state) throw new Error("No session for conversation");
   try {
     const pt = await ratchetDecrypt(state, conversationId, env);
+    // Verified good — only NOW touch the persisted session.
     await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, state);
     sessionCache.set(key, state);
     return pt;
@@ -394,14 +407,13 @@ export async function decryptFor(
     const msg = String((err as any)?.message || '');
     // Replays of already-decrypted messages must NOT touch the session.
     if (msg.includes('replay/underflow')) throw err;
-    // A prekey (first-contact) message failing against an EXISTING session means
-    // the peer re-initiated (concurrent X3DH / our identity rotated on their side).
-    // Rebuild from the prekey header and try once; restore the old session if the
-    // rebuild can't decrypt either.
-    if (env.pre && hadExisting) {
+    // A prekey (first-contact) message failing against any session state means
+    // the peer re-initiated (concurrent X3DH / our identity rotated on their
+    // side). Rebuild a candidate from the prekey header and try once — persist
+    // ONLY if it actually decrypts; otherwise keep/restore what was there.
+    if (env.pre) {
       const backup = state;
       try {
-        await cryptoStore.deleteSession(myProfileId, conversationId, peerProfileId);
         sessionCache.delete(key);
         const fresh = await sessionFromPrekeyMessage(myProfileId, conversationId, peerProfileId, env);
         const pt2 = await ratchetDecrypt(fresh, conversationId, env);
@@ -409,8 +421,13 @@ export async function decryptFor(
         sessionCache.set(key, fresh);
         return pt2;
       } catch (err2) {
-        await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, backup);
-        sessionCache.set(key, backup);
+        if (hadExisting) {
+          await cryptoStore.setSession(myProfileId, conversationId, peerProfileId, backup);
+          sessionCache.set(key, backup);
+        } else {
+          await cryptoStore.deleteSession(myProfileId, conversationId, peerProfileId).catch(() => {});
+          sessionCache.delete(key);
+        }
         throw err2;
       }
     }
