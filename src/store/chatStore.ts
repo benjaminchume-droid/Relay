@@ -770,10 +770,16 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!isMine) {
         try {
           await decryptMessages(myProfileId, convId, [m]);
-        } catch (e) {
+        } catch (e: any) {
           console.warn('[realtime] decrypt failed, will retry in background', (m as any).id, e);
           m.content = CIPHER_PLACEHOLDER;
           (m as any)._encrypted = true;
+          // Session gone on one side — kick the reset protocol so both devices
+          // converge instead of failing forever.
+          if (e?.name === 'RelaySessionDead') {
+            void import('../services/messageFetch').then(({ sendSessionReset }) =>
+              sendSessionReset(myProfileId, convId, String(row.sender_id)));
+          }
         }
         void supabase.rpc('mark_messages_status', { p_conversation_id: convId, p_status: 'delivered' });
       } else if (isEnvelope(m.content as any) || looksLikeEnvelope(m.content)) {
@@ -789,6 +795,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return m;
     })();
+
+    // Session-reset control messages are protocol plumbing — never store/render.
+    if ((msg as any)._systemControl) return;
 
     set((state) => {
       const existingMsgs = state.messages[convId] || [];

@@ -435,6 +435,11 @@ export async function decryptFor(
       sessionCache.set(key, fresh);
       return pt2;
     }
+    // Unrecoverable locally (bare continuation of a session we don't share, or
+    // an envelope sealed to an identity we no longer hold). The session-reset
+    // protocol on the caller side re-syncs both devices.
+    if (err instanceof Error) err.name = 'RelaySessionDead';
+    else err = new Error('RelaySessionDead');
     throw err;
   }
 }
@@ -443,4 +448,17 @@ export function resetForTests() {
   sessionCache.clear();
   identity = null;
   meId = null;
+}
+
+/** Drop the local session for (conversation, peer). Used by the session-reset
+ *  protocol: when a bare (no `pre`) envelope can no longer be decrypted, the
+ *  receiver deletes its poisoned/stale session and re-initiates a fresh X3DH
+ *  with a silent control message so BOTH sides converge on the same keys. */
+export async function deleteSessionFor(
+  myProfileId: string,
+  conversationId: string,
+  peerProfileId: string
+): Promise<void> {
+  sessionCache.delete(sKey(conversationId, peerProfileId));
+  try { await cryptoStore.deleteSession(myProfileId, conversationId, peerProfileId); } catch { /* ignore */ }
 }

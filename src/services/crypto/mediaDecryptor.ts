@@ -119,7 +119,8 @@ function sniffMime(b: Uint8Array): string | null {
 export type MsgPayload =
   | { k: "t"; t: string }                                   // text
   | { k: "m"; u: string; key: string; mime: string; name: string; dur?: number; w?: string } // media
-  | { k: "s"; t: string };                                  // system-ish
+  | { k: "s"; t: string }                                   // system-ish
+  | { k: "r" };                                             // session-reset control (never rendered)
 
 export function encodePayload(p: MsgPayload): string {
   return JSON.stringify(p);

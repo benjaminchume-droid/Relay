@@ -4,7 +4,9 @@
  */
 import { supabase } from "../lib/supabase/client";
 import { formatMessageRecord } from "./messagingCore";
-import { decryptFor, isEnvelope, isFanout, parseEnvelope, parseFanout } from "./crypto/cryptoService";
+import {
+  decryptFor, deleteSessionFor, ensureSession, encryptFor, isEnvelope, isFanout, parseEnvelope, parseFanout,
+} from "./crypto/cryptoService";
 import { decodePayload, getDecryptedMediaUrl } from "./crypto/mediaDecryptor";
 import type { Message } from "../types";
 
@@ -26,6 +28,59 @@ export function looksLikeEnvelope(s: unknown): boolean {
 
 /** Sanitized placeholder for content that must never render as ciphertext. */
 export const CIPHER_PLACEHOLDER = "This message can't be displayed on this device";
+
+// ---------------------------------------------------------------------------
+// Session-reset protocol
+//
+// Double Ratchet chains only move forward. If a device loses its stored
+// session (logout/storage eviction, identity rotation, poisoned responder
+// state), a bare (no `pre`) continuation envelope can NEVER be decrypted
+// again — the receiver has no shared secret and no header to rebuild from.
+// Left alone, every subsequent message from that peer fails forever.
+//
+// Recovery: when decryption fails on a bare envelope, the receiver deletes
+// its local session, initiates a FRESH X3DH against the peer's current
+// prekey bundle, and sends a silent {k:'r'} control envelope (which carries
+// a `pre` block). The peer's decryptFor sees the prekey header, rebuilds,
+// and both sides converge on the new session. The control message is
+// filtered from the UI and never renders.
+// ---------------------------------------------------------------------------
+
+const sessionResetInflight = new Set<string>();
+
+/** Fire-and-forget re-sync after a RelaySessionDead failure. */
+export async function sendSessionReset(
+  myProfileId: string,
+  conversationId: string,
+  peerProfileId: string
+): Promise<void> {
+  if (!myProfileId || !conversationId || !peerProfileId || peerProfileId === myProfileId) return;
+  const key = `${conversationId}:${peerProfileId}`;
+  if (sessionResetInflight.has(key)) return;
+  sessionResetInflight.add(key);
+  try {
+    // Drop the stale/poisoned session so ensureSession initiates a fresh X3DH.
+    await deleteSessionFor(myProfileId, conversationId, peerProfileId);
+    // encryptFor → ensureSession finds nothing stored → x3dhInitiate → the
+    // outgoing envelope carries the `pre` block the peer needs to rebuild.
+    const wire = await encryptFor(myProfileId, conversationId, peerProfileId, JSON.stringify({ k: "r" }));
+    const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+    await supabase.rpc("send_conversation_message", {
+      p_conversation_id: uuidRe.test(conversationId) ? conversationId : null,
+      p_recipient_profile_id: peerProfileId,
+      p_content: wire,
+      p_message_type: "text",
+      p_reply_to_message_id: null,
+      p_media_url: null,
+      p_file_name: null,
+      p_is_forwarded: false,
+    });
+  } catch (e) {
+    console.warn("[e2ee] session reset failed (will retry on next failure)", e);
+  } finally {
+    sessionResetInflight.delete(key);
+  }
+}
 
 /** Kick off lazy media decryption; resolves to a blob URL when ready. */
 export function scheduleMediaDecrypt(msg: Message): void {
@@ -161,6 +216,12 @@ export async function decryptMessages(
       }
       const payload = decodePayload(await decryptFor(myProfileId, conversationId, msg.senderId, env));
       if (!payload) throw new Error("bad payload");
+      if (payload.k === "r") {
+        // Session-reset control message — protocol plumbing, never render it.
+        (msg as any)._systemControl = true;
+        msg.content = "";
+        continue;
+      }
       if (payload.k === "t" || payload.k === "s") {
         msg.content = payload.t;
         ptMemoRemember(String(msg.id), payload.t);
@@ -175,9 +236,16 @@ export async function decryptMessages(
         }
         scheduleMediaDecrypt(msg);
       }
-    } catch (e) {
+    } catch (e: any) {
       console.warn("[e2ee] decrypt failed for message", msg.id, e);
       msg.content = CIPHER_PLACEHOLDER;
+      // Bare envelope we can't open → the shared session is gone on one side.
+      // Kick the reset protocol so BOTH devices converge instead of failing
+      // forever. (Prekey-envelope failures re-initiate on the sender side via
+      // the rebuild path; a dead one still lands here — same recovery.)
+      if ((e as any)?.name === "RelaySessionDead") {
+        void sendSessionReset(myProfileId, conversationId, msg.senderId);
+      }
     }
   }
   // loop-level guard: a row must never leave this function as ciphertext
@@ -286,5 +354,8 @@ export async function fetchConversationMessages(conversationId: string, myProfil
     }
   }
 
-  return formatted;
+  // Session-reset control messages are protocol plumbing — strip them before
+  // the rows reach any store or the UI.
+  const visible = formatted.filter((m) => !(m as any)._systemControl);
+  return visible;
 }
