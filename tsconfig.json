@@ -22,5 +22,13 @@
     },
     "allowImportingTsExtensions": true,
     "noEmit": true
-  }
+  },
+  "exclude": [
+    "node_modules",
+    "dist",
+    "android",
+    "sdk",
+    "supabase/functions",
+    "scripts"
+  ]
 }

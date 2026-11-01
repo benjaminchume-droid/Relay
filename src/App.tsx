@@ -34,6 +34,7 @@ import { CreateGroupScreen } from './components/CreateGroupScreen';
 import { UserSearchScreen } from './components/UserSearchScreen';
 import { ModalsOverlay } from './components/Modals';
 import { NotificationCenterScreen } from './components/NotificationCenterScreen';
+import { DeveloperScreen } from './components/DeveloperScreen';
 import { useNotificationStore } from './services/notificationService';
 import { useRelayRealtime } from './services/realtime/useRelayRealtime';
 import { GlobalCallHost } from './components/GlobalCallHost';
@@ -45,7 +46,7 @@ function isAuthedStatus(status: string) {
   return status === 'READY' || status === 'AUTHENTICATED';
 }
 
-type SubRoute = 'create-community' | 'create-group' | 'explore-search' | 'notifications' | null;
+type SubRoute = 'create-community' | 'create-group' | 'explore-search' | 'notifications' | 'developer' | null;
 
 function parsePath(pathname: string): {
   tab: 'chats' | 'communities' | 'explore' | 'profile';
@@ -62,6 +63,7 @@ function parsePath(pathname: string): {
   if (p === '/explore') return { tab: 'explore', chatId: null, sub: null };
   if (p === '/profile') return { tab: 'profile', chatId: null, sub: null };
   if (p === '/notifications') return { tab: 'chats', chatId: null, sub: 'notifications' };
+  if (p === '/developer') return { tab: 'profile', chatId: null, sub: 'developer' };
   if (p === '/create-community') return { tab: 'communities', chatId: null, sub: 'create-community' };
   if (p === '/create-group') return { tab: 'chats', chatId: null, sub: 'create-group' };
   if (p === '/search') return { tab: 'explore', chatId: null, sub: 'explore-search' };
@@ -346,6 +348,8 @@ export const App: React.FC = () => {
               openChat(conversationId);
             }}
           />
+        ) : activeSubRoute === 'developer' ? (
+          <DeveloperScreen onBack={closeSub} />
         ) : activeSubRoute === 'create-community' ? (
           <CreateCommunityScreen
             onBack={closeSub}

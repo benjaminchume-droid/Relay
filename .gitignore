@@ -18,3 +18,7 @@ local.properties
 *.apk
 *.aab
 .vercel
+
+# messaging sdk build + deps
+sdk/dist/
+sdk/node_modules/

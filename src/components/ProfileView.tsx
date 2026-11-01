@@ -4,10 +4,12 @@
  */
 
 import React, { useState, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Palette, Shield, Lock, User, RefreshCw, LogOut, Check, Camera, Upload,
   Bell, HardDrive, HelpCircle, AlertTriangle, KeyRound, Scale, FileText, Users,
-  Volume2, Vibrate, Eye, BellRing, Download, Cpu, Smartphone, Monitor, Layers, Code2
+  Volume2, Vibrate, Eye, BellRing, Download, Cpu, Smartphone, Monitor, Layers, Code2,
+  ArrowRight, Wand2
 } from 'lucide-react';
 import { GlassCard, GlassButton, GlassInput } from './GlassUI';
 import { supabase } from '../lib/supabase/client';
@@ -82,6 +84,9 @@ Where we're going: making encrypted communication available to everyone, on ever
 
 export const ProfileView: React.FC = () => {
   const inApp = isInAppWebView();
+  const navigate = useNavigate();
+  // Developer mode is a local switch: ON reveals the gateway to /developer.
+  const [devMode, setDevMode] = useState(() => localStorage.getItem('relay_dev_mode') === 'on');
   const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'DEVELOPER' | 'NOTIFICATIONS' | 'STORAGE' | 'DOWNLOADS' | 'HELP' | 'LEGAL'>('APPEARANCE');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cacheCleared, setCacheCleared] = useState(false);
@@ -633,7 +638,65 @@ export const ProfileView: React.FC = () => {
       )}
 
       {subTab === 'PERMISSIONS' && <PermissionsView />}
-      {subTab === 'DEVELOPER' && <DeveloperTab />}
+      {subTab === 'DEVELOPER' && (
+        <div className="space-y-6">
+          <GlassCard className="p-5">
+            <div className="flex items-center gap-3">
+              <span
+                className="flex h-11 w-11 items-center justify-center rounded-2xl text-white shrink-0"
+                style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
+              >
+                <Code2 size={20} />
+              </span>
+              <div className="min-w-0">
+                <p className="text-base font-bold text-slate-900 dark:text-white">Developer mode</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Businesses, apps and the Relay Messaging SDK.
+                </p>
+              </div>
+              <button
+                type="button"
+                role="switch"
+                aria-checked={devMode}
+                aria-label="Toggle developer mode"
+                onClick={() => {
+                  const next = !devMode;
+                  setDevMode(next);
+                  localStorage.setItem('relay_dev_mode', next ? 'on' : 'off');
+                }}
+                className={`ml-auto relative h-7 w-12 shrink-0 rounded-full transition-colors cursor-pointer ${
+                  devMode ? 'bg-[var(--primary-accent, #2563EB)]' : 'bg-slate-300 dark:bg-white/15'
+                }`}
+              >
+                <span
+                  className={`absolute top-1 h-5 w-5 rounded-full bg-white shadow transition-all ${
+                    devMode ? 'left-6' : 'left-1'
+                  }`}
+                />
+              </button>
+            </div>
+
+            {devMode && (
+              <div className="mt-4 space-y-3">
+                <GlassButton
+                  variant="primary"
+                  onClick={() => navigate('/developer')}
+                  className="w-full justify-center py-3"
+                >
+                  <Wand2 size={16} /> <span>Open developer page</span> <ArrowRight size={14} />
+                </GlassButton>
+                <p className="text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                  Create a business profile or sync one from Genjutsu, then choose what your app
+                  needs: Relay sign-in or the Messaging SDK. You get credentials, templates and
+                  encrypted messaging your backend never has to understand.
+                </p>
+              </div>
+            )}
+          </GlassCard>
+
+          {devMode && <DeveloperTab />}
+        </div>
+      )}
 
       {subTab === 'NOTIFICATIONS' && (
         <GlassCard className="p-5 space-y-4">
