@@ -21,6 +21,7 @@ import { fingerprint } from '../services/crypto/signalProtocol';
 import { chatCache } from '../services/chatCache';
 import { relayCacheManager } from '../services/cacheManager';
 import { RELAY_WEB_VERSION } from '../lib/version';
+import { SyncVaultCard } from './SyncVaultCard';
 
 type Row = { label: string; value: string; mono?: boolean };
 
@@ -177,6 +178,8 @@ export function DeveloperTab() {
         <RowLine row={{ label: 'Network', value: online ? 'online' : 'offline' }} />
         <RowLine row={{ label: 'Service worker', value: typeof navigator !== 'undefined' && navigator.serviceWorker ? (navigator.serviceWorker.controller ? 'active' : 'registered, not controlling') : 'unsupported' }} />
       </GlassCard>
+
+      <SyncVaultCard />
 
       {status && (
         <p className="text-xs font-semibold text-[var(--primary-accent)]">{status}</p>
