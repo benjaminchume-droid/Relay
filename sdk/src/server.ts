@@ -1,101 +1,91 @@
 /**
- * Relay Messaging SDK — server helper (Node, Bun, Deno, edge runtimes).
+ * Relay Messaging SDK — RelayServer (backend helper).
  *
- * Your VPS or backend provider mints short-lived user tokens for the browser
- * SDK. The token is an HMAC over {appId, externalId, exp} keyed with the
- * SHA-256 of your app secret — Relay's gateway verifies it against the stored
- * hash, so nobody (us included) can mint tokens for your users without the
- * secret.
+ * Your backend holds the app secret (`rs_…`). With it you mint short-lived
+ * user tokens that authenticate SDK calls:
  *
- *   import { RelayServer } from '@relay/messaging-sdk/server';
- *   const relay = new RelayServer(process.env.RELAY_APP_SECRET!);
- *   app.post('/relay-token', (req, res) =>
- *     res.send(relay.userToken(req.body.externalId)));
+ *   const relay = new RelayServer({ appId, appSecret });
+ *   const token = await relay.mintToken("user_42");            // calls /tokens
+ *   const local = await relay.mintTokenLocal("user_42", 3600); // offline, HMAC
+ *
+ * Tokens carry {cid, ext, exp} and are HMAC'd with sha256(appSecret) — the
+ * same value the gateway stores as client_secret_hash, so nobody without the
+ * app secret can mint identities.
  */
+import { sha256 } from "@noble/hashes/sha2";
+import { hmac } from "@noble/hashes/hmac";
+import { b64uEncode } from "./crypto";
 
-export type UserTokenPayload = { cid: string; ext: string; exp: number };
+const te = new TextEncoder();
 
-type SubtleCryptoLike = {
-  importKey: (...args: unknown[]) => Promise<CryptoKey>;
-  sign: (...args: unknown[]) => Promise<ArrayBuffer>;
-  digest: (...args: unknown[]) => Promise<ArrayBuffer>;
+function sha256Hex(text: string): string {
+  return [...sha256(te.encode(text))].map((b) => b.toString(16).padStart(2, "0")).join("");
+}
+
+function hexToBytes(hex: string): Uint8Array {
+  return new Uint8Array(hex.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
+}
+
+/** HMAC-SHA256 over the ASCII body — mirrors _shared/relay.ts signUserToken. */
+function hmacBody(key: Uint8Array, body: string): Uint8Array {
+  return hmac(sha256, key, te.encode(body));
+}
+
+export type RelayServerOptions = {
+  appId: string;
+  appSecret: string;
+  baseUrl?: string;
+  fetch?: typeof fetch;
 };
 
-function getSubtle(): SubtleCryptoLike {
-  const s = (globalThis as { crypto?: { subtle?: SubtleCryptoLike } }).crypto?.subtle;
-  if (!s) {
-    throw new Error(
-      'WebCrypto unavailable. Node needs >= 18 (run with --experimental-global-webcrypto on 18) — Bun, Deno and edge runtimes ship it by default.',
-    );
-  }
-  return s;
-}
-
-const enc = new TextEncoder();
-
-function b64url(buf: ArrayBuffer | Uint8Array): string {
-  const bytes = buf instanceof Uint8Array ? buf : new Uint8Array(buf);
-  let s = '';
-  for (const b of bytes) s += String.fromCharCode(b);
-  return btoa(s).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
-}
-
-async function hmacKey(hexSecret: string): Promise<CryptoKey> {
-  const bytes = new Uint8Array(hexSecret.match(/.{2}/g)!.map((h) => parseInt(h, 16)));
-  return getSubtle().importKey('raw', bytes, { name: 'HMAC', hash: 'SHA-256' }, false, ['sign']);
-}
-
-async function sha256Hex(input: string): Promise<string> {
-  const d = await getSubtle().digest('SHA-256', enc.encode(input));
-  return [...new Uint8Array(d)].map((b) => b.toString(16).padStart(2, '0')).join('');
-}
-
 export class RelayServer {
-  private appId: string | null = null;
-  private keyPromise: Promise<CryptoKey> | null = null;
+  readonly appId: string;
+  readonly appSecret: string;
+  readonly baseUrl: string;
+  private fetchImpl: typeof fetch;
+
+  constructor(opts: RelayServerOptions) {
+    if (!opts.appId?.startsWith("rl_")) throw new Error("appId must be your `rl_…` client id");
+    if (!opts.appSecret?.startsWith("rs_")) throw new Error("appSecret must be your `rs_…` client secret");
+    this.appId = opts.appId;
+    this.appSecret = opts.appSecret;
+    this.baseUrl = (opts.baseUrl ?? "https://relayid.vercel.app/v1").replace(/\/$/, "");
+    this.fetchImpl = opts.fetch ?? fetch.bind(globalThis);
+  }
+
+  /** Mint a user token through the gateway (needs network). */
+  async mintToken(
+    externalId: string,
+    ttlSeconds = 86400,
+  ): Promise<{ token: string; external_id: string; expires_in: number }> {
+    const res = await this.fetchImpl(`${this.baseUrl}/tokens`, {
+      method: "POST",
+      headers: {
+        "content-type": "application/json",
+        authorization: `Bearer ${this.appSecret}`,
+      },
+      body: JSON.stringify({ external_id: externalId, ttl_seconds: ttlSeconds }),
+    });
+    const body = (await res.json().catch(() => ({}))) as Record<string, unknown>;
+    if (!res.ok) {
+      const desc = (body.error_description as string) || (body.error as string) || `HTTP ${res.status}`;
+      throw new Error(`Relay /tokens: ${desc}`);
+    }
+    return body as { token: string; external_id: string; expires_in: number };
+  }
 
   /**
-   * @param appSecret the rs_… client secret — keep it server-side only
-   * @param appId optional: validated client_id; when given, tokens embed it
+   * Mint the same token offline — identical bytes to what the gateway
+   * produces, because the gateway verifies HMAC(key = sha256hex(app secret)).
    */
-  constructor(private appSecret: string, appId?: string) {
-    if (!appSecret?.startsWith('rs_')) {
-      throw new Error('RelayServer needs the rs_ client secret from your developer page.');
-    }
-    this.appId = appId ?? null;
-  }
-
-  /** Mint a user token. Default TTL 24 h, hard range 5 min to 7 days. */
-  async userToken(externalId: string, ttlSeconds = 86400): Promise<string> {
-    if (!this.appId) {
-      throw new Error('Set appId first: relay.setAppId("rl_…") — it comes from your developer page.');
-    }
-    const ttl = Math.min(Math.max(ttlSeconds, 300), 7 * 86400);
-    const payload: UserTokenPayload = {
-      cid: this.appId,
-      ext: externalId,
-      exp: Math.floor(Date.now() / 1000) + ttl,
-    };
-    const body = b64url(enc.encode(JSON.stringify(payload)));
-    if (!this.keyPromise) {
-      this.keyPromise = hmacKey(await sha256Hex(this.appSecret));
-    }
-    const key = await this.keyPromise;
-    const sig = await getSubtle().sign('HMAC', key, enc.encode(body));
-    return `${body}.${b64url(sig)}`;
-  }
-
-  setAppId(appId: string): void {
-    this.appId = appId;
-  }
-
-  /** Convenience: verify what a token would contain without sending it. */
-  static decode(token: string): UserTokenPayload | null {
-    try {
-      const [body] = token.split('.');
-      return JSON.parse(atob(body.replace(/-/g, '+').replace(/_/g, '/'))) as UserTokenPayload;
-    } catch {
-      return null;
-    }
+  mintTokenLocal(externalId: string, ttlSeconds = 86400): { token: string; expires_in: number } {
+    const now = Math.floor(Date.now() / 1000);
+    const ttl = Math.max(300, Math.min(ttlSeconds, 7 * 86400));
+    const exp = now + ttl;
+    const payload = { cid: this.appId, ext: externalId, exp };
+    const body = b64uEncode(te.encode(JSON.stringify(payload)));
+    const key = hexToBytes(sha256Hex(this.appSecret));
+    const sig = hmacBody(key, body);
+    return { token: `${body}.${b64uEncode(sig)}`, expires_in: ttl };
   }
 }

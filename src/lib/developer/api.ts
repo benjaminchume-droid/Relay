@@ -55,7 +55,7 @@ export async function createBusiness(input: {
     p_genjutsu_username: input.genjutsuUsername ?? null,
   });
   if (error) throw rpcError(error, 'Could not create your business profile.');
-  return data as BusinessProfile;
+  return unwrapRow<BusinessProfile>(data);
 }
 
 export async function updateBusiness(changes: {
@@ -107,6 +107,24 @@ export async function listApps(businessId: string): Promise<DevApp[]> {
   return (data as DevApp[]) ?? [];
 }
 
+/**
+ * RPCs that RETURN TABLE(...) are set-returning: PostgREST hands back an
+ * array with one row. Unwrap it — the secret sheet needs the row object,
+ * not the array (rendering grant.client_id on the array is what produced
+ * the infamous "undefined" credentials modal).
+ */
+function unwrapGrant(data: unknown): SecretGrant {
+  const row = (Array.isArray(data) ? data[0] : data) as Partial<SecretGrant> | null;
+  if (!row || typeof row.client_id !== 'string' || typeof row.client_secret !== 'string') {
+    throw new Error('The server did not return credentials — please try again.');
+  }
+  return { client_id: row.client_id, client_secret: row.client_secret };
+}
+
+function unwrapRow<T>(data: unknown): T {
+  return (Array.isArray(data) ? data[0] : data) as T;
+}
+
 export async function createApp(input: {
   businessId: string;
   name: string;
@@ -128,7 +146,7 @@ export async function createApp(input: {
     p_scopes: input.scopes,
   });
   if (error) throw rpcError(error, 'Could not create the app.');
-  return data as SecretGrant;
+  return unwrapGrant(data);
 }
 
 export async function rotateAppSecret(appId: string): Promise<SecretGrant> {
@@ -136,7 +154,7 @@ export async function rotateAppSecret(appId: string): Promise<SecretGrant> {
     p_app_id: appId,
   });
   if (error) throw rpcError(error, 'Could not rotate the secret.');
-  return data as SecretGrant;
+  return unwrapGrant(data);
 }
 
 export async function updateApp(

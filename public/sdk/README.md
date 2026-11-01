@@ -1,137 +1,125 @@
 # Relay Messaging SDK
 
-Encrypted messaging for your app, your VPS or any backend provider.
-**You add the SDK. Relay handles identity, key exchange, encryption, delivery and storage.**
+Signal-level end-to-end encrypted messaging as two downloadable ES modules.
+Drop them into any browser app, Node service, Deno or Bun project. No build
+step, no native dependencies.
 
-Your users keep their own ids (`user_42`, whatever your database says). Your backend never
-touches cryptography, never sees a private key and never stores plaintext. Relay's backend
-is the hidden plumber: it routes ciphertext envelopes and nothing else.
+| File | What it is |
+| --- | --- |
+| `relay-sdk.mjs` | `RelayClient` — runs in your app (browser/Node/Deno/Bun). Does all the crypto. |
+| `relay-server.mjs` | `RelayServer` — runs on your backend. Mints user tokens with your app secret. |
 
-```
-your app                      relay (hidden plumber)
-┌──────────────┐   envelopes  ┌─────────────────────┐
-│ RelayClient  │ ───────────▶ │ relayid.vercel.app  │ ─▶ recipient's devices
-│ (WebCrypto)  │ ◀─────────── │ /v1/*               │
-└──────────────┘   envelopes  └─────────────────────┘
-        ▲ user token minted by YOUR backend with RelayServer
-```
+## What "Signal level" means here
 
-## Install
+The SDK implements the two protocols that make Signal Signal:
 
-```bash
-npm i @relay/messaging-sdk
-```
+- **X3DH (Extended Triple Diffie-Hellman)** — every session starts from an
+  authenticated key agreement between the two identity keys, the signed
+  prekey and a one-time prekey. The prekey signature (Ed25519) is verified
+  before any session is accepted, so a malicious server cannot hand you a
+  fake bundle without breaking the signature.
+- **Double Ratchet** — every message is sealed under a unique key derived
+  from a symmetric chain; a DH ratchet runs whenever the sender's key
+  changes. Compromise of your device today does not decrypt yesterday's
+  messages (forward secrecy), and the session self-heals after a break-in
+  (post-compromise security). Out-of-order delivery is handled with
+  bounded skipped-key caching, and replays/tampering roll back cleanly.
 
-Works in the browser, Node 18+, Bun, Deno and edge runtimes. Zero dependencies.
-Encryption is ECDH (P-256) + HKDF-SHA256 + AES-256-GCM through WebCrypto, with a fresh
-ephemeral key pair per message.
+Also in the box: X25519 key agreement, Ed25519 signatures, HKDF-SHA256,
+AES-256-GCM (via the platform's WebCrypto engine), and a safety number you
+can read out loud to verify a peer.
 
-## What you need first
+**The Relay gateway stores public prekey bundles and ciphertext envelopes
+only. It never sees a private key or a plaintext word.**
 
-1. **A business profile** on Relay: Profile → Developer → open developer page.
-2. **An app** with the **Messaging SDK** product → copy the `client_id` (`rl_…`) and the
-   `client_secret` (`rs_…`, shown once).
-3. Scopes: check `messages:send` and `messages:read` on the app.
+## Quick start
 
-## 1. Mint user tokens on YOUR backend
-
-```ts
-// your server (Express example)
-import { RelayServer } from '@relay/messaging-sdk/server';
-
-const relay = new RelayServer(process.env.RELAY_APP_SECRET!, 'rl_your_app_id');
-
-app.post('/relay-token', requireLogin, (req, res) => {
-  // externalId = your own user id, any string up to 128 chars
-  res.type('text').send(relay.userToken(req.session.userId));
-});
+```html
+<script type="module">
+  import { RelayClient } from "./relay-sdk.mjs";
+</script>
 ```
 
-The token is a short-lived HMAC your gateway can verify against the hashed secret.
-Your app secret never reaches the browser.
+```js
+// 1) your backend mints a user token (see "Your backend" below)
+const token = await fetch("/your-api/relay-token", { method: "POST" }).then((r) => r.text());
 
-## 2. Connect from the browser
+// 2) connect — generates the X3DH identity on this device and registers it
+import { RelayClient } from "./relay-sdk.mjs";
+const relay = new RelayClient({ appId: "rl_your_app_id", baseUrl: "https://relayid.vercel.app/v1" });
+const { external_id } = await relay.connectWithToken(token);
 
-```ts
-import { RelayClient } from '@relay/messaging-sdk';
+// 3) send — the first message runs the X3DH handshake, then the ratchet takes over
+await relay.send("user_43", "See you at the checkpoint");
 
-const relay = new RelayClient({ appId: 'rl_your_app_id' });
+// 4) receive
+const inbox = await relay.inbox();          // decrypted view
+for (const m of inbox) console.log(m.from, m.text);
+await relay.markRead(inbox.map((m) => m.id));
 
-const res = await fetch('/relay-token');          // your backend
-await relay.connectWithToken(await res.text());   // registers the device key bundle
-```
-
-First connect generates the device identity key pair. The private key stays in the
-browser (export with `relay.exportIdentity()` to migrate a user between devices).
-
-## 3. Send and receive
-
-```ts
-await relay.send('user_43', 'See you at the checkpoint');
-
-const inbox = await relay.messages();             // ciphertext envelopes
-for (const m of inbox.messages) {
-  console.log(m.from, await relay.decrypt(m));    // decrypted locally
+// or handle envelopes yourself:
+const { messages } = await relay.messages();
+for (const m of messages) {
+  console.log(await relay.decrypt(m));      // throws on tamper/replay
 }
-await relay.markRead(inbox.messages.map((m) => m.id));
-
-const convos = await relay.conversations();       // partners + last activity
 ```
 
-## 4. Optional: your own tables
+## Your backend
 
-Mirror whatever your product needs on your own database. Relay keeps identity bundles
-and ciphertext envelopes; you keep product data:
+```js
+import { RelayServer } from "./relay-server.mjs";
+const relay = new RelayServer({ appId: "rl_your_app_id", appSecret: "rs_your_secret" });
 
-```sql
-create table relay_receipts (
-  relay_message_id     uuid primary key,
-  sender_external_id   text not null,
-  recipient_external_id text not null,
-  created_at           timestamptz not null default now()
-);
+// network mint (also validates the app secret against the gateway)
+const { token } = await relay.mintToken("user_42", 3600);
+
+// or mint offline — identical bytes, HMAC over sha256(app secret)
+const { token } = relay.mintTokenLocal("user_42", 3600);
 ```
 
-Wire your own webhooks by posting to your backend from your frontend message handler,
-or poll `relay.messages(since)` on an interval.
+## API — RelayClient
 
-## 5. Relay sign-in (Integrate auth apps)
+| Member | Purpose |
+| --- | --- |
+| `new RelayClient({ appId, baseUrl, store?, opkCount?, fetch? })` | `store` is a KV adapter (defaults to localStorage, in-memory fallback); keys + sessions persist through it. |
+| `connectWithToken(token)` | Authenticates and registers the prekey bundle once. |
+| `send(to, text)` | Encrypts (X3DH on first message) and relays. Returns `{id, created_at}`. |
+| `messages({ since?, limit? })` | Raw ciphertext envelopes. |
+| `decrypt(envelope)` | Decrypts one envelope; establishes the session if it carries the handshake. |
+| `inbox({ since?, limit? })` | Fetch + decrypt in one call. Undecryptable envelopes are skipped. |
+| `markRead(ids)` | Read receipts. |
+| `conversations()` | Partners + last activity. |
+| `publicBundle()` | Your public X3DH bundle (for QR-code identity checks). |
+| `safetyNumber()` | Fingerprint of your identity key — compare out of band. |
+| `resetPeer(peer)` | Forget the session with a peer (after they reset their identity). |
 
-If your app also uses Relay as an identity provider (the "Integrate auth" product), the
-whole OAuth surface lives on our domain:
+## API — RelayServer
 
-| endpoint  | url                                          |
-| --------- | -------------------------------------------- |
-| authorize | `https://relayid.vercel.app/consent`         |
-| token     | `https://relayid.vercel.app/v1/oauth/token`  |
-| userinfo  | `https://relayid.vercel.app/v1/oauth/userinfo` |
-| redirect  | `https://relayid.vercel.app/v1/redirect`     |
+| Member | Purpose |
+| --- | --- |
+| `mintToken(externalId, ttl?)` | Mint a user token via `POST /v1/tokens`. |
+| `mintTokenLocal(externalId, ttl?)` | Mint offline (no network). TTL 5 min – 7 days. |
 
-OAuth 2.0 with PKCE (S256), exactly like "Continue with Google".
+## Rebuilding the bundles
 
-## API reference
+```
+npm run sdk:build      # or: node sdk/build.mjs
+npx tsx sdk/test/protocol.test.ts    # protocol self-test (no network)
+RELAY_APP_ID=rl_… RELAY_APP_SECRET=rs_… node sdk/test/e2e-live.mjs
+```
 
-### `new RelayClient({ appId, baseUrl?, keyPrefix? })`
-`baseUrl` defaults to `https://relayid.vercel.app/v1`.
+The protocol test covers: X3DH agreement on both roles, signed-prekey
+verification, 10-message ratchet flows both directions, out-of-order
+delivery, replay rejection, tamper rejection, session persistence
+round-trips, and the replay-rollback regression.
 
-### client methods
-- `connectWithToken(token)` → `{ externalId }` — register/refresh the device key bundle
-- `send(to, text)` → `{ id, created_at }` — seals and posts an envelope
-- `messages(since?, limit?)` → ciphertext inbox (marks delivered)
-- `decrypt(message)` → plaintext string
-- `markRead(ids)`
-- `conversations()` → partners with last activity
-- `peerBundle(externalId)` → a peer's public key bundle
-- `exportIdentity()` / `importIdentity(raw)` — move a user between devices
+## Threat model (honest version)
 
-### `new RelayServer(appSecret, appId?)` (server subpath)
-- `userToken(externalId, ttlSeconds?)` → HMAC token for the browser SDK
-- `setAppId(appId)`
-
-## Threat model, straight up
-
-- Private keys live on the user's device. Relay stores public bundles only.
-- Every message is sealed with a fresh ephemeral key: compromise of one message never
-  unlocks another.
-- Relay can see who talks to whom and when (metadata) but never the content.
-- Lost device without an identity export = lost history. Export early.
+- Encrypted against the server, passive network observers, and anyone who
+  later steals ciphertext at rest.
+- Key material rests in the KV store you give the SDK — in the browser that
+  is localStorage, i.e. sandboxed per origin but readable by your own page
+  code and any XSS on it. For hardened deployments supply a store backed by
+  IndexedDB + a passphrase, or a native keystore.
+- Multi-device sync is not part of v1: each device registers its own
+  identity, and `resetPeer` recovers a session after a device swap.

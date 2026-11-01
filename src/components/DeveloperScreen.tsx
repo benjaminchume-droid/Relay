@@ -48,12 +48,14 @@ function copy(text: string): void {
 }
 
 const MonoValue: React.FC<{ value: string }> = ({ value }) => {
+  // never render a literal "undefined" — an empty value shows a placeholder
+  const shown = typeof value === 'string' && value.length > 0 ? value : '(unavailable)';
   return (
     <div className="flex items-center gap-2 min-w-0">
-      <code className="min-w-0 break-all font-mono text-[11px] text-slate-800 dark:text-slate-100">{value}</code>
+      <code className="min-w-0 break-all font-mono text-[11px] text-slate-800 dark:text-slate-100">{shown}</code>
       <button
         type="button"
-        onClick={() => copy(value)}
+        onClick={() => copy(shown)}
         className="shrink-0 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-white/10 text-slate-500 cursor-pointer"
         title="Copy"
       >
@@ -1009,11 +1011,14 @@ function renderPreview(text: string, businessName: string): string {
 
 function SdkSection({ business }: { business: BusinessProfile }) {
   const sdkApps = [
-    { id: 'a', title: 'Install', code: `npm i ${SDK_PACKAGE}`, body: 'One package. Works in the browser, Node, Deno and Bun — your app, your VPS or any backend provider. Or download the files below and drop them straight into your project.' },
+    { id: 'a', title: 'Install', code: `import { RelayClient } from './relay-sdk.mjs';
+
+// one file, zero dependencies — browser, Node, Deno or Bun.
+// X3DH + Double Ratchet are bundled inside.`, body: 'Download the client below and drop it into your project. Everything the protocol needs travels in that one file.' },
     {
       id: 'b',
       title: 'Connect your users',
-      code: `import { RelayClient } from '${SDK_PACKAGE}';
+      code: `import { RelayClient } from './relay-sdk.mjs';
 
 const relay = new RelayClient({
   appId: 'rl_your_app_id',
@@ -1030,22 +1035,25 @@ await relay.connectWithToken(await token.text());`,
     },
     {
       id: 'c',
-      title: 'Send a message (we handle the encryption)',
-      code: `const receipt = await relay.send('user_43', 'See you at the checkpoint');
-// -> ECDH + AES-256-GCM inside the SDK. Relay only ever
-//    stores and relays ciphertext — no plaintext leaves the device.`,
-      body: 'Keys are generated on the device. Our backend is the hidden plumber: it routes envelopes and never sees a word.',
+      title: 'Send a message (Signal-level encryption)',
+      code: `// first send runs X3DH against your peer's prekey bundle,
+// every message after rides the Double Ratchet:
+const receipt = await relay.send('user_43', 'See you at the checkpoint');
+// forward secrecy + break-in recovery + tamper rejection, all in the SDK.
+// Relay only ever stores public bundles and ciphertext.`,
+      body: 'Keys are generated on the device. The gateway is the hidden plumber: it routes envelopes and prekey bundles and never sees a private key or a word of plaintext.',
     },
     {
       id: 'd',
       title: 'Receive',
-      code: `const inbox = await relay.messages();     // ciphertext envelopes
-for (const m of inbox.messages) {
-  const text = await relay.decrypt(m);    // decrypted locally
-  console.log(m.from, text);
-}
-await relay.markRead(inbox.messages.map((m) => m.id));`,
-      body: 'Poll on an interval, on push, or wire webhooks on your side — the envelopes wait until your user is ready.',
+      code: `const inbox = await relay.inbox();        // fetch + decrypt in one call
+for (const m of inbox) console.log(m.from, m.text);
+await relay.markRead(inbox.map((m) => m.id));
+
+// or handle envelopes yourself (throws on tamper/replay):
+const { messages } = await relay.messages();
+for (const m of messages) console.log(await relay.decrypt(m));`,
+      body: 'Out-of-order delivery, replays and tampering are handled inside the SDK — the ratchet rolls back cleanly instead of desyncing. Poll on an interval or on push.',
     },
     {
       id: 'e',
@@ -1074,8 +1082,10 @@ create table relay_receipts (
           <MessageSquareCode size={16} /> Relay Messaging SDK
         </p>
         <p className="mt-1.5 text-xs leading-5 text-slate-500 dark:text-slate-400">
-          Integrate messaging into your app, your VPS or any backend provider. Encryption, key exchange,
-          delivery and storage are handled by Relay — you add the SDK, wire your tables and your users talk.
+          Signal-level E2EE messaging: X3DH key agreement with signed prekeys, a Double Ratchet on every
+          message (forward secrecy + break-in recovery), AES-256-GCM via WebCrypto. Private keys are
+          generated on your user&apos;s device and never leave it — the gateway relays public bundles and
+          ciphertext, nothing more.
         </p>
         <div className="mt-3 grid grid-cols-2 gap-2">
           <a

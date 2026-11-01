@@ -3,15 +3,20 @@
  *
  * Routes (path after the function root):
  *   POST tokens                  {external_id}                (app secret)
- *   POST identities              {public_key, meta}           (user token)
+ *   POST identities              {bundle, meta}               (user token)
+ *       bundle = { ik, spk, spk_sig, opks?: [{kid, key}] }  (Signal X3DH)
  *   GET  identities/:external_id                              (user token / app secret)
+ *       -> { bundle, one_time_prekey | null }  (OPK consumed atomically)
+ *   POST identities/opks         {opks: [{kid, key}]}         (user token)
  *   POST messages                {to, envelope, kind?}        (user token)
  *   GET  messages?since=&limit=                               (user token)
  *   POST messages/read           {ids}                        (user token)
  *   GET  conversations                                        (user token)
  *
- * The gateway is ciphertext-only: envelopes are ECDH + AES-256-GCM boxes the
- * SDK produces client-side. Relay stores and relays them, nothing more.
+ * The gateway is ciphertext-only. Bundles hold PUBLIC X25519/Ed25519 keys
+ * only; envelopes are Double-Ratchet + AES-256-GCM boxes produced inside the
+ * SDK. Relay routes ciphertext and prekey bundles — it never holds private
+ * keys or plaintext.
  *
  * App auth:  Authorization: Bearer rs_…            (server-to-server)
  * User auth: Authorization: Bearer <user token>    (HMAC, minted via /tokens)
@@ -109,12 +114,57 @@ Deno.serve(async (req) => {
     const ctx = await resolveUserToken();
     const asApp = ctx ? null : await resolveAppBySecret();
 
-    /* POST /identities — register/update this user's public key bundle */
+    /* POST /identities — register/update this user's prekey bundle (X3DH).
+     *
+     * bundle = { ik: b64u, spk: b64u, spk_sig: b64u(Ed25519 over spk),
+     *            opks?: [{kid, key}] }
+     * Legacy JWK uploads (plain ECDH identity) are still accepted so older
+     * clients keep working, but the Signal SDK always sends a bundle. */
     if (route === "identities" && req.method === "POST") {
       if (!ctx) return error("invalid_token", 401, "User token required.");
-      const body = await readJson<{ public_key?: unknown; meta?: Record<string, unknown> }>(req);
+      const body = await readJson<{
+        bundle?: Record<string, unknown>;
+        public_key?: unknown;
+        meta?: Record<string, unknown>;
+      }>(req);
+      const bundle = body.bundle;
+      if (bundle) {
+        const { ik, sig, spk, spk_sig } = bundle as Record<string, string>;
+        if (typeof ik !== "string" || typeof spk !== "string" || typeof spk_sig !== "string") {
+          return error("invalid_bundle", 400, "bundle needs ik, spk and spk_sig (base64url strings).");
+        }
+        const pub = { ik, sig: typeof sig === "string" ? sig : null, spk, spk_sig, v: 2 };
+        const { error: upErr } = await admin.from("sdk_identities").upsert(
+          {
+            app_id: ctx.app.id,
+            external_id: ctx.payload.ext,
+            public_key: pub,
+            meta: body.meta ?? {},
+          },
+          { onConflict: "app_id,external_id" },
+        );
+        if (upErr) return error("upsert_failed", 500, upErr.message);
+        // top up one-time prekeys in the same request (best effort)
+        const opks = Array.isArray(bundle.opks) ? bundle.opks : [];
+        const rows = opks
+          .filter((o): o is { kid: string; key: string } =>
+            !!o && typeof (o as { kid?: unknown }).kid === "string" &&
+            typeof (o as { key?: unknown }).key === "string")
+          .slice(0, 100)
+          .map((o) => ({
+            app_id: ctx.app.id,
+            external_id: ctx.payload.ext,
+            key_id: o.kid,
+            public_key: o.key,
+          }));
+        if (rows.length) {
+          await admin.from("sdk_one_time_prekeys").upsert(rows, { onConflict: "app_id,external_id,key_id" });
+        }
+        return json({ ok: true, external_id: ctx.payload.ext, opks_stored: rows.length });
+      }
+      // legacy path
       if (!body.public_key || typeof body.public_key !== "object") {
-        return error("invalid_key", 400, "public_key (JWK object) is required.");
+        return error("invalid_key", 400, "public_key (JWK object) or bundle is required.");
       }
       const { error: upErr } = await admin.from("sdk_identities").upsert(
         {
@@ -129,9 +179,35 @@ Deno.serve(async (req) => {
       return json({ ok: true, external_id: ctx.payload.ext });
     }
 
-    /* GET /identities/:external_id — fetch a peer's key bundle */
+    /* POST /identities/opks — top up one-time prekeys */
+    if (route === "identities/opks" && req.method === "POST") {
+      if (!ctx) return error("invalid_token", 401, "User token required.");
+      const body = await readJson<{ opks?: { kid?: string; key?: string }[] }>(req);
+      const rows = (Array.isArray(body.opks) ? body.opks : [])
+        .filter((o): o is { kid: string; key: string } =>
+          typeof o?.kid === "string" && typeof o?.key === "string")
+        .slice(0, 100)
+        .map((o) => ({
+          app_id: ctx.app.id,
+          external_id: ctx.payload.ext,
+          key_id: o.kid,
+          public_key: o.key,
+        }));
+      if (!rows.length) return error("invalid_opks", 400, "opks must be [{kid, key}] (base64url).");
+      const { error: upErr } = await admin
+        .from("sdk_one_time_prekeys")
+        .upsert(rows, { onConflict: "app_id,external_id,key_id" });
+      if (upErr) return error("upsert_failed", 500, upErr.message);
+      return json({ ok: true, opks_stored: rows.length });
+    }
+
+    /* GET /identities/:external_id — fetch a peer's prekey bundle.
+     * One unused one-time prekey is consumed atomically per fetch (X3DH
+     * convention); when none are left the initiator falls back to DH only. */
     if (route.startsWith("identities/") && req.method === "GET") {
-      const ext = decodeURIComponent(route.slice("identities/".length)).trim();
+      const rest = route.slice("identities/".length);
+      if (rest === "opks") return error("method_not_allowed", 405, "POST your opks here.");
+      const ext = decodeURIComponent(rest).trim();
       if (!ext) return error("invalid_external_id", 400);
       let appId: string;
       if (ctx) appId = ctx.app.id;
@@ -144,7 +220,17 @@ Deno.serve(async (req) => {
         .eq("external_id", ext)
         .maybeSingle();
       if (!ident) return error("not_found", 404, "No identity registered for that id.");
-      return json(ident);
+      const { data: opk, error: opkErr } = await admin
+        .rpc("sdk_consume_opk", { p_app_id: appId, p_external_id: ext })
+        .maybeSingle<{ key_id: string; public_key: string }>();
+      if (opkErr) return error("opk_failed", 500, opkErr.message);
+      return json({
+        external_id: ident.external_id,
+        bundle: ident.public_key,
+        meta: ident.meta,
+        updated_at: ident.updated_at,
+        one_time_prekey: opk ? { kid: opk.key_id, key: opk.public_key } : null,
+      });
     }
 
     /* POST /messages — encrypted envelope drop-off */
