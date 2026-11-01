@@ -6,6 +6,7 @@
     { "source": "/v1/oauth/token", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/functions/v1/oauth-token" },
     { "source": "/v1/oauth/userinfo", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/functions/v1/oauth-userinfo" },
     { "source": "/v1/redirect", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/functions/v1/oauth-redirect" },
+    { "source": "/v1/auth/:path*", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/functions/v1/auth-challenge/:path*" },
     { "source": "/v1/:path*", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/functions/v1/gateway/:path*" },
     { "source": "/auth/v1/:path*", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/auth/v1/:path*" },
     { "source": "/rest/v1/:path*", "destination": "https://gobwknacvpgysmgpvzqt.supabase.co/rest/v1/:path*" },

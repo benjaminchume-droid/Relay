@@ -26,9 +26,15 @@ function rpcError(err: { message: string } | null, fallback: string): Error {
 /* -------------------------------- business -------------------------------- */
 
 export async function fetchMyBusiness(): Promise<BusinessProfile | null> {
+  // owner_id filter + owner-only RLS: a business belongs to exactly one
+  // account. Signing out (or into another account) can never surface
+  // someone else's profile.
+  const uid = (await supabase.auth.getUser()).data.user?.id;
+  if (!uid) return null;
   const { data, error } = await supabase
     .from('developer_businesses')
     .select('*')
+    .eq('owner_id', uid)
     .maybeSingle();
   if (error) throw rpcError(error, 'Could not load your business profile.');
   return (data as BusinessProfile | null) ?? null;

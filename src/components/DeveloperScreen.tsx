@@ -15,7 +15,7 @@
  */
 import React, { useCallback, useEffect, useState } from 'react';
 import {
-  AlertTriangle, ArrowLeft, BadgeCheck, Blocks, Check, Copy, FileText, KeyRound,
+  AlertTriangle, ArrowLeft, BadgeCheck, Blocks, Check, Copy, Download, FileText, KeyRound,
   Loader2, MessageSquareCode, Plus, RefreshCw, RotateCw, ShieldAlert, Store,
   Terminal, Trash2, Wand2,
 } from 'lucide-react';
@@ -24,7 +24,7 @@ import { DeveloperTab } from './DeveloperTab';
 import { useAuthStore } from '../store/authStore';
 import {
   clampTtl, createApp, createBusiness, createTemplate, deleteTemplate, fetchMyBusiness,
-  listApps, listTemplates, lookupGenjutsuBusiness, parseOriginList, parseUriList,
+  listApps, listTemplates, lookupGenjutsuBusiness,
   rotateAppSecret, updateApp,
 } from '../lib/developer/api';
 import {
@@ -59,6 +59,28 @@ const MonoValue: React.FC<{ value: string }> = ({ value }) => {
       >
         <Copy size={13} />
       </button>
+    </div>
+  );
+};
+
+/** Fenced code sample with a copy button right next to the writing. */
+const CodeBlock: React.FC<{ code: string }> = ({ code }) => {
+  const [done, setDone] = useState(false);
+  return (
+    <div className="relative mt-2 rounded-2xl bg-slate-950">
+      <button
+        type="button"
+        onClick={() => {
+          copy(code);
+          setDone(true);
+          window.setTimeout(() => setDone(false), 1500);
+        }}
+        className="absolute top-2 right-2 z-10 flex items-center gap-1 rounded-lg bg-white/10 px-2 py-1.5 text-[10px] font-bold text-slate-200 hover:bg-white/20 cursor-pointer"
+        title="Copy"
+      >
+        {done ? <Check size={12} /> : <Copy size={12} />} {done ? 'Copied' : 'Copy'}
+      </button>
+      <pre className="overflow-x-auto p-3 font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre">{code}</pre>
     </div>
   );
 };
@@ -161,7 +183,7 @@ function NotDeveloper({ onDone }: { onDone: () => Promise<void> }) {
         <div>
           <h2 className="text-base font-bold text-slate-900 dark:text-white">Become a developer</h2>
           <p className="text-xs text-slate-500 dark:text-slate-400">
-            One business profile per account. Integrate auth or ship messaging through our SDK.
+            One business profile per account. Ship sign-in codes, magic links or messaging through our SDK.
           </p>
         </div>
       </div>
@@ -429,7 +451,7 @@ function ProductPill({ product }: { product: DevAppProduct }) {
   const isSdk = product === 'messaging_sdk';
   return (
     <span className="rounded-full px-2 py-0.5 text-[10px] font-bold bg-slate-100 dark:bg-white/10 text-slate-600 dark:text-slate-300">
-      {isSdk ? 'Messaging SDK' : 'Integrate auth'}
+      {isSdk ? 'Messaging SDK' : 'Sign-in codes'}
     </span>
   );
 }
@@ -572,21 +594,13 @@ function CreateAppForm({ businessId, onCreated }: {
   const [product, setProduct] = useState<DevAppProduct>('auth');
   const [platform, setPlatform] = useState<DevAppPlatform>('web');
   const [packageName, setPackageName] = useState('');
-  const [originsText, setOriginsText] = useState('');
-  const [urisText, setUrisText] = useState('');
   const [scopes, setScopes] = useState<RelayScope[]>(['identity']);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const originResult = parseOriginList(originsText);
-  const uriResult = parseUriList(urisText);
   const packageValid = /^[a-z][a-z0-9_]*(\.[a-z0-9_]+)+$/i.test(packageName.trim());
   const isMobile = platform !== 'web';
-  const fieldsValid = isMobile
-    ? packageValid
-    : product === 'auth'
-      ? originResult.origins.length > 0 && originResult.errors.length === 0 && uriResult.uris.length > 0 && uriResult.errors.length === 0
-      : uriResult.uris.length > 0 && uriResult.errors.length === 0;
+  const fieldsValid = isMobile ? packageValid : true;
   const valid = name.trim().length >= 2 && fieldsValid;
 
   function toggleScope(scope: RelayScope) {
@@ -594,12 +608,7 @@ function CreateAppForm({ businessId, onCreated }: {
       const has = prev.includes(scope);
       if (scope === 'identity') return prev;
       if (has) return prev.filter((s) => s !== scope);
-      const next = [...prev, scope];
-      if (scope.startsWith('messages:')) {
-        const sdk = product === 'messaging_sdk';
-        void sdk;
-      }
-      return next;
+      return [...prev, scope];
     });
   }
 
@@ -612,8 +621,8 @@ function CreateAppForm({ businessId, onCreated }: {
         product,
         platform,
         packageName: isMobile ? packageName.trim() : null,
-        origins: platform === 'web' && product === 'auth' ? originResult.origins : [],
-        redirectUris: platform === 'web' ? uriResult.uris : isMobile ? [`${packageName.trim()}:/relay/callback`] : [],
+        origins: [],
+        redirectUris: [],
         scopes,
       });
       onCreated(grant);
@@ -637,7 +646,7 @@ function CreateAppForm({ businessId, onCreated }: {
             <label className="text-xs font-bold text-slate-600 dark:text-slate-300">What will this app do?</label>
             <div className="mt-1.5 grid gap-2">
               {([
-                { id: 'auth' as DevAppProduct, icon: KeyRound, title: 'Integrate auth', body: '"Continue with Relay" sign-in for your app — Google-style OAuth + PKCE.' },
+                { id: 'auth' as DevAppProduct, icon: KeyRound, title: 'Sign-in codes & magic links', body: 'Your backend calls /v1/auth/otp and /v1/auth/magic-link — we render your templates and deliver by email (SMTP) or WhatsApp. You paste the secrets in, we handle the rest.' },
                 { id: 'messaging_sdk' as DevAppProduct, icon: MessageSquareCode, title: 'Messaging SDK', body: 'Drop our SDK into your app, VPS or backend. We handle the encryption end to end.' },
               ]).map(({ id, icon: Icon, title, body }) => (
                 <button
@@ -709,21 +718,13 @@ function CreateAppForm({ businessId, onCreated }: {
           )}
 
           {!isMobile && (
-            <>
-              {product === 'auth' && (
-                <div>
-                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Authorized JavaScript origins — one per line</label>
-                  <textarea value={originsText} onChange={(e) => setOriginsText(e.target.value)} rows={2} spellCheck={false} placeholder={'https://app.example.com\nhttp://localhost:5173'} className={`mt-1 ${inputCls} resize-y font-mono text-xs`} />
-                  {originResult.errors.map((e) => <p key={e} className="mt-1 text-[11px] text-red-500">{e}</p>)}
-                </div>
-              )}
-              <div>
-                <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Redirect URIs — one per line</label>
-                <textarea value={urisText} onChange={(e) => setUrisText(e.target.value)} rows={2} spellCheck={false} placeholder={'https://app.example.com/auth/callback\nhttp://localhost:5173/auth/callback'} className={`mt-1 ${inputCls} resize-y font-mono text-xs`} />
-                {uriResult.errors.map((e) => <p key={e} className="mt-1 text-[11px] text-red-500">{e}</p>)}
-                <p className="mt-1 text-[10px] text-slate-400">Exact match only, no wildcards. Web sign-in returns to these URIs with the authorization code.</p>
-              </div>
-            </>
+            <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 px-3.5 py-3">
+              <p className="text-xs font-bold text-slate-600 dark:text-slate-300">Web app</p>
+              <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+                Nothing else to configure here — calls go straight to our API with your client id and secret.
+                {product === 'auth' ? ' OAuth redirects and authorized domains live on Genjutsu, not Relay.' : ''}
+              </p>
+            </div>
           )}
 
           <div className="flex gap-2">
@@ -845,7 +846,7 @@ function TemplatesSection({ business }: { business: BusinessProfile }) {
         <GlassCard className="p-8 text-center">
           <FileText size={22} className="mx-auto text-slate-400" />
           <p className="mt-2 text-sm font-bold text-slate-700 dark:text-slate-200">No templates yet</p>
-          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">Add one per kind — OTP codes, magic links, account notices.</p>
+          <p className="mt-1 text-xs text-slate-500 dark:text-slate-400">One per request type — email OTP, WhatsApp OTP, magic link.</p>
         </GlassCard>
       ) : (
         templates.map((t) => (
@@ -855,7 +856,7 @@ function TemplatesSection({ business }: { business: BusinessProfile }) {
                 <p className="text-sm font-bold text-slate-900 dark:text-white truncate">{t.name}</p>
                 <p className="text-[11px] text-slate-500 dark:text-slate-400">
                   {TEMPLATE_KINDS.find((k) => k.value === t.kind)?.label ?? t.kind}
-                  {t.usesTtl !== false && t.kind !== 'password_change' && t.kind !== 'account_update' && t.kind !== 'custom' ? ` · expires after ${t.ttl_seconds}s` : ''}
+                  {TEMPLATE_KINDS.find((k) => k.value === t.kind)?.usesTtl ? ` · expires after ${t.ttl_seconds}s` : ''}
                   {t.is_active ? '' : ' · inactive'}
                 </p>
               </div>
@@ -878,22 +879,62 @@ function TemplatesSection({ business }: { business: BusinessProfile }) {
   );
 }
 
+const TEMPLATE_DEFAULTS: Record<TemplateKind, { name: string; subject: string; body: string; ttl: number }> = {
+  email_otp: {
+    name: 'Email OTP (default)',
+    subject: `{{code}} is your ${'{{business}}'} sign-in code`,
+    body: `Hi {{username}},\n\nYour verification code is {{code}}. It expires after {{ttl}} seconds.\n\n— ${'{{business}}'}`,
+    ttl: 60,
+  },
+  whatsapp_otp: {
+    name: 'WhatsApp OTP (default)',
+    subject: '',
+    body: `${'{{business}}'}: your verification code is {{code}}. It expires after {{ttl}} seconds.`,
+    ttl: 60,
+  },
+  email_magic_link: {
+    name: 'Magic link (default)',
+    subject: `Your ${'{{business}}'} sign-in link`,
+    body: `Hi,\n\nTap this link to sign in. It works once and expires after {{ttl}} seconds:\n\n{{link}}\n\n— ${'{{business}}'}`,
+    ttl: 900,
+  },
+  email_notice: {
+    name: 'Email notice (default)',
+    subject: `An update from ${'{{business}}'}`,
+    body: `Hi {{username}},\n\n…\n\n— ${'{{business}}'}`,
+    ttl: 60,
+  },
+  custom: {
+    name: 'Custom template',
+    subject: '',
+    body: '',
+    ttl: 60,
+  },
+};
+
 function TemplateForm({ businessId, businessName, onCreated }: {
   businessId: string;
   businessName: string;
   onCreated: () => void;
 }) {
-  const [kind, setKind] = useState<TemplateKind>('otp');
-  const [name, setName] = useState('');
-  const [subject, setSubject] = useState(`{{code}} is your ${'{{business}}'} sign-in code`);
-  const [body, setBody] = useState(
-    `Hi {{username}},\n\nYour verification code is {{code}}. It expires in a minute.\n\n— ${'{{business}}'}`,
-  );
-  const [ttl, setTtl] = useState(TEMPLATE_TTL_DEFAULT);
+  const [kind, setKind] = useState<TemplateKind>('email_otp');
+  const [name, setName] = useState(TEMPLATE_DEFAULTS.email_otp.name);
+  const [subject, setSubject] = useState(TEMPLATE_DEFAULTS.email_otp.subject);
+  const [body, setBody] = useState(TEMPLATE_DEFAULTS.email_otp.body);
+  const [ttl, setTtl] = useState(TEMPLATE_DEFAULTS.email_otp.ttl);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const kindMeta = TEMPLATE_KINDS.find((k) => k.value === kind)!;
+
+  function switchKind(next: TemplateKind) {
+    setKind(next);
+    const d = TEMPLATE_DEFAULTS[next];
+    setName(d.name);
+    setSubject(d.subject);
+    setBody(d.body);
+    setTtl(d.ttl);
+  }
 
   async function submit() {
     setBusy(true); setError(null);
@@ -911,8 +952,8 @@ function TemplateForm({ businessId, businessName, onCreated }: {
     <div className="space-y-3">
       <p className="text-sm font-bold text-slate-900 dark:text-white">New template</p>
       <div>
-        <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Kind</label>
-        <select value={kind} onChange={(e) => setKind(e.target.value as TemplateKind)} className={`mt-1 ${inputCls}`}>
+        <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Request type</label>
+        <select value={kind} onChange={(e) => switchKind(e.target.value as TemplateKind)} className={`mt-1 ${inputCls}`}>
           {TEMPLATE_KINDS.map((k) => <option key={k.value} value={k.value}>{k.label}</option>)}
         </select>
         <p className="mt-1 text-[10px] text-slate-400">{kindMeta.helper}</p>
@@ -921,10 +962,12 @@ function TemplateForm({ businessId, businessName, onCreated }: {
         <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Name <span className="font-normal text-slate-400">(only you see this)</span></label>
         <input value={name} onChange={(e) => setName(e.target.value)} maxLength={60} placeholder="Sign-in code (default)" className={`mt-1 ${inputCls}`} />
       </div>
-      <div>
-        <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Subject</label>
-        <input value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200} className={`mt-1 ${inputCls}`} />
-      </div>
+      {kind !== 'whatsapp_otp' && (
+        <div>
+          <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Subject</label>
+          <input value={subject} onChange={(e) => setSubject(e.target.value)} maxLength={200} className={`mt-1 ${inputCls}`} />
+        </div>
+      )}
       <div>
         <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Body</label>
         <textarea value={body} onChange={(e) => setBody(e.target.value)} rows={5} maxLength={5000} className={`mt-1 ${inputCls} resize-y`} />
@@ -939,7 +982,7 @@ function TemplateForm({ businessId, businessName, onCreated }: {
       )}
       <div className="rounded-2xl border border-slate-200/80 dark:border-white/10 bg-white/60 dark:bg-white/5 p-3">
         <p className="text-[10px] uppercase tracking-wide text-slate-400 font-bold mb-1">Preview</p>
-        <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{renderPreview(subject, businessName)}</p>
+        {kind !== 'whatsapp_otp' && <p className="text-xs font-semibold text-slate-700 dark:text-slate-200">{renderPreview(subject, businessName)}</p>}
         <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400 whitespace-pre-wrap">{renderPreview(body, businessName)}</p>
       </div>
       <p className="text-[10px] text-slate-400">
@@ -958,15 +1001,15 @@ function renderPreview(text: string, businessName: string): string {
     .replaceAll('{{username}}', 'orubus')
     .replaceAll('{{business}}', businessName)
     .replaceAll('{{code}}', '482913')
-    .replaceAll('{{link}}', 'https://relayid.vercel.app/v1/redirect?code=…')
-    .replaceAll('{{date}}', new Date().toLocaleDateString());
+    .replaceAll('{{link}}', 'https://relayid.vercel.app/v1/auth/magic-link/…')
+    .replaceAll('{{ttl}}', '60');
 }
 
 /* -------------------------------- SDK & API -------------------------------- */
 
 function SdkSection({ business }: { business: BusinessProfile }) {
   const sdkApps = [
-    { id: 'a', title: 'Install', code: `npm i ${SDK_PACKAGE}`, body: 'One package. Works in the browser, Node, Deno and Bun — your app, your VPS or any backend provider.' },
+    { id: 'a', title: 'Install', code: `npm i ${SDK_PACKAGE}`, body: 'One package. Works in the browser, Node, Deno and Bun — your app, your VPS or any backend provider. Or download the files below and drop them straight into your project.' },
     {
       id: 'b',
       title: 'Connect your users',
@@ -1014,8 +1057,14 @@ create table relay_receipts (
   recipient_external_id text not null,
   created_at timestamptz not null default now()
 );`,
-      body: 'Add the tables you want on your own database and store receipts, threads or flags. Relay holds identity bundles and ciphertext envelopes; you hold the product data.',
+      body: 'Add the tables you need on your own database and store receipts, threads or flags. Relay holds identity bundles and ciphertext envelopes; you hold the product data.',
     },
+  ];
+
+  const authEndpoints: [string, string][] = [
+    ['otp send', `${API_BASE}/auth/otp`],
+    ['otp verify', `${API_BASE}/auth/otp/verify`],
+    ['magic link', `${API_BASE}/auth/magic-link`],
   ];
 
   return (
@@ -1028,37 +1077,69 @@ create table relay_receipts (
           Integrate messaging into your app, your VPS or any backend provider. Encryption, key exchange,
           delivery and storage are handled by Relay — you add the SDK, wire your tables and your users talk.
         </p>
+        <div className="mt-3 grid grid-cols-2 gap-2">
+          <a
+            href="/sdk/relay-sdk.mjs"
+            download="relay-sdk.mjs"
+            className="flex items-center justify-center gap-2 rounded-2xl px-3 py-2.5 text-xs font-bold text-white cursor-pointer"
+            style={{ backgroundColor: 'var(--primary-accent, #2563EB)' }}
+          >
+            <Download size={14} /> <span>Download client</span>
+          </a>
+          <a
+            href="/sdk/relay-server.mjs"
+            download="relay-server.mjs"
+            className="flex items-center justify-center gap-2 rounded-2xl border border-slate-200/80 dark:border-white/10 px-3 py-2.5 text-xs font-bold text-slate-600 dark:text-slate-200 hover:bg-white/60 dark:hover:bg-white/5 cursor-pointer"
+          >
+            <Download size={14} /> <span>Download server</span>
+          </a>
+        </div>
+        <p className="mt-2 text-[10px] text-slate-400">
+          Prebuilt ES modules — import <code className="font-mono">RelayClient</code> from the client bundle in the
+          browser, <code className="font-mono">RelayServer</code> from the server bundle on your backend to mint user
+          tokens. Same code as the npm package.
+        </p>
       </GlassCard>
 
       {sdkApps.map((s) => (
         <GlassCard key={s.id} className="p-4">
           <p className="text-sm font-bold text-slate-900 dark:text-white">{s.title}</p>
           <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">{s.body}</p>
-          <div className="mt-2 rounded-2xl bg-slate-950 p-3 overflow-x-auto">
-            <pre className="font-mono text-[11px] leading-5 text-emerald-200 whitespace-pre">{s.code}</pre>
-          </div>
+          <CodeBlock code={s.code} />
         </GlassCard>
       ))}
 
       <GlassCard className="p-5">
-        <p className="text-sm font-bold text-slate-900 dark:text-white">Auth product endpoints</p>
+        <p className="text-sm font-bold text-slate-900 dark:text-white">Sign-in endpoints</p>
         <p className="mt-1 text-[11px] text-slate-500 dark:text-slate-400">
-          For "Integrate auth" apps — everything lives on our domain, never a provider URL.
+          For "Sign-in codes &amp; magic links" apps — POST from your backend with your client id + secret in the body,
+          we render your templates and deliver by email (SMTP) or WhatsApp. Everything lives on our domain, never a
+          provider URL.
         </p>
         <div className="mt-3 space-y-1.5 font-mono text-[11px]">
-          {[
-            ['authorize', 'https://relayid.vercel.app/consent'],
-            ['token', `${API_BASE}/oauth/token`],
-            ['userinfo', `${API_BASE}/oauth/userinfo`],
-            ['redirect', `${API_BASE}/redirect`],
-          ].map(([label, url]) => (
+          {authEndpoints.map(([label, url]) => (
             <div key={label} className="flex items-center justify-between gap-2 rounded-xl border border-slate-200/80 dark:border-white/10 px-3 py-2">
               <span className="text-slate-400 uppercase text-[9px] font-bold w-20 shrink-0">{label}</span>
               <span className="min-w-0 truncate text-slate-700 dark:text-slate-200">{url}</span>
-              <button type="button" onClick={() => copy(url)} className="shrink-0 text-slate-400 hover:text-slate-600 cursor-pointer"><Copy size={12} /></button>
+              <button type="button" onClick={() => copy(url)} className="shrink-0 text-slate-400 hover:text-slate-600 cursor-pointer" title="Copy"><Copy size={12} /></button>
             </div>
           ))}
         </div>
+        <p className="mt-3 text-[10px] leading-5 text-slate-400">
+          <code className="font-mono">POST {"{ client_id, client_secret, channel: 'email' | 'whatsapp', destination }"}</code>
+          {' '}returns a masked destination and challenge id; verify with the 6-digit code to get back a Relay user
+          token the SDK accepts. Magic links land on {API_BASE.replace('/v1', '')} and bounce the user to your
+          business website after one tap.
+        </p>
+      </GlassCard>
+
+      <GlassCard className="p-5">
+        <p className="text-sm font-bold text-slate-900 dark:text-white">Genjutsu OAuth (separate product)</p>
+        <p className="mt-1 text-[11px] leading-5 text-slate-500 dark:text-slate-400">
+          "Continue with Genjutsu" sign-in — client secrets, authorized redirects and the account chooser — is built
+          on Genjutsu, not here. Create those apps from the Genjutsu developer portal; this page only covers Relay
+          sign-in codes and messaging.
+        </p>
       </GlassCard>
     </div>
   );

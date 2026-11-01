@@ -73,11 +73,15 @@ export type DevApp = {
 
 export type SecretGrant = { client_id: string; client_secret: string };
 
+/**
+ * Templates are keyed by the request type that consumes them: OTP codes by
+ * email (SMTP) or WhatsApp, magic links by email, plus free-form notices.
+ */
 export type TemplateKind =
-  | 'otp'
-  | 'magic_link'
-  | 'password_change'
-  | 'account_update'
+  | 'email_otp'
+  | 'whatsapp_otp'
+  | 'email_magic_link'
+  | 'email_notice'
   | 'custom';
 
 export const TEMPLATE_KINDS: {
@@ -86,11 +90,11 @@ export const TEMPLATE_KINDS: {
   helper: string;
   usesTtl: boolean;
 }[] = [
-  { value: 'otp', label: 'OTP code', helper: 'Authentication challenge by email — the user types the {{code}} into your app.', usesTtl: true },
-  { value: 'magic_link', label: 'Magic link', helper: 'Authentication challenge by email — the user taps the {{link}} to sign in.', usesTtl: true },
-  { value: 'password_change', label: 'Password change', helper: 'Notification sent when the user changes their password.', usesTtl: false },
-  { value: 'account_update', label: 'Account update', helper: 'Notification for account-level changes.', usesTtl: false },
-  { value: 'custom', label: 'Custom', helper: 'Free-form notification.', usesTtl: false },
+  { value: 'email_otp', label: 'Email OTP code', helper: 'Sent over our SMTP when your backend calls POST /v1/auth/otp with channel "email" — the user types the {{code}} into your app.', usesTtl: true },
+  { value: 'whatsapp_otp', label: 'WhatsApp OTP code', helper: 'Sent over WhatsApp when your backend calls POST /v1/auth/otp with channel "whatsapp".', usesTtl: true },
+  { value: 'email_magic_link', label: 'Email magic link', helper: 'Sent over our SMTP when your backend calls POST /v1/auth/magic-link — the user taps the {{link}} to sign in.', usesTtl: true },
+  { value: 'email_notice', label: 'Email notice', helper: 'Free-form email from your business (account updates and similar).', usesTtl: false },
+  { value: 'custom', label: 'Custom', helper: 'Spare template for anything else.', usesTtl: false },
 ];
 
 export type DevTemplate = {
@@ -112,8 +116,9 @@ export const TEMPLATE_TTL_DEFAULT = 60;
 export const TEMPLATE_PLACEHOLDERS = [
   { token: '{{username}}', sample: 'orubus', description: "Recipient's @username" },
   { token: '{{business}}', sample: 'Konoha Corp', description: 'Your business display name' },
-  { token: '{{code}}', sample: '482913', description: 'One-time code (otp templates)' },
-  { token: '{{link}}', sample: 'https://relayid.vercel.app/v1/redirect?…', description: 'Sign-in link (magic_link templates)' },
+  { token: '{{code}}', sample: '482913', description: 'One-time code (OTP templates)' },
+  { token: '{{link}}', sample: 'https://relayid.vercel.app/v1/auth/magic-link/…', description: 'Sign-in link (magic link templates)' },
+  { token: '{{ttl}}', sample: '60', description: 'Lifetime of the code or link, in seconds' },
 ] as const;
 
 export const SDK_PACKAGE = '@relay/messaging-sdk';
