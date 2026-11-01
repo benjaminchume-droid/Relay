@@ -112,3 +112,27 @@ export function getMirroredIdentity(profileId: string): LocalIdentity | undefine
     return map?.[profileId] as LocalIdentity | undefined;
   } catch { return undefined; }
 }
+
+/* ---------------------------------------------------------------------------
+ * Developer/diagnostics helpers (used by Settings → Developer).
+ * --------------------------------------------------------------------------- */
+export type CryptoStoreName = typeof STORE_SESSIONS | typeof STORE_SENDERKEYS;
+
+/** Number of records in a crypto object store (-1 when storage is unavailable). */
+export async function countCryptoKeys(store: CryptoStoreName): Promise<number> {
+  try {
+    return await tx<number>(store, "readonly", (s) => s.count());
+  } catch {
+    return -1;
+  }
+}
+
+/**
+ * Nuke all ratchet sessions + sender-key chains but KEEP the identity.
+ * This is the recovery tool for undecryptable sessions: every conversation
+ * re-runs X3DH on the next message. History already on screen is untouched.
+ */
+export async function resetSessionsKeepIdentity(): Promise<void> {
+  await tx(STORE_SESSIONS, "readwrite", (s) => s.clear());
+  await tx(STORE_SENDERKEYS, "readwrite", (s) => s.clear());
+}

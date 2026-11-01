@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import {
   Palette, Shield, Lock, User, RefreshCw, LogOut, Check, Camera, Upload,
   Bell, HardDrive, HelpCircle, AlertTriangle, KeyRound, Scale, FileText, Users,
-  Volume2, Vibrate, Eye, BellRing, Download, Cpu, Smartphone, Monitor, Layers
+  Volume2, Vibrate, Eye, BellRing, Download, Cpu, Smartphone, Monitor, Layers, Code2
 } from 'lucide-react';
 import { GlassCard, GlassButton, GlassInput } from './GlassUI';
 import { supabase } from '../lib/supabase/client';
@@ -20,6 +20,7 @@ import { getLetterAvatar } from '../lib/avatar';
 import { isInAppWebView } from '../lib/nativeBridge';
 import { ThemePresetsSection } from './ThemePresetsSection';
 import { DownloadsSection } from './DownloadsSection';
+import { DeveloperTab } from './DeveloperTab';
 import { WALLPAPERS } from './chat/wallpapers';
 import { RELAY_WEB_VERSION } from '../lib/version';
 import { notificationService, type NotificationPrefs } from '../services/notificationService';
@@ -81,7 +82,7 @@ Where we're going: making encrypted communication available to everyone, on ever
 
 export const ProfileView: React.FC = () => {
   const inApp = isInAppWebView();
-  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'NOTIFICATIONS' | 'STORAGE' | 'DOWNLOADS' | 'HELP' | 'LEGAL'>('APPEARANCE');
+  const [subTab, setSubTab] = useState<'PERSONAL' | 'APPEARANCE' | 'PRIVACY' | 'PERMISSIONS' | 'DEVELOPER' | 'NOTIFICATIONS' | 'STORAGE' | 'DOWNLOADS' | 'HELP' | 'LEGAL'>('APPEARANCE');
   const [showDeleteModal, setShowDeleteModal] = useState(false);
   const [cacheCleared, setCacheCleared] = useState(false);
   const [legalDoc, setLegalDoc] = useState<LegalDoc | null>(null);
@@ -263,6 +264,7 @@ export const ProfileView: React.FC = () => {
           { id: 'PERSONAL', label: 'Personal Info', icon: User },
           { id: 'PRIVACY', label: 'Privacy', icon: Lock },
           { id: 'PERMISSIONS', label: 'Permissions & Devices', icon: KeyRound },
+          { id: 'DEVELOPER', label: 'Developer', icon: Code2 },
           { id: 'NOTIFICATIONS', label: 'Notifications', icon: Bell },
           { id: 'STORAGE', label: 'Storage', icon: HardDrive },
           // Downloads live on the website only — the native apps ARE the download.
@@ -631,6 +633,7 @@ export const ProfileView: React.FC = () => {
       )}
 
       {subTab === 'PERMISSIONS' && <PermissionsView />}
+      {subTab === 'DEVELOPER' && <DeveloperTab />}
 
       {subTab === 'NOTIFICATIONS' && (
         <GlassCard className="p-5 space-y-4">
