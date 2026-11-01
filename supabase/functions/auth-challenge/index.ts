@@ -141,7 +141,10 @@ Deno.serve(async (req) => {
   );
 
   const url = new URL(req.url);
-  const route = url.pathname.split("/auth-challenge/")[1] ?? "";
+  const rawRoute = url.pathname.split("/auth-challenge/")[1] ?? "";
+  // Vercel's /v1/auth/:path* rewrite strips the auth/ prefix; the direct
+  // Supabase URL keeps it. Accept both.
+  const route = rawRoute.startsWith("auth/") ? rawRoute.slice(5) : rawRoute;
   const publicOrigin = Deno.env.get("PUBLIC_ORIGIN") ?? "https://relayid.vercel.app";
 
   async function resolveApp(body: { client_id?: string; client_secret?: string }): Promise<AppRow | null> {
@@ -160,7 +163,7 @@ Deno.serve(async (req) => {
 
   try {
     /* ------------------------------ POST auth/otp ------------------------------ */
-    if (route === "auth/otp" && req.method === "POST") {
+    if (route === "otp" && req.method === "POST") {
       const body = await readJson<{
         client_id?: string; client_secret?: string;
         channel?: string; destination?: string; username?: string;
@@ -269,7 +272,7 @@ Deno.serve(async (req) => {
     }
 
     /* --------------------------- POST auth/otp/verify -------------------------- */
-    if (route === "auth/otp/verify" && req.method === "POST") {
+    if (route === "otp/verify" && req.method === "POST") {
       const body = await readJson<{
         client_id?: string; client_secret?: string; challenge_id?: string; code?: string;
       }>(req);
@@ -325,7 +328,7 @@ Deno.serve(async (req) => {
     }
 
     /* --------------------------- POST auth/magic-link -------------------------- */
-    if (route === "auth/magic-link" && req.method === "POST") {
+    if (route === "magic-link" && req.method === "POST") {
       const body = await readJson<{
         client_id?: string; client_secret?: string; destination?: string;
       }>(req);
@@ -399,7 +402,7 @@ Deno.serve(async (req) => {
     }
 
     /* -------------------------- GET auth/magic-link/:id ------------------------ */
-    const magicMatch = /^auth\/magic-link\/([0-9a-f-]{36})$/.exec(route);
+    const magicMatch = /^magic-link\/([0-9a-f-]{36})$/.exec(route);
     if (magicMatch && req.method === "GET") {
       const id = magicMatch[1];
       const token = url.searchParams.get("token") ?? "";
