@@ -1,6 +1,6 @@
 {
-  "version": "1.0.11",
-  "notes": "v1.0.11 \u2014 Profile > Developer diagnostics (safety fingerprint, session counts, E2EE session recovery), backend credentials moved out of the app source, drag-aware chat scroll, themed icons + real splash from v1.0.10.",
-  "apkUrl": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.11/relay-1.0.11-android-universal.apk",
+  "version": "1.0.12",
+  "notes": "v1.0.12 \u2014 Profile > Developer: zero-knowledge encrypted cloud sync (passphrase-wrapped universal key, per-record temporary keys, same vault as web + Genjutsu-style design; back up / restore your E2EE identity across devices). Requires the sync-vault SQL on the backend.",
+  "apkUrl": "https://github.com/orubus-dev/relay-client/releases/download/v1.0.12/relay-1.0.12-android-universal.apk",
   "force": false
 }
