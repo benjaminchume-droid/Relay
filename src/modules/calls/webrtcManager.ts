@@ -81,9 +81,11 @@ export class WebRtcManager {
       // auto-end after a short grace period.
       if (pc.connectionState === "failed") {
         if (this.failTimer) clearTimeout(this.failTimer);
+        // Give ICE restart conditions a moment (TURN fallback candidates can
+        // still be gathering on slow carrier networks).
         this.failTimer = setTimeout(() => {
           this.handlers.onError?.(new Error("Call connection failed"));
-        }, 1200);
+        }, 3000);
       }
     };
 

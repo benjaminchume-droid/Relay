@@ -11,6 +11,25 @@ const PUBLIC_STUN: IceServerConfig[] = [
   { urls: "stun:stun2.l.google.com:19302" },
 ];
 
+/**
+ * Free public TURN fallback (OpenRelay by Metered). Without a TURN server,
+ * calls fail outright on carrier-grade NAT (most African / mobile-carrier
+ * networks) — STUN-only ICE finds no viable candidate pair and the call
+ * drops after ~20s of black-hole ringing. OpenRelay is best-effort: set
+ * VITE_TURN_* to your own TURN (Metered / Twilio / coturn) for production
+ * reliability and the env config takes precedence.
+ */
+const FALLBACK_TURN: IceServerConfig = {
+  urls: [
+    "turn:openrelay.metered.ca:80",
+    "turn:openrelay.metered.ca:443",
+    "turn:openrelay.metered.ca:443?transport=tcp",
+    "turns:openrelay.metered.ca:443",
+  ],
+  username: "openrelayproject",
+  credential: "openrelayproject",
+};
+
 function parseTurnUrls(): string[] {
   try {
     const raw =
@@ -54,6 +73,10 @@ export function getIceServers(): IceServerConfig[] {
       username,
       credential,
     });
+  } else {
+    // No self-hosted TURN configured — use the public fallback so calls
+    // actually connect behind carrier NAT instead of dying after ~20s.
+    servers.push(FALLBACK_TURN);
   }
 
   return servers;
@@ -62,5 +85,8 @@ export function getIceServers(): IceServerConfig[] {
 /** True when TURN is configured (better success behind strict NATs). */
 export function hasTurnConfigured(): boolean {
   const turnUrls = parseTurnUrls();
-  return turnUrls.length > 0 && !!envStr("VITE_TURN_USERNAME") && !!envStr("VITE_TURN_CREDENTIAL");
+  if (turnUrls.length > 0 && !!envStr("VITE_TURN_USERNAME") && !!envStr("VITE_TURN_CREDENTIAL")) {
+    return true;
+  }
+  return true; // public fallback TURN is always present
 }
