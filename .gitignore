@@ -22,3 +22,4 @@ local.properties
 # messaging sdk build + deps
 sdk/dist/
 sdk/node_modules/
+tsconfig.tsbuildinfo
